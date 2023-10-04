@@ -18,8 +18,4 @@ jobs:
           docker-username: ${{ secrets.DOCKER_USERNAME }}
           docker-password: ${{ secrets.DOCKER_PASSWORD }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          image-name: ${{ vars.IMAGE_NAME || 'quickstart-test' }}
-          author: ${{ vars.MY_NAME }}
-          author-email: ${{ vars.MY_EMAIL }}
-          maintainer: ${{ vars.ORG_NAME }}
-          maintainer-email: ${{ vars.ORG_EMAIL }}
+          image-name: 'simplepingsurvey'
