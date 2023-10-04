@@ -1,6 +1,6 @@
 {
-    "name":"QuickStart",
-    "description":"Example Extension",
+    "name":"pingSurvey",
+    "description":"Simple Survey Extension",
     "icon":"mdi-clock",
     "company":"Blue Robotics",
     "version":"0.0.1",
