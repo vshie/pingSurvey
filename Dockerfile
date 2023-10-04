@@ -56,4 +56,4 @@ LABEL links='{\
     }'
 LABEL requirements="core >= 1.1"
 
-ENTRYPOINT litestar run --host 0.0.0.0
+ENTRYPOINT python /app/main.py 
