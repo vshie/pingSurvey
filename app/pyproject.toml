@@ -1,7 +1,7 @@
 [project]
-name = "quickstart"
+name = "simpleSurvey"
 version = "0.0.1"
-description = "BlueOS QuickStart Example Extension"
+description = "BlueOS Simple ping survey"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
@@ -9,6 +9,6 @@ classifiers = [
 ]
 dependencies = [
     "requests",
-    "litestar[standard]",
+    "flask",
 ]
 
