@@ -35,8 +35,8 @@ ARG AUTHOR
 ARG AUTHOR_EMAIL
 LABEL authors='[\
     {\
-        "name": "$AUTHOR",\
-        "email": "$AUTHOR_EMAIL"\
+        "name": "Tony White",\
+        "email": "tonywhite@bluerobotics.com"\
     }\
 ]'
 
@@ -44,8 +44,8 @@ ARG MAINTAINER
 ARG MAINTAINER_EMAIL
 LABEL company='{\
         "about": "",\
-        "name": "$MAINTAINER",\
-        "email": "$MAINTAINER_EMAIL"\
+        "name": ""Blue Robotics",\
+        "email": "support@bluerobotics.com"\
     }'
 LABEL type="example"
 ARG REPO
