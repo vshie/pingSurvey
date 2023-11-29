@@ -1,11 +1,103 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Flask App</title>
+    <title>Vshie Ping Survey</title
+
+    <link href="/static/css/materialdesignicons.min.css" rel="stylesheet">
+    <link href="/static/css/vuetify.min.css" rel="stylesheet">
+    <link href="/static/css/style.css" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, minimal-ui">
 </head>
-<body>
-    <button onclick="location.href='/start'">Start</button>
-    <button onclick="location.href='/stop'">Stop</button>
-    <button onclick="location.href='/download'">Download</button>
-</body>
+<div id="app">
+    <v-app>
+        <v-main>
+            <v-container>
+                <h1>Vshierdom's Ping Survey Logging Tool</h1>
+                <v-btn outlined rounded text @click="start">Start</v-btn>
+                <v-btn outlined rounded text @click="stop">Stop</v-btn>
+                <v-btn outlined rounded text @click="download">Download</v-btn>
+
+                <v-card 
+                    v-if="status" 
+                    class="mx-auto my-12" 
+                    outlined 
+                    color="blue-grey lighten-5">
+                    <v-card-text class="body-1">
+                        {{ status }}
+                    </v-card-text>
+                </v-card>
+            </v-container>
+        </v-main>
+    </v-app>
+</div>
+
+<script src="/static/js/vue.js"></script>
+<script src="/static/js/vuetify.js"></script>
+<script src="/static/js/axios.min.js"></script>
+<script src="/static/js/chart.js"></script>
+
+<script>
+    Vue.config.devtools = true;
+    new Vue({
+        el: '#app',
+        vuetify: new Vuetify({
+            theme: {
+                dark: false, // Enable light mode
+            },
+        }),
+        data() {
+            return {
+                status: ""
+            }
+        },
+        methods: {
+            async start() {
+                try {
+                    const response = await fetch('/start');
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+                    const data = await response.text();
+                    this.status = data;
+                } catch (error) {
+                    console.error('Error fetching data:', error);
+                    this.status = 'Error: ' + error.message;
+                }
+            },
+
+            async stop() {
+                try {
+                    const response = await fetch('/stop');
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+                    const data = await response.text();
+                    this.status = data;
+                } catch (error) {
+                    console.error('Error fetching data:', error);
+                    this.status = 'Error: ' + error.message;
+                }
+            },
+
+            async download() {
+                try {
+                    const response = await fetch('/download');
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+                    const data = await response.text();
+                    this.status = data;
+                } catch (error) {
+                    console.error('Error fetching data:', error);
+                    this.status = 'Error: ' + error.message;
+                }
+            },
+        },
+        mounted() {
+            console.log('Mounted!')
+        }
+    })
+
+</script>
+
 </html>

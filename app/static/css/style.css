@@ -1,0 +1,18 @@
+.theme--light.v-application {
+	background: #fff;
+	color: #000;
+}
+
+.theme--light.v-label {
+    color: rgba(0,0,0,.87);
+}
+
+.logo {
+	float: right;
+	max-width: 300px;
+	max-height: 100px;
+}
+
+.v-card {
+	padding: 20px;
+}
