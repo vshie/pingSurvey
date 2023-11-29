@@ -1,4 +1,4 @@
-from flask import Flask, render_template, send_file
+from flask import Flask, render_template, send_file, jsonify
 import requests
 import csv
 import time
@@ -8,8 +8,8 @@ app = Flask(__name__, static_url_path="/static", static_folder="static")
 
 # Global variable to control the logging thread
 logging_active = False
-distance_url = 'http://localhost:6040/mavlink/vehicles/1/components/194/messages/DISTANCE_SENSOR'
-gps_url = 'http://localhost:6040/mavlink/vehicles/1/components/1/messages/GLOBAL_POSITION_INT'
+distance_url = 'http://192.168.1.71:6040/mavlink/vehicles/1/components/194/messages/DISTANCE_SENSOR'
+gps_url = 'http://192.168.1.71:6040/mavlink/vehicles/1/components/1/messages/GLOBAL_POSITION_INT'
 log_file = 'sensor_data.csv'
 log_rate = 2
 
@@ -29,6 +29,16 @@ def start_logging():
         logging_active = True
         main()  # Start the logging script directly
     return 'Started'
+
+@app.route("/get_data")
+def get_data():
+    data = {
+        'unix_timestamp': unix_timestamp,
+        'distance': distance,
+        'latitude': latitude,
+        'longitude': longitude
+    }
+    return jsonify(data)
 
 @app.route('/stop')
 def stop_logging():
@@ -63,13 +73,15 @@ def main():
                 # Extract the values for each column
                 timestamp = int(time.time() * 1000)  # Convert current time to milliseconds
                 dt = datetime.fromtimestamp(timestamp / 1000)  # Convert timestamp to datetime object
+                global unix_timestamp
                 unix_timestamp = timestamp
                 year, month, day, hour, minute, second = dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second
-
+                global distance
                 distance = distance_data['current_distance']
+                global latitude
                 latitude = gps_data['lat'] / 1e7
+                global longitude
                 longitude = gps_data['lon'] / 1e7
-
                 column_values = [unix_timestamp, year, month, day, hour, minute, second, distance, latitude, longitude]
 
                 # Create or append to the log file and write the data
@@ -94,6 +106,7 @@ def main():
             # Provide feedback every 5 seconds
             if row_counter % (log_rate * feedback_interval) == 0:
                 print(f"Rows added to CSV: {row_counter}")
+                 
 
             # Wait for the specified log rate
             time.sleep(1 / log_rate)

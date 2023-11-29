@@ -1,31 +1,25 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Vshie Ping Survey</title
+    <title>Tony's Blue Robotics BlueBoat Ping2 Survey Extension</title>
 
     <link href="/static/css/materialdesignicons.min.css" rel="stylesheet">
     <link href="/static/css/vuetify.min.css" rel="stylesheet">
     <link href="/static/css/style.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.heat/dist/leaflet-heat.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, minimal-ui">
 </head>
+<body>
 <div id="app">
     <v-app>
         <v-main>
             <v-container>
-                <h1>Vshierdom's Ping Survey Logging Tool</h1>
-                <v-btn outlined rounded text @click="start">Start</v-btn>
-                <v-btn outlined rounded text @click="stop">Stop</v-btn>
+                <h1>Tony's Blue Robotics BlueBoat Ping2 Survey Extension</h1>
+                <v-btn :disabled="isLoading" outlined rounded text @click="toggleRun"><v-icon>{{ icon }}</v-icon></v-btn>
                 <v-btn outlined rounded text @click="download">Download</v-btn>
-
-                <v-card 
-                    v-if="status" 
-                    class="mx-auto my-12" 
-                    outlined 
-                    color="blue-grey lighten-5">
-                    <v-card-text class="body-1">
-                        {{ status }}
-                    </v-card-text>
-                </v-card>
+                <div id="map" style="height: 500px;"></div>
+                
             </v-container>
         </v-main>
     </v-app>
@@ -35,6 +29,9 @@
 <script src="/static/js/vuetify.js"></script>
 <script src="/static/js/axios.min.js"></script>
 <script src="/static/js/chart.js"></script>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+
 
 <script>
     Vue.config.devtools = true;
@@ -42,15 +39,38 @@
         el: '#app',
         vuetify: new Vuetify({
             theme: {
-                dark: false, // Enable light mode
+                dark: true, // Enable light mode
             },
         }),
         data() {
             return {
-                status: ""
+                status: "",
+                icon: 'mdi-play',
+                run: false,
+                map: null,
+                heatmapLayer: null,
+                gpsIcon: L.icon({
+                    iconUrl: 'path_to_your_icon.png',
+                    iconSize: [38, 95],
+                    iconAnchor: [22, 94],
+                    popupAnchor: [-3, -76],
+                }),
+                
             }
         },
         methods: {
+            async toggleRun() {
+                // Toggle the icon between play and stop
+                this.icon = this.icon === 'mdi-play' ? 'mdi-stop' : 'mdi-play';
+                this.run = !this.run;
+
+                if (this.run) {
+                    await this.start();
+                } else {
+                    await this.stop();
+                }
+            },
+
             async start() {
                 try {
                     const response = await fetch('/start');
@@ -62,7 +82,9 @@
                 } catch (error) {
                     console.error('Error fetching data:', error);
                     this.status = 'Error: ' + error.message;
-                }
+                } 
+                this.map = L.map('map').setView([51.505, -0.09], 13);
+                this.heatmapLayer = L.heatLayer([], {radius: 25}).addTo(this.map);
             },
 
             async stop() {
@@ -92,6 +114,13 @@
                     this.status = 'Error: ' + error.message;
                 }
             },
+            addDataPoint(lat, lon, depth) {
+                // Add a new data point to the heatmap
+                this.heatmapLayer.addLatLng([lat, lon, depth]);
+
+                // Update the GPS icon location
+                L.marker([lat, lon], {icon: this.gpsIcon}).addTo(this.map);
+            },
         },
         mounted() {
             console.log('Mounted!')
@@ -99,5 +128,5 @@
     })
 
 </script>
-
+</body>
 </html>
