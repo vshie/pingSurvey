@@ -4,7 +4,7 @@ import csv
 import time
 from datetime import datetime
 
-app = Flask(__name__)
+app = Flask(__name__, static_url_path="/static", static_folder="static")
 
 # Global variable to control the logging thread
 logging_active = False
@@ -20,7 +20,7 @@ feedback_interval = 5
 row_counter = 0
 @app.route('/')
 def home():
-    return render_template('static/index.html')
+    return app.send_static_file("index.html")
 
 @app.route('/start')
 def start_logging():
@@ -103,4 +103,4 @@ def main():
             break
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', debug=True)
+    app.run(host='0.0.0.0', port=8000)
