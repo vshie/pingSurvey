@@ -8,8 +8,8 @@ app = Flask(__name__, static_url_path="/static", static_folder="static")
 
 # Global variable to control the logging thread
 logging_active = False
-distance_url = 'http://192.168.1.71:6040/mavlink/vehicles/1/components/194/messages/DISTANCE_SENSOR'
-gps_url = 'http://192.168.1.71:6040/mavlink/vehicles/1/components/1/messages/GLOBAL_POSITION_INT'
+distance_url = 'http://localhost:6040/mavlink/vehicles/1/components/194/messages/DISTANCE_SENSOR'
+gps_url = 'http://localhost:6040/mavlink/vehicles/1/components/1/messages/GLOBAL_POSITION_INT'
 log_file = 'sensor_data.csv'
 log_rate = 2
 
