@@ -37,7 +37,7 @@ def main():
                 gps_data = gps_response.json()['message']
 
                 # Define the column labels for the log file
-                column_labels = ['Unix Timestamp', 'Year', 'Month', 'Day', 'Hour', 'Minute', 'Second', 'Distance (cm)', 'Latitude', 'Longitude', "Confidence"]
+                column_labels = ['Unix Timestamp', 'Year', 'Month', 'Day', 'Hour', 'Minute', 'Second', 'Distance (cm)', 'Latitude', 'Longitude', "Confidence (%)"]
 
                 # Extract the values for each column
                 timestamp = int(time.time() * 1000)  # Convert current time to milliseconds
