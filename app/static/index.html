@@ -1,13 +1,13 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Tony's Blue Robotics BlueBoat Ping2 Survey Extension</title>
+    <title>Basic Blue Robotics BlueBoat Ping2 Survey Extension</title>
 
     <link href="/static/css/materialdesignicons.min.css" rel="stylesheet">
     <link href="/static/css/vuetify.min.css" rel="stylesheet">
     <link href="/static/css/style.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.heat/dist/leaflet-heat.css" />
+    <link rel="stylesheet" href="/static/css/leaflet.css" />
+
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, minimal-ui">
 </head>
 <body>
@@ -15,11 +15,14 @@
     <v-app>
         <v-main>
             <v-container>
-                <h1>Tony's Blue Robotics BlueBoat Ping2 Survey Extension</h1>
+                <h1>BlueSurvey</h1>
                 <v-btn :disabled="isLoading" outlined rounded text @click="toggleRun"><v-icon>{{ icon }}</v-icon></v-btn>
                 <v-btn outlined rounded text @click="download">Download</v-btn>
-                <div id="map" style="height: 500px;"></div>
-                
+                <div id="map" style="height: 75vh;"></div>
+                <v-btn outlined rounded text @click="clearHeatmap">Clear Heatmap</v-btn>
+                <v-btn outlined rounded text @click="onCenterMapButtonClick">Center Map</v-btn>
+                <h4>Status Console</h4>
+                <div id="status-readout">{{ status }}</div>
             </v-container>
         </v-main>
     </v-app>
@@ -29,33 +32,48 @@
 <script src="/static/js/vuetify.js"></script>
 <script src="/static/js/axios.min.js"></script>
 <script src="/static/js/chart.js"></script>
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
-
-
+<script src="/static/js/leaflet.js"></script>
+<script src="/static/js/leaflet-heat.js"></script>
 <script>
     Vue.config.devtools = true;
     new Vue({
         el: '#app',
         vuetify: new Vuetify({
             theme: {
-                dark: true, // Enable light mode
+                dark: true, // Enable light/dark mode
             },
         }),
         data() {
             return {
                 status: "",
+                firstCoordinateReceived: false,
                 icon: 'mdi-play',
                 run: false,
                 map: null,
                 heatmapLayer: null,
-                gpsIcon: L.icon({
-                    iconUrl: 'path_to_your_icon.png',
-                    iconSize: [38, 95],
-                    iconAnchor: [22, 94],
-                    popupAnchor: [-3, -76],
+                isLoading: false,
+                customIcon: L.icon({
+                iconUrl: '/static/BB.png',  // icon .png file
+                iconSize: [53, 65],  // icon size in pixels
+                iconAnchor: [26.5, 3]  // icon anchor coordinate (from bottom left?)
                 }),
-                
+                zoomMode: true,
+                randomNames: [
+                    'Ocean_Opulence_Survey', 'Tidal_Tidbits_Collection', 'Seabed_Delights_Map',
+                    'Benthic_Base_Basis', 'Whimsy_Wavy_Data', 'Infinite_Seas_Quantified',
+                    'Tide_Tomfoolery_Tracking', 'Marine_Mirth_Measurements', 'Aqua_Antics_Archive',
+                    'Coral_Comedy_Compilation', 'DeepDive_Doodles_Database', 'Seabed_Satire_Statistics',
+                    'Water_Wisecracks_Warehouse', 'Benthic_Bellylaughs_Bank', 'Subsea_Smirk_Storage',
+                    'Ping2_Polling_Places', 'BlueBoat_Bloopers_Bundle', 'Wave_Wittiness_Warehouse',
+                    'Maritime_Mockery_Metrics', 'Sonar_Search_Statistics', 'Hydro_Hilarity_Holdings',
+                    'Nautical_Notes_Nexus', 'Sea_Smiles_Storage', 'Pelagic_Puns_Pool', 
+                    'Sonar_Surf_Summary', 'Hydro_Humor_Holdings', 'Nautical_Nonsense_Notes', 
+                    'Sea_Snickers_Statistics', 'Tidal_Titters_Trove', 'Marine_Musings_Metrics', 
+                    'Aqua_Amusement_Archive', 'Coral_Capers_Compilation', 'DeepDive_Doodles_Database', 
+                    'Seabed_Silliness_Storage', 'Water_Witticisms_Warehouse', 'Benthic_Banter_Bank', 
+                    'Subsea_Snippets_Storage', 'Ping2_Playfulness_Pool', 'BlueBoat_Bellylaughs_Bundle', 
+                    'Ocean_Oracles_Opulence', 'Sea_Snickers_Statistics','Maritime_Mirth_Measurements'
+                    ]
             }
         },
         methods: {
@@ -78,13 +96,20 @@
                         throw new Error(`HTTP error! Status: ${response.status}`);
                     }
                     const data = await response.text();
+                    this.status = 'Data logging started.'
                     this.status = data;
                 } catch (error) {
                     console.error('Error fetching data:', error);
                     this.status = 'Error: ' + error.message;
                 } 
-                this.map = L.map('map').setView([51.505, -0.09], 13);
-                this.heatmapLayer = L.heatLayer([], {radius: 25}).addTo(this.map);
+                this.map.setView([51.505, -0.09], 13);
+                L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+                maxZoom: 19,
+                attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
+                }).addTo(this.map);
+                this.heatmapPoints = [];
+                this.intervalId = setInterval(this.fetchData, 1000); // fetch data every second
+                console.log('Map:', this.map);
             },
 
             async stop() {
@@ -94,11 +119,12 @@
                         throw new Error(`HTTP error! Status: ${response.status}`);
                     }
                     const data = await response.text();
-                    this.status = data;
+                    this.status = 'Data logging stopped.'
                 } catch (error) {
                     console.error('Error fetching data:', error);
                     this.status = 'Error: ' + error.message;
                 }
+                clearInterval(this.intervalId);
             },
 
             async download() {
@@ -107,23 +133,78 @@
                     if (!response.ok) {
                         throw new Error(`HTTP error! Status: ${response.status}`);
                     }
-                    const data = await response.text();
-                    this.status = data;
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    // Generate a random name from the list
+                    const randomName = this.randomNames[Math.floor(Math.random() * this.randomNames.length)];
+                    // Get the current timestamp in MDY hh:mm:ss format
+                    const timestamp = new Date().toLocaleString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(',', '');
+                    // Construct the new file name
+                    const fileName = `${randomName}_finished_at_${timestamp}.csv`;
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.setAttribute('download', fileName);
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    this.status = `Data file downloaded: ${fileName}`;
                 } catch (error) {
                     console.error('Error fetching data:', error);
                     this.status = 'Error: ' + error.message;
                 }
             },
-            addDataPoint(lat, lon, depth) {
-                // Add a new data point to the heatmap
-                this.heatmapLayer.addLatLng([lat, lon, depth]);
+            async fetchData() {
+                try {
+                    const response = await axios.get('/data');
+                    this.status = JSON.stringify(response.data);
+                    this.updateMarker(response.data[8], response.data[9], response.data[7], response.data[10]);
+                    if (!this.firstCoordinateReceived) {
+                        this.firstCoordinateReceived = true;
+                        this.map.setView([response.data[8], response.data[9]], 17);
+                    }
+                } catch (error) {
+                    console.error('Error fetching data:', error);
+                    this.status = 'Error: ' + error.message;
+                }
+            },
+            updateMarker(lat, lon, depth, confidence) {
+                // Remove the old marker from the map
+                if (this.marker) {
+                    this.map.removeLayer(this.marker);
+                }
+                // Create a new marker with the custom icon at the specified coordinates
+                this.marker = L.marker([lat, lon], {icon: this.customIcon});
+                this.marker.addTo(this.map); // Add the new marker to the map
 
-                // Update the GPS icon location
-                L.marker([lat, lon], {icon: this.gpsIcon}).addTo(this.map);
+                // Adjust the zoom level and centering based on the value of zoomMode
+                // if (this.zoomMode) {
+                //     this.map.setView([lat, lon], 17);
+                // } else {
+                //     this.map.setView([lat, lon], this.map.getZoom());
+                // }
+
+                // Update the heatmap layer's data
+                if (confidence > 90){
+                    this.heatmapPoints.push([lat, lon, depth]);
+                    this.heatmapLayer.setLatLngs(this.heatmapPoints);
+                }
+            },
+            clearHeatmap() {
+                this.heatmapPoints = [];
+                this.heatmapLayer.setLatLngs(this.heatmapPoints);
+            },
+            onCenterMapButtonClick() {
+                this.firstCoordinateReceived = false;
             },
         },
         mounted() {
-            console.log('Mounted!')
+            this.map = L.map('map').setView([51.505, -0.09], 13);
+            L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
+            }).addTo(this.map);
+            this.heatmapLayer = L.heatLayer([], {radius: 25}).addTo(this.map); // Initialize the heatmap layer
+            console.log('Vue App Mounted! Have a safe voyage!')
         }
     })
 

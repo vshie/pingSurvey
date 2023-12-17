@@ -8,20 +8,20 @@ from datetime import datetime
 
 app = Flask(__name__, static_url_path="/static", static_folder="static")
 
-# Global variable to control the logging thread
+# Global variable to control the logging 
 logging_active = False
-distance_url = 'http://192.168.1.52:6040/mavlink/vehicles/1/components/194/messages/DISTANCE_SENSOR'
-gps_url = 'http://192.168.1.52:6040/mavlink/vehicles/1/components/1/messages/GLOBAL_POSITION_INT'
-log_file = 'sensor_data.csv'
+distance_url = 'http://192.168.1.59:6040/mavlink/vehicles/1/components/194/messages/DISTANCE_SENSOR'
+gps_url = 'http://192.168.1.59:6040/mavlink/vehicles/1/components/1/messages/GLOBAL_POSITION_INT'
+log_file = 'sensordata.csv'
 log_rate = 2
-
+data = []
+row_counter = 0
 # Define the feedback interval (in seconds)
 feedback_interval = 5
 
 # Initialize a counter for the number of rows added
-row_counter = 0
-data = []
-def fetch_data():
+def main():
+    global row_counter
     global data
     # Main loop for logging data
     while (logging_active == True):
@@ -37,7 +37,7 @@ def fetch_data():
                 gps_data = gps_response.json()['message']
 
                 # Define the column labels for the log file
-                column_labels = ['Unix Timestamp', 'Year', 'Month', 'Day', 'Hour', 'Minute', 'Second', 'Distance (cm)', 'Latitude', 'Longitude']
+                column_labels = ['Unix Timestamp', 'Year', 'Month', 'Day', 'Hour', 'Minute', 'Second', 'Distance (cm)', 'Latitude', 'Longitude', "Confidence"]
 
                 # Extract the values for each column
                 timestamp = int(time.time() * 1000)  # Convert current time to milliseconds
@@ -45,9 +45,10 @@ def fetch_data():
                 unix_timestamp = timestamp
                 year, month, day, hour, minute, second = dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second
                 distance = distance_data['current_distance']
+                confidence = distance_data['signal_quality']
                 latitude = gps_data['lat'] / 1e7
                 longitude = gps_data['lon'] / 1e7
-                column_values = [unix_timestamp, year, month, day, hour, minute, second, distance, latitude, longitude]
+                column_values = [unix_timestamp, year, month, day, hour, minute, second, distance, latitude, longitude, confidence]
                 data = column_values
                 # Create or append to the log file and write the data
                 with open(log_file, 'a', newline='') as csvfile:
@@ -91,7 +92,8 @@ def start_logging():
     global logging_active
     if not logging_active:
         logging_active = True
-        threading.Thread(target=fetch_data).start()# Start the logging script directly
+        thread = threading.Thread(target=main)
+        thread.start()
     return 'Started'
 
 @app.route('/stop')
@@ -102,7 +104,12 @@ def stop_logging():
 
 @app.route('/download')
 def download_file():
-    return send_file('sensor_data.csv', as_attachment=True)
+    return send_file('sensordata.csv', as_attachment=True, cache_timeout=0)
+
+@app.route('/data')
+def get_data():
+    global data
+    return jsonify(data)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000)
