@@ -54,8 +54,8 @@
                 isLoading: false,
                 customIcon: L.icon({
                 iconUrl: '/static/BB.png',  // icon .png file
-                iconSize: [53, 65],  // icon size in pixels
-                iconAnchor: [26.5, 3]  // icon anchor coordinate (from bottom left?)
+                iconSize: [42, 55],  // icon size in pixels
+                iconAnchor: [21, 36]  // icon anchor coordinate (from bottom left?)
                 }),
                 zoomMode: true,
                 randomNames: [
@@ -64,9 +64,9 @@
                     'Tide_Tomfoolery_Tracking', 'Marine_Mirth_Measurements', 'Aqua_Antics_Archive',
                     'Coral_Comedy_Compilation', 'DeepDive_Doodles_Database', 'Seabed_Satire_Statistics',
                     'Water_Wisecracks_Warehouse', 'Benthic_Bellylaughs_Bank', 'Subsea_Smirk_Storage',
-                    'Ping2_Polling_Places', 'BlueBoat_Bloopers_Bundle', 'Wave_Wittiness_Warehouse',
-                    'Maritime_Mockery_Metrics', 'Sonar_Search_Statistics', 'Hydro_Hilarity_Holdings',
-                    'Nautical_Notes_Nexus', 'Sea_Smiles_Storage', 'Pelagic_Puns_Pool', 
+                    'Ping2_Polling_Places', 'BlueBoat_Big_Bundle', 'Wave_Wittiness_Warehouse',
+                    'Maritime_Mockery_Metrics', 'Sonar_Search_Statistics', 'Hydro_Hilarity_History',
+                    'Nautical_Notes_Nexus', 'Sea_Smiles_Storage', 'Pelagic_Plain_Profiles', 
                     'Sonar_Surf_Summary', 'Hydro_Humor_Holdings', 'Nautical_Nonsense_Notes', 
                     'Sea_Snickers_Statistics', 'Tidal_Titters_Trove', 'Marine_Musings_Metrics', 
                     'Aqua_Amusement_Archive', 'Coral_Capers_Compilation', 'DeepDive_Doodles_Database', 
@@ -153,6 +153,7 @@
                     this.status = 'Error: ' + error.message;
                 }
             },
+
             async fetchData() {
                 try {
                     const response = await axios.get('/data');
@@ -167,26 +168,17 @@
                     this.status = 'Error: ' + error.message;
                 }
             },
+            
             updateMarker(lat, lon, depth, confidence) {
-                // Remove the old marker from the map
-                if (this.marker) {
+                if (this.marker) {    // Remove the old marker from the map
                     this.map.removeLayer(this.marker);
                 }
-                // Create a new marker with the custom icon at the specified coordinates
-                this.marker = L.marker([lat, lon], {icon: this.customIcon});
-                this.marker.addTo(this.map); // Add the new marker to the map
+                this.marker = L.marker([lat, lon], {icon: this.customIcon});                // Create a new marker with the custom icon at the specified coordinates
+                this.marker.addTo(this.map); // Update the map layer's data
 
-                // Adjust the zoom level and centering based on the value of zoomMode
-                // if (this.zoomMode) {
-                //     this.map.setView([lat, lon], 17);
-                // } else {
-                //     this.map.setView([lat, lon], this.map.getZoom());
-                // }
-
-                // Update the heatmap layer's data
                 if (confidence > 90){
                     this.heatmapPoints.push([lat, lon, depth]);
-                    this.heatmapLayer.setLatLngs(this.heatmapPoints);
+                    this.heatmapLayer.addLatLngs(this.heatmapPoints);
                 }
             },
             clearHeatmap() {
@@ -203,7 +195,7 @@
             maxZoom: 19,
             attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
             }).addTo(this.map);
-            this.heatmapLayer = L.heatLayer([], {radius: 25}).addTo(this.map); // Initialize the heatmap layer
+            this.heatmapLayer = L.heatLayer([], {radius: 12},{max: 10000},{500:'PaleTurquoise',1000: 'Aquamarine',2000: 'MediumTurquoise',3000: 'Blue', 4500: 'DarkBlue', 9000: 'MidnightBlue'}).addTo(this.map); // Initialize the heatmap layer
             console.log('Vue App Mounted! Have a safe voyage!')
         }
     })
