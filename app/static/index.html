@@ -18,8 +18,8 @@
                 <h1>BlueSurvey</h1>
                 <v-btn :disabled="isLoading" outlined rounded text @click="toggleRun"><v-icon>{{ icon }}</v-icon></v-btn>
                 <v-btn outlined rounded text @click="download">Download</v-btn>
-                <div id="map" style="height: 75vh;"></div>
-                <v-btn outlined rounded text @click="clearHeatmap">Clear Heatmap</v-btn>
+                <div id="map" style="width:100%; height: 75vh;"></div>
+                <v-btn outlined rounded text @click="clearHeatmap">Clear Map</v-btn>
                 <v-btn outlined rounded text @click="onCenterMapButtonClick">Center Map</v-btn>
                 <h4>Status Console</h4>
                 <div id="status-readout">{{ status }}</div>
@@ -33,7 +33,7 @@
 <script src="/static/js/axios.min.js"></script>
 <script src="/static/js/chart.js"></script>
 <script src="/static/js/leaflet.js"></script>
-<script src="/static/js/leaflet-heat.js"></script>
+<script src="/static/js/leaflet.rotatedMarker.js"></script>
 <script>
     Vue.config.devtools = true;
     new Vue({
@@ -50,12 +50,13 @@
                 icon: 'mdi-play',
                 run: false,
                 map: null,
-                heatmapLayer: null,
+                circleMarkers: [],
                 isLoading: false,
                 customIcon: L.icon({
                 iconUrl: '/static/BB.png',  // icon .png file
-                iconSize: [42, 55],  // icon size in pixels
-                iconAnchor: [21, 36]  // icon anchor coordinate (from bottom left?)
+                iconSize: [32, 45],  // icon size in pixels
+                iconAnchor: [12, 26],  // icon anchor coordinate (from bottom left?)
+                className: 'leaflet-rotated-marker'
                 }),
                 zoomMode: true,
                 randomNames: [
@@ -102,14 +103,15 @@
                     console.error('Error fetching data:', error);
                     this.status = 'Error: ' + error.message;
                 } 
-                this.map.setView([51.505, -0.09], 13);
+                this.map.setView([9.2,-133], 13); 
                 L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
                 maxZoom: 19,
                 attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
                 }).addTo(this.map);
-                this.heatmapPoints = [];
                 this.intervalId = setInterval(this.fetchData, 1000); // fetch data every second
+                L.control.scale({imperial: false}).addTo(map);
                 console.log('Map:', this.map);
+                
             },
 
             async stop() {
@@ -135,12 +137,9 @@
                     }
                     const blob = await response.blob();
                     const url = window.URL.createObjectURL(blob);
-                    // Generate a random name from the list
-                    const randomName = this.randomNames[Math.floor(Math.random() * this.randomNames.length)];
-                    // Get the current timestamp in MDY hh:mm:ss format
+                    const randomName = this.randomNames[Math.floor(Math.random() * this.randomNames.length)];   // Generate a random name from the list
                     const timestamp = new Date().toLocaleString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(',', '');
-                    // Construct the new file name
-                    const fileName = `${randomName}_finished_at_${timestamp}.csv`;
+                    const fileName = `${randomName}_finished_at_${timestamp}.csv`;   // Construct the new file name
                     const link = document.createElement('a');
                     link.href = url;
                     link.setAttribute('download', fileName);
@@ -158,44 +157,118 @@
                 try {
                     const response = await axios.get('/data');
                     this.status = JSON.stringify(response.data);
-                    this.updateMarker(response.data[8], response.data[9], response.data[7], response.data[10]);
+
+
+                    this.updateMarker(response.data[6], response.data[7], response.data[3], response.data[4], response.data[5]);
                     if (!this.firstCoordinateReceived) {
                         this.firstCoordinateReceived = true;
-                        this.map.setView([response.data[8], response.data[9]], 17);
+                        this.map.setView([response.data[6], response.data[7]], 18);
                     }
                 } catch (error) {
                     console.error('Error fetching data:', error);
                     this.status = 'Error: ' + error.message;
+                    console.log(response.data)
                 }
             },
             
-            updateMarker(lat, lon, depth, confidence) {
+            updateMarker(lat, lon, depth, confidence, yaw) {
                 if (this.marker) {    // Remove the old marker from the map
                     this.map.removeLayer(this.marker);
                 }
-                this.marker = L.marker([lat, lon], {icon: this.customIcon});                // Create a new marker with the custom icon at the specified coordinates
+                
+                this.marker = L.marker([lat, lon], {
+                    icon: this.customIcon, 
+                    rotationAngle: yaw, 
+                    rotationOrigin: 'center center'  // This line is necessary to rotate the marker from its center point
+                });
                 this.marker.addTo(this.map); // Update the map layer's data
-
-                if (confidence > 90){
-                    this.heatmapPoints.push([lat, lon, depth]);
-                    this.heatmapLayer.addLatLngs(this.heatmapPoints);
+                if (confidence > 90){   
+                    const radiusInMeters = (depth/100) * Math.tan(12.5 * Math.PI / 180); // conver depth to Meter, 25degree beam angle is 12.5 degree, divide by pi/180 for radian to degree
+                    const radius = radiusInMeters * this.map.getZoomScale(this.map.getZoom());
+                    const circleMarker = L.circle([lat, lon], {
+                    color: 'blue',
+                    fillColor: this.getColor(depth),
+                    fillOpacity: 0.5,
+                    weight: 0,
+                    radius: radius
+                    });
+                    circleMarker.addTo(this.map);
+                    this.circleMarkers.push(circleMarker);
                 }
             },
             clearHeatmap() {
-                this.heatmapPoints = [];
-                this.heatmapLayer.setLatLngs(this.heatmapPoints);
+                this.circleMarkers.forEach(circleMarker => {
+                circleMarker.remove();
+            });
+            this.circleMarkers = [];
             },
             onCenterMapButtonClick() {
                 this.firstCoordinateReceived = false;
             },
+            getColor(depth) {
+            const colorStops = [
+                { depth: 0, color: [209, 233, 255] }, 
+                { depth: 1000, color: [191, 2224,255 ] }, 
+                { depth: 2000, color: [181, 215, 247] }, 
+                { depth: 3000, color: [170, 207, 242] }, 
+                { depth: 4000, color: [149, 188, 230] }, 
+                { depth: 5000, color: [134, 179, 235] },
+                { depth: 6000, color: [98, 159, 217] },
+                { depth: 70000, color: [82, 143, 204] },
+                { depth: 80000, color: [66, 124, 179] },
+                { depth: 10000, color: [43, 102, 166] },  
+                { depth: 10000, color: [56, 91, 140] }  
+            ];
+            let color1, color2;// Find the two colors we need to interpolate between
+            for (let i = 0; i < colorStops.length - 1; i++) {
+                if (depth >= colorStops[i].depth && depth <= colorStops[i + 1].depth) {
+                    color1 = colorStops[i];
+                    color2 = colorStops[i + 1];
+                    break;
+                }
+            }
+            if (!color1) { // If depth is out of range, use the first or last color stop
+                return depth <= 0 ? `rgb(${colorStops[0].color})` : `rgb(${colorStops[colorStops.length - 1].color})`;
+            }
+            const t = (depth - color1.depth) / (color2.depth - color1.depth);// Interpolate between the two colors
+            const color = color1.color.map((start, i) => {
+                return Math.round(start + (color2.color[i] - start) * t);
+            });
+            return `rgb(${color})`;
+            },
+
+            async checkLoggingStatus() {
+                try {
+                    const response = await axios.get('/status');
+                    if (response.data.logging_active) {
+                        this.run = true;
+                        this.icon = 'mdi-stop';
+                        this.map.setView([9.2,-133], 13);
+                        L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+                        maxZoom: 21,
+                        attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
+                        }).addTo(this.map);
+                        this.intervalId = setInterval(this.fetchData, 200); // fetch data every second
+                        console.log('Map:', this.map);
+                    } else {
+                        this.run = false;
+                        this.icon = 'mdi-play';
+                    }
+                } catch (error) {
+                    console.error('Error fetching status:', error);
+                    this.run = false;
+                    this.icon = 'mdi-play';
+                }
+            },
         },
         mounted() {
-            this.map = L.map('map').setView([51.505, -0.09], 13);
+            this.checkLoggingStatus();
+            this.map = L.map('map').setView([9.2,-133], 13);
             L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
-            maxZoom: 19,
+            maxZoom: 21,
             attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
             }).addTo(this.map);
-            this.heatmapLayer = L.heatLayer([], {radius: 12},{max: 10000},{500:'PaleTurquoise',1000: 'Aquamarine',2000: 'MediumTurquoise',3000: 'Blue', 4500: 'DarkBlue', 9000: 'MidnightBlue'}).addTo(this.map); // Initialize the heatmap layer
+            L.control.scale({imperial: false}).addTo(map);
             console.log('Vue App Mounted! Have a safe voyage!')
         }
     })

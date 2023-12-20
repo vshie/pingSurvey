@@ -1,80 +1,65 @@
-from flask import Flask, render_template, send_file, jsonify
-import requests
-import csv
-import time
-import threading
+from flask import Flask, render_template, send_file, jsonify #used as back-end service for Vue2 WebApp
+import requests #used to communicate with Vue2 app
+import csv #used to work with output data file
+import time #used for getting current OS time
+import threading #used to run main app within a thread
+import math #used for yaw radian to degree calc
+from datetime import datetime #used for timestamps
 
-from datetime import datetime
+app = Flask(__name__, static_url_path="/static", static_folder="static") #setup flask app
 
-app = Flask(__name__, static_url_path="/static", static_folder="static")
-
-# Global variable to control the logging 
-logging_active = False
-distance_url = 'http://192.168.1.59:6040/mavlink/vehicles/1/components/194/messages/DISTANCE_SENSOR'
-gps_url = 'http://192.168.1.59:6040/mavlink/vehicles/1/components/1/messages/GLOBAL_POSITION_INT'
+logging_active = False# Global variable to control the logging 
+distance_url = 'http://10.144.19.16:6040/mavlink/vehicles/1/components/194/messages/DISTANCE_SENSOR' #10.144.19.16
+gps_url = 'http://10.144.19.16:6040/mavlink/vehicles/1/components/1/messages/GLOBAL_POSITION_INT'
+yaw_url= 'http://10.144.19.16/mavlink2rest/mavlink/vehicles/1/components/1/messages/ATTITUDE'
 log_file = 'sensordata.csv'
-log_rate = 2
+log_rate = 2 #Desired rate in Hz
 data = []
 row_counter = 0
-# Define the feedback interval (in seconds)
-feedback_interval = 5
-
-# Initialize a counter for the number of rows added
+feedback_interval = 5 # Define the feedback interval (in seconds)
 def main():
     global row_counter
     global data
-    # Main loop for logging data
-    while (logging_active == True):
-        try:
-            # Send GET requests to the REST APIs
+    while (logging_active == True): # Main loop for logging data
+        try: # Send GET requests to the REST APIs
             distance_response = requests.get(distance_url)
             gps_response = requests.get(gps_url)
-
-            # Check if the requests were successful
-            if distance_response.status_code == 200 and gps_response.status_code == 200:
-                # Extract the data from the responses
-                distance_data = distance_response.json()['message']
+            yaw_response = requests.get(yaw_url)
+            if distance_response.status_code == 200 and gps_response.status_code == 200 and yaw_response.status_code == 200: # Check if the requests were successful
+                distance_data = distance_response.json()['message'] # Extract the data from the responses
                 gps_data = gps_response.json()['message']
-
-                # Define the column labels for the log file
-                column_labels = ['Unix Timestamp', 'Year', 'Month', 'Day', 'Hour', 'Minute', 'Second', 'Distance (cm)', 'Latitude', 'Longitude', "Confidence (%)"]
-
-                # Extract the values for each column
+                yaw_data = yaw_response.json()['message']
+                column_labels = ['Unix Timestamp', 'Date', 'Time','Distance (cm)', 'Confidence (%)', 'Yaw (deg)','Latitude', 'Longitude']
                 timestamp = int(time.time() * 1000)  # Convert current time to milliseconds
                 dt = datetime.fromtimestamp(timestamp / 1000)  # Convert timestamp to datetime object 
                 unix_timestamp = timestamp
-                year, month, day, hour, minute, second = dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second
+                timenow = dt.strftime('%H:%M:%S')
+                date = dt.strftime('%m/%d/%y')
                 distance = distance_data['current_distance']
                 confidence = distance_data['signal_quality']
+                yawRad = yaw_data['yaw']
+                yawDeg = math.degrees(yawRad)
+                yaw = round(((yawDeg + 360) % 360),2)
                 latitude = gps_data['lat'] / 1e7
                 longitude = gps_data['lon'] / 1e7
-                column_values = [unix_timestamp, year, month, day, hour, minute, second, distance, latitude, longitude, confidence]
+                column_values = [unix_timestamp, date, timenow, distance, confidence, yaw, latitude, longitude]
                 data = column_values
-                # Create or append to the log file and write the data
-                with open(log_file, 'a', newline='') as csvfile:
+                with open(log_file, 'a', newline='') as csvfile: # Create or append to the log file and write the data
                     writer = csv.writer(csvfile)
-
-                    # Write the column labels as the header row (only for the first write)
-                    if csvfile.tell() == 0:
+                    if csvfile.tell() == 0: # Write the column labels as the header row (only for the first write)
                         writer.writerow(column_labels)
-
-                    # Write the data as a new row
-                    writer.writerow(column_values)
-
-                # Increment the row counter
-                row_counter += 1
+                    writer.writerow(column_values) # Write the data as a new row
+                row_counter += 1 # Increment the row counter
 
             else:
                 # Print an error message if any of the requests were unsuccessful
-                print(f"Error: Distance - {distance_response.status_code} - {distance_response.reason}")
-                print(f"Error: GPS - {gps_response.status_code} - {gps_response.reason}")
+                print(f"Error: Ping2 Data - {distance_response.status_code} - {distance_response.reason}")
+                print(f"Error: GPS Data - {gps_response.status_code} - {gps_response.reason}")
+                print(f"Error: Attitude Data - {yaw_response.status_code} - {yaw_response.reason}")
 
-            # Provide feedback every 5 seconds
             if row_counter % (log_rate * feedback_interval) == 0:
                 print(f"Rows added to CSV: {row_counter}")
                  
-
-            # Wait for the specified log rate
             time.sleep(1 / log_rate)
 
         except Exception as e:
@@ -110,6 +95,10 @@ def download_file():
 def get_data():
     global data
     return jsonify(data)
+
+@app.route('/status', methods=['GET'])
+def status():
+    return {"logging_active": logging_active}
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000)
