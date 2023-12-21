@@ -9,6 +9,6 @@ classifiers = [
 ]
 dependencies = [
     "requests",
-    "flask==1.1.2",
+    "flask",
 ]
 
