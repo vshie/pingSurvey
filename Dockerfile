@@ -7,7 +7,7 @@ FROM python:3.11-slim
 COPY app /app
 RUN python -m pip install /app --extra-index-url https://www.piwheels.org/simple
 
-EXPOSE 8000/tcp
+EXPOSE 5420/tcp
 
 LABEL version="0.0.1"
 
@@ -16,13 +16,13 @@ ARG IMAGE_NAME
 LABEL permissions='\
 {\
   "ExposedPorts": {\
-    "8000/tcp": {}\
+    "5420/tcp": {}\
   },\
   "HostConfig": {\
     "Binds":["/root/.config/blueos/extensions/$IMAGE_NAME:/root/.config"],\
     "ExtraHosts": ["host.docker.internal:host-gateway"],\
     "PortBindings": {\
-      "8000/tcp": [\
+      "5420/tcp": [\
         {\
           "HostPort": ""\
         }\
