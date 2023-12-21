@@ -42,7 +42,9 @@ def main():
                 yaw = round(((yawDeg + 360) % 360),2)
                 latitude = gps_data['lat'] / 1e7
                 longitude = gps_data['lon'] / 1e7
-                column_values = [unix_timestamp, date, timenow, distance, confidence, yaw, latitude, longitude]
+                column_values = [
+                    
+                ]
                 data = column_values
                 with open(log_file, 'a', newline='') as csvfile: # Create or append to the log file and write the data
                     writer = csv.writer(csvfile)
