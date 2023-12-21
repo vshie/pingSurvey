@@ -1,7 +1,7 @@
 [project]
 name = "simpleSurvey"
 version = "0.0.1"
-description = "BlueOS Simple ping survey"
+description = "BlueOS Simple ping ssurvey"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
