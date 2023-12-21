@@ -10,8 +10,8 @@ app = Flask(__name__, static_url_path="/static", static_folder="static") #setup 
 
 logging_active = False# Global variable to control the logging 
 distance_url = 'http://host.docker.internal/mavlink2rest/mavlink/vehicles/1/components/194/messages/DISTANCE_SENSOR' #10.144.19.16
-gps_url = 'http://host.docker.internal/mavlink2rest/mavlink/vehicles/1/components/1/messages/GLOBAL_POSITION_INT'
-yaw_url= 'http://host.docker.internal/mavlink2rest/mavlink/vehicles/1/components/1/messages/ATTITUDE'
+gps_url = 'http://192.168.2.2/mavlink2rest/mavlink/vehicles/1/components/1/messages/GLOBAL_POSITION_INT'
+yaw_url= 'http://0.0.0.0/mavlink2rest/mavlink/vehicles/1/components/1/messages/ATTITUDE'
 log_file = 'sensordata.csv'
 log_rate = 2 #Desired rate in Hz
 data = []
