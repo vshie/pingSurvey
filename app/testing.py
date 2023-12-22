@@ -27,5 +27,22 @@ def get_data():
  row_num += 1
  return jsonify(data)
 
+@app.route('/start')
+def start_logging():
+    global logging_active
+    if not logging_active:
+        logging_active = True
+    return 'Started'
+
+@app.route('/stop')
+def stop_logging():
+    global logging_active
+    logging_active = False
+    return 'Stopped'
+
+@app.route('/status', methods=['GET'])
+def status():
+    return {"logging_active": logging_active}
+
 if __name__ == '__main__':
  app.run(host='0.0.0.0', port=8000)

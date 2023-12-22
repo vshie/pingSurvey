@@ -2,27 +2,88 @@
 <html>
 <head>
     <title>Simple Ping2 Survey Extension</title>
+    <style>
+        
+        #logo-right, #logo-left {
+        width: 100px;
+        height: 100px;
+        position: absolute;
+        z-index: 1000;
+        }
+        #logo-right {
+        top: 10px;
+        right: 10px;
+        }
+        #logo-left {
+        top: 10px;
+        left: 10px;
+        }
+        .rotating-logo {
+            position: absolute;
+            width: 100px;
+            height: 100px;
+            transition: transform 0.5s ease-in-out;
+            transform-origin: center;
+            transform: rotate(0deg);
+        }
+        #app {
+            margin-top: 60px; /* Adjust based on logo size and desired spacing */
+        }
+                .confidence-high {
+            background-color: green;
+            color: white;
+            text-align: center;
+        }
 
+        .confidence-medium {
+            background-color: yellow;
+            color: black;
+            text-align: center;
+        }
+
+        .confidence-low {
+            background-color: red;
+            color: white;
+            text-align: center;
+        }
+    </style>
     <link href="/static/css/materialdesignicons.min.css" rel="stylesheet">
     <link href="/static/css/vuetify.min.css" rel="stylesheet">
     <link href="/static/css/style.css" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/leaflet.css" />
-
+    
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, minimal-ui">
 </head>
 <body>
+ 
 <div id="app">
     <v-app>
         <v-main>
             <v-container>
-                <h1>BlueSurvey</h1>
+                <h1>Simple Ping2 Survey Extension</h1>
                 <v-btn :disabled="isLoading" outlined rounded text @click="toggleRun"><v-icon>{{ icon }}</v-icon></v-btn>
                 <v-btn outlined rounded text @click="download">Download</v-btn>
-                <div id="map" style="width:100%; height: 75vh;"></div>
+                <rotating-logo id="logo-left" src="/static/BRlogo.png" :should-rotate="receivingData" class="rotating-logo"></rotating-logo>
+                <rotating-logo id="logo-right" src="/static/BRlogo.png" :should-rotate="receivingData" class="rotating-logo"></rotating-logo>              
+                <div id="map" style="width:100%; height: 70vh;"></div>
                 <v-btn outlined rounded text @click="clearHeatmap">Clear Map</v-btn>
                 <v-btn outlined rounded text @click="onCenterMapButtonClick">Center Map</v-btn>
-                <h4>Status Console</h4>
-                <div id="status-readout">{{ status }}</div>
+                <div class="text-center">
+                    <h4>Status Console</h4>
+                </div>
+                <!-- <div id="status-readout">{{ status }}</div> -->
+                <v-data-table
+                    :headers="tableHeaders"
+                    :items="tableItems"
+                    :hide-default-footer="true"
+                    class="elevation-1"
+                >
+                <template v-slot:item.confidence="{ item }">
+                    <td :class="getConfidenceClass(item.confidence)">
+                        {{ item.confidence }}
+                    </td>
+                </template>
+                </v-data-table>
             </v-container>
         </v-main>
     </v-app>
@@ -34,6 +95,34 @@
 <script src="/static/js/chart.js"></script>
 <script src="/static/js/leaflet.js"></script>
 <script src="/static/js/leaflet.rotatedMarker.js"></script>
+<script>
+Vue.component('rotating-logo', {
+  template: '<img :src="src" :style="styleObject" alt="Logo">',
+  props: ['src', 'shouldRotate'],
+  data: function () {
+    return {
+      rotationDegree: 0,
+      styleObject: {
+        position: 'absolute',
+        transition: 'transform 0.5s',
+        transformOrigin: 'center'
+      }
+    };
+  },
+  watch: {
+  shouldRotate: function (newVal, oldVal) {
+    if(newVal) {
+      this.rotationDegree = (this.rotationDegree + 45) % 360;
+    } else {
+      // Optional: reset rotation when data stops being received
+      // this.rotationDegree = 0;
+    }
+    console.log(this.rotationDegree)
+    this.styleObject.transform = `rotate(${this.rotationDegree}deg)`;
+  }
+},
+});
+</script>
 <script>
     Vue.config.devtools = true;
     new Vue({
@@ -52,6 +141,8 @@
                 map: null,
                 circleMarkers: [],
                 isLoading: false,
+                receivingData: false,
+                logoRotation: 0,
                 customIcon: L.icon({
                 iconUrl: '/static/BB.png',  // icon .png file
                 iconSize: [32, 45],  // icon size in pixels
@@ -74,7 +165,16 @@
                     'Seabed_Silliness_Storage', 'Water_Witticisms_Warehouse', 'Benthic_Banter_Bank', 
                     'Subsea_Snippets_Storage', 'Ping2_Playfulness_Pool', 'BlueBoat_Bellylaughs_Bundle', 
                     'Ocean_Oracles_Opulence', 'Sea_Snickers_Statistics','Maritime_Mirth_Measurements'
-                    ]
+                    ],
+                tableHeaders: [
+                    { text: 'Latitude', value: 'latitude', align: 'center' },
+                    { text: 'Longitude', value: 'longitude', align: 'center' },
+                    { text: 'Depth (m)', value: 'depth', align: 'center' },
+                    { text: 'Beam Coverage Diameter (m)', value: 'beamCoverageDiameter', align: 'center' },
+                    { text: 'Confidence (%)', value: 'confidence', align: 'center' },
+                    { text: 'Yaw (deg)', value: 'yaw', align: 'center' }
+                ],
+                tableItems: [],
             }
         },
         methods: {
@@ -98,6 +198,7 @@
                     }
                     const data = await response.text();
                     this.status = 'Data logging started.'
+                    this.receivingData = true;
                     this.status = data;
                 } catch (error) {
                     console.error('Error fetching data:', error);
@@ -122,6 +223,7 @@
                     }
                     const data = await response.text();
                     this.status = 'Data logging stopped.'
+                    this.receivingData = false;
                 } catch (error) {
                     console.error('Error fetching data:', error);
                     this.status = 'Error: ' + error.message;
@@ -157,7 +259,20 @@
                 try {
                     const response = await axios.get('/data');
                     this.status = JSON.stringify(response.data);
+                    
+                    let angleRadians = (12.5 * Math.PI) / 180; // Convert angle from degrees to radians
+                    let beamCoverageDiameter = ((2 * Math.atan(angleRadians) * response.data[3])/100).toFixed(2);
+                    
 
+                    this.tableItems = [{
+                        latitude: response.data[6],
+                        longitude: response.data[7],
+                        depth: response.data[3]/ 100,  // Convert cm to meters
+                        beamCoverageDiameter: beamCoverageDiameter,  // Calculated Beam Coverage Diameter
+                        confidence: response.data[4],
+                        yaw: response.data[5]
+                        
+                    }];
 
                     this.updateMarker(response.data[6], response.data[7], response.data[3], response.data[4], response.data[5]);
                     if (!this.firstCoordinateReceived) {
@@ -181,6 +296,7 @@
                     rotationAngle: yaw, 
                     rotationOrigin: 'center center'  // This line is necessary to rotate the marker from its center point
                 });
+                this.receivingData = !this.receivingData; // data received so rotate logos
                 this.marker.addTo(this.map); // Update the map layer's data
                 if (confidence > 90){   
                     const radiusInMeters = (depth/100) * Math.tan(12.5 * Math.PI / 180); // conver depth to Meter, 25degree beam angle is 12.5 degree, divide by pi/180 for radian to degree
@@ -236,7 +352,15 @@
             });
             return `rgb(${color})`;
             },
-
+            getConfidenceClass(confidence) {
+                if (confidence > 95) {
+                    return 'confidence-high';
+                } else if (confidence > 80) {
+                    return 'confidence-medium';
+                } else {
+                    return 'confidence-low';
+                }
+            },
             async checkLoggingStatus() {
                 try {
                     const response = await axios.get('/status');
@@ -261,6 +385,7 @@
                 }
             },
         },
+        
         mounted() {
             this.checkLoggingStatus();
             this.map = L.map('map').setView([9.2,-133], 13);
