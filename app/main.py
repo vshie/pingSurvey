@@ -11,7 +11,7 @@ app = Flask(__name__, static_url_path="/static", static_folder="static") #setup 
 logging_active = False# Global variable to control the logging 
 distance_url = 'http://host.docker.internal/mavlink2rest/mavlink/vehicles/1/components/194/messages/DISTANCE_SENSOR' #10.144.19.16
 gps_url = 'http://192.168.2.2/mavlink2rest/mavlink/vehicles/1/components/1/messages/GLOBAL_POSITION_INT'
-yaw_url= 'http://0.0.0.0/mavlink2rest/mavlink/vehicles/1/components/1/messages/ATTITUDE'
+yaw_url= 'http:///mavlink2rest/mavlink/vehicles/1/components/1/messages/ATTITUDE'
 log_file = 'sensordata.csv'
 log_rate = 2 #Desired rate in Hz
 data = []
@@ -42,9 +42,7 @@ def main():
                 yaw = round(((yawDeg + 360) % 360),2)
                 latitude = gps_data['lat'] / 1e7
                 longitude = gps_data['lon'] / 1e7
-                column_values = [
-                    
-                ]
+                column_values = [unix_timestamp, date, timenow, distance, confidence, yaw, latitude, longitude]
                 data = column_values
                 with open(log_file, 'a', newline='') as csvfile: # Create or append to the log file and write the data
                     writer = csv.writer(csvfile)
