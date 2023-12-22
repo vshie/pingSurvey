@@ -8,11 +8,11 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "requests",
+    "Requests==2.31.0",
     "jinja2==2.11.3",
     "flask==1.1.2",
     "markupsafe==2.0.1",
     "itsdangerous==2.0.1",
-    "werkzeug = 2.0.3"
+    "werkzeug == 2.0.3"
 ]
 
