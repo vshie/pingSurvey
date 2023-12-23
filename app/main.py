@@ -5,7 +5,7 @@ import time #used for getting current OS time
 import threading #used to run main app within a thread
 import math #used for yaw radian to degree calc
 from datetime import datetime #used for timestamps
-
+print("hello we are in the script world")
 app = Flask(__name__, static_url_path="/static", static_folder="static") #setup flask app
 
 logging_active = False# Global variable to control the logging 
