@@ -51,7 +51,7 @@ def main():
                     writer = csv.writer(csvfile)
                     if csvfile.tell() == 0: # Write the column labels as the header row (only for the first write)
                         writer.writerow(column_labels)
-                    writer.writerow(column_values) # Write the data as a new row
+                    writer.writerow(data) # Write the data as a new row
                 row_counter += 1 # Increment the row counter
 
             else:
