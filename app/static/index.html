@@ -3,7 +3,7 @@
 <head>
     <title>Simple Ping2 Survey Extension</title>
     <style>
-        
+
         #logo-right, #logo-left {
         width: 100px;
         height: 100px;
@@ -118,7 +118,7 @@ Vue.component('rotating-logo', {
       // this.rotationDegree = 0;
     }
     console.log(this.rotationDegree)
-    this.styleObject.transform = `rotate(${this.rotationDegree}deg)`;
+    Vue.set(this.styleObject, "transform", `rotate(${this.rotationDegree}deg)`);
   }
 },
 });
