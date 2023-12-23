@@ -52,7 +52,7 @@ def main():
                     if csvfile.tell() == 0: # Write the column labels as the header row (only for the first write)
                         writer.writerow(column_labels)
                     writer.writerow(data) # Write the data as a new row
-                row_counter += 1 # Increment the row counter
+                    row_counter += 1 # Increment the row counter
 
             else:
                 # Print an error message if any of the requests were unsuccessful
@@ -89,6 +89,16 @@ def stop_logging():
     global logging_active
     logging_active = False
     return 'Stopped'
+
+@app.routet('/register_service')
+def servicenames():
+    '''
+    {"name": "Simple Ping Survey ",
+    "description": "A survey.",
+    "icon": "mdi-gamepad-square",
+    "company": "Blue Robotics",
+    "version": "0.0.0"}
+    '''
 
 @app.route('/download')
 def download_file():
