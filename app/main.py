@@ -92,13 +92,14 @@ def stop_logging():
 
 @app.route('/register_service')
 def servicenames():
-    '''
+    return '''
     {"name": "Simple Ping Survey ",
     "description": "A survey.",
     "icon": "mdi-gamepad-square",
     "company": "Blue Robotics",
     "version": "0.0.0"}
     '''
+    
 
 @app.route('/download')
 def download_file():
