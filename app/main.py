@@ -90,7 +90,7 @@ def stop_logging():
     logging_active = False
     return 'Stopped'
 
-@app.routet('/register_service')
+@app.route('/register_service')
 def servicenames():
     '''
     {"name": "Simple Ping Survey ",
