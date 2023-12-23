@@ -97,7 +97,9 @@ def servicenames():
     "description": "A survey.",
     "icon": "mdi-gamepad-square",
     "company": "Blue Robotics",
-    "version": "0.0.0"}
+    "version": "0.0.1",
+    "webpage": "https://github.com/bluerobotics/BlueOS-docker",
+    "api": "https://github.com/bluerobotics/BlueOS-docker"}
     '''
     
 
