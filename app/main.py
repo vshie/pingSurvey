@@ -93,9 +93,11 @@ def stop_logging():
 @app.route('/register_service')
 def servicenames():
     return '''
-    {"name": "Simple Ping Survey ",
-    "description": "A survey.",
-    "icon": "mdi-gamepad-square",
+    {"name": "Simple Ping2 Survey ",
+    "description": "This extension makes it easy to record data from the ping2 sonar onbaord the vehicle, 
+    keeping a poor communications link from interfering with the quality of collected survey data. When connected, 
+    the extension displays a data preview that is intended to aide in survey grid spacing determination. Happy motoring!",
+    "icon": "mdiMapCheck",
     "company": "Blue Robotics",
     "version": "0.0.1",
     "webpage": "https://github.com/bluerobotics/BlueOS-docker",
