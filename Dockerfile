@@ -56,4 +56,4 @@ LABEL links='{\
     }'
 LABEL requirements="core >= 1.1"
 
-ENTRYPOINT python /app/main.py 
+ENTRYPOINT ["python", "-u", "/app/main.py"]
