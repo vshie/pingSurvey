@@ -12,7 +12,7 @@ logging_active = False# Global variable to control the logging
 distance_url = 'http://host.docker.internal/mavlink2rest/mavlink/vehicles/1/components/194/messages/DISTANCE_SENSOR' #10.144.19.16
 gps_url = 'http://host.docker.internal/mavlink2rest/mavlink/vehicles/1/components/1/messages/GLOBAL_POSITION_INT'
 yaw_url= 'http://host.docker.internal/mavlink2rest/mavlink/vehicles/1/components/1/messages/ATTITUDE'
-log_file = 'sensordata.csv'
+log_file = '/app/sensordata.csv'
 log_rate = 2 #Desired rate in Hz
 data = []
 row_counter = 0
@@ -24,7 +24,6 @@ def main():
     while (logging_active == True): # Main loop for logging data
         print("in while")
         #try: # Send GET requests to the REST APIs
-        print("in try")
         distance_response = requests.get(distance_url)
         gps_response = requests.get(gps_url)
         yaw_response = requests.get(yaw_url)
