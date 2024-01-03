@@ -22,13 +22,10 @@ def main():
     global data
     print("main started")
     while (logging_active == True): # Main loop for logging data
-        print("in while")
-        #try: # Send GET requests to the REST APIs
         distance_response = requests.get(distance_url)
         gps_response = requests.get(gps_url)
         yaw_response = requests.get(yaw_url)
         if distance_response.status_code == 200 and gps_response.status_code == 200 and yaw_response.status_code == 200: # Check if the requests were successful
-            print("data good")
             distance_data = distance_response.json()['message'] # Extract the data from the responses
             gps_data = gps_response.json()['message']
             yaw_data = yaw_response.json()['message']
