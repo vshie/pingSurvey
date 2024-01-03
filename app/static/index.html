@@ -29,7 +29,7 @@
 
         
         #app {
-            margin-top: 60px; /* Adjust based on logo size and desired spacing */
+            margin-top: 60px; 
         }
                 .confidence-high {
             background-color: green;
@@ -118,11 +118,7 @@ Vue.component('rotating-logo', {
   shouldRotate: function (newVal, oldVal) {
     if(newVal) {
       this.rotationDegree = (this.rotationDegree + 45) % 360;
-    } else {
-      // Optional: reset rotation when data stops being received
-      // this.rotationDegree = 0;
-    }
-    console.log(this.rotationDegree)
+    } 
     Vue.set(this.styleObject, "transform", `rotate(${this.rotationDegree}deg)`);
   }
 },
@@ -144,10 +140,10 @@ Vue.component('rotating-logo', {
                 icon: 'mdi-play',
                 run: false,
                 map: null,
-                circleMarkers: [],
+                circleMarkers: [], //used to hold array of depth locations
                 isLoading: false,
-                receivingData: false,
-                logoRotation: 0,
+                receivingData: false, //if true logging process is running
+                logoRotation: 0, //we increment this when dat is received for visual feedback
                 customIcon: L.icon({
                 iconUrl: '/static/BB.png',  // icon .png file
                 iconSize: [32, 45],  // icon size in pixels
@@ -184,10 +180,8 @@ Vue.component('rotating-logo', {
         },
         methods: {
             async toggleRun() {
-                // Toggle the icon between play and stop
-                this.icon = this.icon === 'mdi-play' ? 'mdi-stop' : 'mdi-play';
+                this.icon = this.icon === 'mdi-play' ? 'mdi-stop' : 'mdi-play';// Toggle the icon between play and stop
                 this.run = !this.run;
-
                 if (this.run) {
                     await this.start();
                 } else {
@@ -209,15 +203,14 @@ Vue.component('rotating-logo', {
                     console.error('Error fetching data:', error);
                     this.status = 'Error: ' + error.message;
                 } 
-                this.map.setView([9.2,-133], 13); 
+                this.map.setView([9.2,-133], 10); //set to middle of South Pacific, randomly. Will center vehicle with first data received
                 L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
                 maxZoom: 19,
                 attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
-                }).addTo(this.map);
-                this.intervalId = setInterval(this.fetchData, 1000); // fetch data every second
+                }).addTo(this.map); //extension will not load map backgrounds if internet not available to computer accessing webpage
+                this.intervalId = setInterval(this.fetchData, 1000); // fetch data every second (log is 2hz default)
                 L.control.scale({imperial: false}).addTo(map);
                 console.log('Map:', this.map);
-                
             },
 
             async stop() {
@@ -328,17 +321,28 @@ Vue.component('rotating-logo', {
             },
             getColor(depth) {
             const colorStops = [
-                { depth: 0, color: [209, 233, 255] }, 
-                { depth: 1000, color: [191, 2224,255 ] }, 
-                { depth: 2000, color: [181, 215, 247] }, 
-                { depth: 3000, color: [170, 207, 242] }, 
-                { depth: 4000, color: [149, 188, 230] }, 
-                { depth: 5000, color: [134, 179, 235] },
-                { depth: 6000, color: [98, 159, 217] },
-                { depth: 7000, color: [82, 143, 204] },
-                { depth: 8000, color: [66, 124, 179] },
-                { depth: 9000, color: [43, 102, 166] },  
-                { depth: 10000, color: [56, 91, 140] }  
+            {depth: 0, color: [209, 233, 255]},
+            {depth: 1000, color: [193, 218, 243]},
+            {depth: 2000, color: [178, 204, 232]},
+            {depth: 3000, color: [163, 190, 220]},
+            {depth: 4000, color: [147, 176, 209]},
+            {depth: 5000, color: [132, 162, 197]},
+            {depth: 6000, color: [117, 147, 186]},
+            {depth: 7000, color: [101, 133, 174]},
+            {depth: 8000, color: [86, 119, 163]},
+            {depth: 9000, color: [71, 105, 151]},
+            {depth: 10000, color: [56, 91, 140]}  
+/*             {depth: 0, color: [255, 255, 255]},
+                {depth: 1000, color: [255, 165, 0]},
+                {depth: 2000, color: [255, 0, 0]},
+                {depth: 3000, color: [255, 255, 0]},
+                {depth: 4000, color: [0, 128, 0]},
+                {depth: 5000, color: [0, 128, 128]},
+                {depth: 6000, color: [0, 0, 255]},
+                {depth: 7000, color: [0, 0, 139]},
+                {depth: 8000, color: [128, 0, 128]},
+                {depth: 9000, color: [48, 25, 52]},
+                {depth: 10000, color: [48, 25, 52]}   */
             ];
             let color1, color2;// Find the two colors we need to interpolate between
             for (let i = 0; i < colorStops.length - 1; i++) {
@@ -371,35 +375,35 @@ Vue.component('rotating-logo', {
                     const response = await axios.get('/status');
                     if (response.data.logging_active) {
                         this.run = true;
-                        this.icon = 'mdi-stop';
-                        this.map.setView([9.2,-133], 13);
+                        this.icon = 'mdi-play';
+                        this.map.setView([9.2,-133], 10);
                         L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
                         maxZoom: 21,
                         attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
                         }).addTo(this.map);
-                        this.intervalId = setInterval(this.fetchData, 500); // fetch data every second
+                        this.intervalId = setInterval(this.fetchData, 1000); // fetch data every second
                         console.log('Map:', this.map);
                     } else {
                         this.run = false;
-                        this.icon = 'mdi-play';
+                        this.icon = 'mdi-stop';
                     }
                 } catch (error) {
                     console.error('Error fetching status:', error);
                     this.run = false;
-                    this.icon = 'mdi-play';
+                    this.icon = 'mdi-stop';
                 }
             },
         },
         
         mounted() {
-            this.checkLoggingStatus();
-            this.map = L.map('map').setView([9.2,-133], 13);
+            this.map = L.map('map').setView([9.2,-133], 10);
             L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
             maxZoom: 21,
             attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
             }).addTo(this.map);
             L.control.scale({imperial: false}).addTo(map);
             console.log('Vue App Mounted! Have a safe voyage!')
+            this.checkLoggingStatus();
         }
     })
 
