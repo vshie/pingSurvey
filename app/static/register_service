@@ -1,9 +1,9 @@
 {
     "name":"pingSurvey",
     "description":"Simple Survey Extension",
-    "icon":"mdi-clock",
+    "icon":"map-check-outline",
     "company":"Blue Robotics",
-    "version":"0.0.1",
-    "webpage":"https://example.com",
+    "version":"0.5",
+    "webpage":"https://github.com/vshie/pingSurvey",
     "api":""
 }

@@ -26,13 +26,7 @@
             transform-origin: center;
             transform: rotate(0deg);
         }
-        body {
-        background-image: url('/static/backgroundBB.jpg');
-        background-repeat: no-repeat;
-        background-attachment: fixed;
-        background-size: '100% 100%'; 
-        background-position: center; 
-        }
+
         
         #app {
             margin-top: 60px; /* Adjust based on logo size and desired spacing */
@@ -54,6 +48,9 @@
             color: white;
             text-align: center;
         }
+        .center-text {
+             text-align: center;
+        }
     </style>
     <link href="/static/css/materialdesignicons.min.css" rel="stylesheet">
     <link href="/static/css/vuetify.min.css" rel="stylesheet">
@@ -63,17 +60,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, minimal-ui">
 </head>
 <body>
- 
+
 <div id="app">
     <v-app>
-        <v-main>
+        <v-mains>
             <v-container>
-                <h1>Simple Ping2 Survey Extension</h1>
+                <h1 class="center-text">Simple Ping2 Survey Extension </h1>
                 <v-btn :disabled="isLoading" outlined rounded text @click="toggleRun"><v-icon>{{ icon }}</v-icon></v-btn>
                 <v-btn outlined rounded text @click="download">Download</v-btn>
                 <rotating-logo id="logo-left" src="/static/BRlogo.png" :should-rotate="receivingData" class="rotating-logo"></rotating-logo>
                 <rotating-logo id="logo-right" src="/static/BRlogo.png" :should-rotate="receivingData" class="rotating-logo"></rotating-logo>              
-                <div id="map" style="width:100%; height: 70vh;"></div>
+                <div id="map" style="width:100%; height: 65vh;"> </div>
                 <v-btn outlined rounded text @click="clearHeatmap">Clear Map</v-btn>
                 <v-btn outlined rounded text @click="onCenterMapButtonClick">Center Map</v-btn>
                 <div class="text-center">
