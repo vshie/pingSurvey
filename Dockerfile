@@ -44,7 +44,7 @@ ARG MAINTAINER
 ARG MAINTAINER_EMAIL
 LABEL company='{\
         "about": "",\
-        "name": ""Blue Robotics",\
+        "name": "Blue Robotics",\
         "email": "support@bluerobotics.com"\
     }'
 LABEL type="example"
