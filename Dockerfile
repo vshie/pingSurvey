@@ -50,9 +50,9 @@ LABEL company='{\
 LABEL type="example"
 ARG REPO
 ARG OWNER
-LABEL readme='https://raw.githubusercontent.com/$OWNER/$REPO/{tag}/README.md'
+LABEL readme='https://raw.githubusercontent.com/vshie/pingSurvey/{tag}/README.md'
 LABEL links='{\
-        "source": "https://github.com/$OWNER/$REPO"\
+        "source": "https://github.com/vshie/pingSurvey"\
     }'
 LABEL requirements="core >= 1.1"
 
