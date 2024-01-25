@@ -19,7 +19,7 @@ LABEL permissions='\
     "5420/tcp": {}\
   },\
   "HostConfig": {\
-    "Binds":["/root/.config/blueos/extensions/$IMAGE_NAME:/root/.config"],\
+    “Binds”:[“/usr/blueos/extensions/ping-survey:/app/logs”],\
     "ExtraHosts": ["host.docker.internal:host-gateway"],\
     "PortBindings": {\
       "5420/tcp": [\
