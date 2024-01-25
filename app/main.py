@@ -101,7 +101,7 @@ def servicenames():
 
 @app.route('/download')
 def download_file():
-    return send_file('sensordata.csv', as_attachment=True, cache_timeout=0)
+    return send_file(log_file, as_attachment=True, cache_timeout=0)
 
 @app.route('/data')
 def get_data():
