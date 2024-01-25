@@ -47,7 +47,7 @@ LABEL company='{\
         "name": "Blue Robotics",\
         "email": "support@bluerobotics.com"\
     }'
-LABEL type="example"
+LABEL type="tool"
 ARG REPO
 ARG OWNER
 LABEL readme='https://raw.githubusercontent.com/vshie/pingSurvey/{tag}/README.md'
