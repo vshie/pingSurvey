@@ -9,7 +9,7 @@ RUN python -m pip install /app --extra-index-url https://www.piwheels.org/simple
 
 EXPOSE 5420/tcp
 
-LABEL version="0.0.1"
+LABEL version="1.0.1"
 
 ARG IMAGE_NAME
 
@@ -19,7 +19,7 @@ LABEL permissions='\
     "5420/tcp": {}\
   },\
   "HostConfig": {\
-    "Binds":["/root/.config/blueos/extensions/$IMAGE_NAME:/root/.config"],\
+    "Binds":["/usr/blueos/extensions/ping-survey:/app"],\
     "ExtraHosts": ["host.docker.internal:host-gateway"],\
     "PortBindings": {\
       "5420/tcp": [\
