@@ -29,7 +29,7 @@ def main():
             distance_data = distance_response.json()['message'] # Extract the data from the responses
             gps_data = gps_response.json()['message']
             yaw_data = yaw_response.json()['message']
-            column_labels = ['Unix Timestamp', 'Date', 'Time','Distance (cm)', 'Confidence (%)', 'Yaw (deg)','Latitude', 'Longitude']
+            column_labels = ['Unix Timestamp', 'Date', 'Time','Depth (cm)', 'Confidence (%)', 'Vessel heading (deg)','Latitude', 'Longitude']
             timestamp = int(time.time() * 1000)  # Convert current time to milliseconds
             dt = datetime.fromtimestamp(timestamp / 1000)  # Convert timestamp to datetime object 
             unix_timestamp = timestamp
