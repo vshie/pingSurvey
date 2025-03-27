@@ -5,30 +5,81 @@ import time #used for getting current OS time
 import threading #used to run main app within a thread
 import math #used for yaw radian to degree calc
 from datetime import datetime #used for timestamps
+import json #used for JSON decoding
 print("hello we are in the script world")
 app = Flask(__name__, static_url_path="/static", static_folder="static") #setup flask app
 
 logging_active = False# Global variable to control the logging 
-distance_url = 'http://host.docker.internal/mavlink2rest/mavlink/vehicles/1/components/194/messages/DISTANCE_SENSOR' #10.144.19.16
-gps_url = 'http://host.docker.internal/mavlink2rest/mavlink/vehicles/1/components/1/messages/GLOBAL_POSITION_INT'
-yaw_url= 'http://host.docker.internal/mavlink2rest/mavlink/vehicles/1/components/1/messages/ATTITUDE'
+base_url = 'http://host.docker.internal/mavlink2rest/mavlink'
 log_file = '/app/logs/sensordata.csv'
 log_rate = 2 #Desired rate in Hz
 data = []
 row_counter = 0
 feedback_interval = 5 # Define the feedback interval (in seconds)
+
+def get_system_id():
+    """Detect the correct system ID by checking available vehicles and their autopilot types."""
+    try:
+        response = requests.get(f"{base_url}/vehicles")
+        if response.status_code == 200:
+            vehicles = response.json()
+            if vehicles and len(vehicles) > 0:
+                # Get vehicle info for each ID
+                for vehicle_id in vehicles:
+                    vehicle_info = requests.get(f"{base_url}/vehicles/{vehicle_id}/info")
+                    if vehicle_info.status_code == 200:
+                        info = vehicle_info.json()
+                        # Check if this is a valid autopilot
+                        autopilot_type = info.get("autopilot", {}).get("type")
+                        valid_autopilots = [
+                            "MAV_AUTOPILOT_GENERIC", 
+                            "MAV_AUTOPILOT_ARDUPILOTMEGA",
+                            "MAV_AUTOPILOT_PX4"
+                        ]
+                        if autopilot_type in valid_autopilots:
+                            print(f"Found valid autopilot: {autopilot_type} with system ID: {vehicle_id}")
+                            return vehicle_id
+                print("Warning: No valid autopilot found, using default value of 1")
+                return 1
+        print("Warning: Could not detect system ID, using default value of 1")
+        return 1
+    except Exception as e:
+        print(f"Warning: Error detecting system ID: {e}, using default value of 1")
+        return 1
+
+def get_urls():
+    """Get the correct URLs based on the detected system ID."""
+    system_id = get_system_id()
+    return {
+        'distance': f"{base_url}/vehicles/{system_id}/components/194/messages/DISTANCE_SENSOR",
+        'gps': f"{base_url}/vehicles/{system_id}/components/1/messages/GLOBAL_POSITION_INT",
+        'yaw': f"{base_url}/vehicles/{system_id}/components/1/messages/ATTITUDE"
+    }
+
 def main():
     global row_counter
     global data
     print("main started")
+    
+    # Get the correct URLs based on system ID
+    urls = get_urls()
+    print(f"Using system ID: {get_system_id()}")
+    
     while (logging_active == True): # Main loop for logging data
-        distance_response = requests.get(distance_url)
-        gps_response = requests.get(gps_url)
-        yaw_response = requests.get(yaw_url)
+        distance_response = requests.get(urls['distance'])
+        gps_response = requests.get(urls['gps'])
+        yaw_response = requests.get(urls['yaw'])
         if distance_response.status_code == 200 and gps_response.status_code == 200 and yaw_response.status_code == 200: # Check if the requests were successful
-            distance_data = distance_response.json()['message'] # Extract the data from the responses
-            gps_data = gps_response.json()['message']
-            yaw_data = yaw_response.json()['message']
+            try:
+                distance_data = distance_response.json()['message'] # Extract the data from the responses
+                gps_data = gps_response.json()['message']
+                yaw_data = yaw_response.json()['message']
+            except json.JSONDecodeError as e:
+                print(f"Error decoding JSON response:")
+                print(f"Distance response: {distance_response.text}")
+                print(f"GPS response: {gps_response.text}")
+                print(f"Yaw response: {yaw_response.text}")
+                raise e
             column_labels = ['Unix Timestamp', 'Date', 'Time','Depth (cm)', 'Confidence (%)', 'Vessel heading (deg)','Latitude', 'Longitude']
             timestamp = int(time.time() * 1000)  # Convert current time to milliseconds
             dt = datetime.fromtimestamp(timestamp / 1000)  # Convert timestamp to datetime object 
