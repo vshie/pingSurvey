@@ -1,6 +1,6 @@
-# BlueOS Ping2 Survey Extension
+# BlueOS Ping Survey Extension
 
-A simple extension for BlueOS that enables time-synchronized collection of sonar data from the Ping2 sonar, alongside GPS data. This extension provides both a full interface and a compact widget view for monitoring and recording survey data.
+A simple extension for BlueOS that enables time-synchronized collection of sonar data from the Ping sonar, alongside GPS data. This extension provides both a full interface and a compact widget view for monitoring and recording survey data.
 
 ## Features
 
@@ -21,7 +21,7 @@ A simple extension for BlueOS that enables time-synchronized collection of sonar
 ## Usage
 
 ### Full Interface
-Access the full interface by navigating to the menu entry in BlueOS for Simple PingSurvey
+Access the full interface by navigating to the menu entry in BlueOS for Simple Ping Survey
 
 ### Cockpit Widget Integration
 To add the compact widget to your Cockpit interface:

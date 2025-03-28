@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Simple Ping2 Survey Extension</title>
+    <title>Simple Ping Survey Extension</title>
     <style>
 
         #logo-right, #logo-left {
@@ -65,7 +65,7 @@
     <v-app>
         <v-mains>
             <v-container>
-                <h1 class="center-text">Simple Ping2 Survey Extension </h1>
+                <h1 class="center-text">Simple Ping Survey Extension </h1>
                 <v-btn :disabled="isLoading" outlined rounded text @click="toggleRun"><v-icon>{{ icon }}</v-icon></v-btn>
                 <v-btn outlined rounded text @click="download">Download</v-btn>
                 <rotating-logo id="logo-left" src="/static/BRlogo.png" :should-rotate="receivingData" class="rotating-logo"></rotating-logo>

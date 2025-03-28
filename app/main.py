@@ -145,8 +145,8 @@ def stop_logging():
 @app.route('/register_service')
 def servicenames():
     return '''
-    {"name": "Simple Ping2 Survey ",
-    "description": "This extension makes it easy to record data from the ping2 sonar and gps onbaord the vehicle, keeping a poor communications link from interfering with the quality of collected survey data. When connected, the extension displays a data preview that is intended to aide in survey grid spacing determination while logging at 2Hz. Happy motoring!",
+    {"name": "Simple Ping Survey",
+    "description": "This extension makes it easy to record data from the Ping sonar and gps onboard the vehicle, keeping a poor communications link from interfering with the quality of collected survey data. When connected, the extension displays a data preview that is intended to aide in survey grid spacing determination while logging at 2Hz. Happy motoring!",
     "icon": "mdi-map-plus",
     "company": "Blue Robotics",
     "version": "0.5",
