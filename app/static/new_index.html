@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple Ping Survey Extension</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+            background-color: #121212;
+            color: white;
+            font-family: 'Roboto', Arial, sans-serif;
+        }
+        
+        /* Fix for white bar issue */
+        html, body {
+            height: 100%;
+            width: 100%;
+        }
+        
+        #app {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            width: 100%;
+        }
+        
+        .header {
+            background-color: #1E1E1E;
+            padding: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            z-index: 10;
+        }
+        
+        .title {
+            text-align: center;
+            flex-grow: 1;
+            margin: 0;
+            font-size: 1.5rem;
+        }
+        
+        .logo {
+            width: 40px;
+            height: 40px;
+            transition: transform 0.5s ease-in-out;
+        }
+        
+        .content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .map-container {
+            flex: 1;
+            position: relative;
+            min-height: 400px;
+        }
+        
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 8px;
+            padding: 12px;
+            background-color: #1E1E1E;
+        }
+        
+        .status-panel {
+            padding: 16px;
+            background-color: #1E1E1E;
+            margin-top: 1px;
+        }
+        
+        .confidence-high {
+            background-color: #4CAF50;
+            color: white;
+            text-align: center;
+        }
+
+        .confidence-medium {
+            background-color: #FFC107;
+            color: black;
+            text-align: center;
+        }
+
+        .confidence-low {
+            background-color: #F44336;
+            color: white;
+            text-align: center;
+        }
+        
+        /* Fix for Vuetify layout issues */
+        .v-application--wrap {
+            min-height: 100vh;
+        }
+    </style>
+    <link href="/static/css/materialdesignicons.min.css" rel="stylesheet">
+    <link href="/static/css/vuetify.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/leaflet.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, minimal-ui">
+</head>
+<body>
+    <div id="app">
+        <v-app>
+            <div class="header">
+                <img class="logo" :class="{ 'rotate': receivingData }" src="/static/BRlogo.png" alt="Logo">
+                <h1 class="title">Simple Ping Survey Extension</h1>
+                <img class="logo" :class="{ 'rotate': receivingData }" src="/static/BRlogo.png" alt="Logo">
+            </div>
+            
+            <div class="content">
+                <div class="map-container">
+                    <div id="map"></div>
+                </div>
+                
+                <div class="controls">
+                    <v-btn :disabled="isLoading" outlined rounded text @click="toggleRun">
+                        <v-icon>{{ icon }}</v-icon>
+                    </v-btn>
+                    <v-btn outlined rounded text @click="download">
+                        <v-icon>mdi-download</v-icon>
+                    </v-btn>
+                    <v-spacer></v-spacer>
+                    <v-btn outlined rounded text @click="clearHeatmap">
+                        <v-icon left>mdi-delete</v-icon> Clear Map
+                    </v-btn>
+                    <v-btn outlined rounded text @click="onCenterMapButtonClick">
+                        <v-icon left>mdi-crosshairs-gps</v-icon> Center Vehicle
+                    </v-btn>
+                </div>
+                
+                <div class="status-panel">
+                    <h4>Status Console</h4>
+                    <v-data-table
+                        :headers="tableHeaders"
+                        :items="tableItems"
+                        :hide-default-footer="true"
+                        dense
+                        class="elevation-1"
+                    >
+                    <template v-slot:item.confidence="{ item }">
+                        <td :class="getConfidenceClass(item.confidence)">
+                            {{ item.confidence }}
+                        </td>
+                    </template>
+                    </v-data-table>
+                </div>
+            </div>
+        </v-app>
+    </div>
+
+    <script src="/static/js/vue.js"></script>
+    <script src="/static/js/vuetify.js"></script>
+    <script src="/static/js/axios.min.js"></script>
+    <script src="/static/js/leaflet.js"></script>
+    <script src="/static/js/leaflet.rotatedMarker.js"></script>
+    <script>
+        new Vue({
+            el: '#app',
+            vuetify: new Vuetify({
+                theme: {
+                    dark: true,
+                },
+            }),
+            data() {
+                return {
+                    status: "",
+                    firstCoordinateReceived: false,
+                    icon: 'mdi-play',
+                    run: false,
+                    map: null,
+                    circleMarkers: [],
+                    isLoading: false,
+                    receivingData: false,
+                    customIcon: L.icon({
+                        iconUrl: '/static/BB.png',
+                        iconSize: [32, 45],
+                        iconAnchor: [12, 26],
+                        className: 'leaflet-rotated-marker'
+                    }),
+                    tableHeaders: [
+                        { text: 'Latitude', value: 'latitude', align: 'center' },
+                        { text: 'Longitude', value: 'longitude', align: 'center' },
+                        { text: 'Depth (m)', value: 'depth', align: 'center' },
+                        { text: 'Beam Coverage Diameter (m)', value: 'beamCoverageDiameter', align: 'center' },
+                        { text: 'Confidence (%)', value: 'confidence', align: 'center' },
+                        { text: 'Yaw (deg)', value: 'yaw', align: 'center' }
+                    ],
+                    tableItems: [],
+                    randomNames: [
+                        'Ocean_Opulence_Survey', 'Tidal_Tidbits_Collection', 'Seabed_Delights_Map',
+                        'Benthic_Base_Basis', 'Whimsy_Wavy_Data', 'Infinite_Seas_Quantified',
+                        'Tide_Tomfoolery_Tracking', 'Marine_Mirth_Measurements', 'Aqua_Antics_Archive'
+                    ]
+                }
+            },
+            methods: {
+                async toggleRun() {
+                    this.icon = this.icon === 'mdi-play' ? 'mdi-stop' : 'mdi-play';
+                    this.run = !this.run;
+                    if (this.run) {
+                        await this.start();
+                    } else {
+                        await this.stop();
+                    }
+                },
+                async start() {
+                    try {
+                        const response = await fetch('/start');
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! Status: ${response.status}`);
+                        }
+                        this.status = 'Data logging started.';
+                        this.receivingData = true;
+                        this.map.setView([9.2,-133], 10);
+                        L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+                            maxZoom: 19,
+                            attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
+                        }).addTo(this.map);
+                        this.intervalId = setInterval(this.fetchData, 1000);
+                        L.control.scale({imperial: false}).addTo(this.map);
+                    } catch (error) {
+                        console.error('Error fetching data:', error);
+                        this.status = 'Error: ' + error.message;
+                    }
+                },
+                async stop() {
+                    try {
+                        const response = await fetch('/stop');
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! Status: ${response.status}`);
+                        }
+                        this.status = 'Data logging stopped.';
+                        this.receivingData = false;
+                        clearInterval(this.intervalId);
+                    } catch (error) {
+                        console.error('Error fetching data:', error);
+                        this.status = 'Error: ' + error.message;
+                    }
+                },
+                async download() {
+                    try {
+                        const response = await fetch('/download');
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! Status: ${response.status}`);
+                        }
+                        const blob = await response.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const randomName = this.randomNames[Math.floor(Math.random() * this.randomNames.length)];
+                        const timestamp = new Date().toLocaleString('en-US', { 
+                            month: '2-digit', day: '2-digit', year: 'numeric', 
+                            hour: '2-digit', minute: '2-digit', second: '2-digit' 
+                        }).replace(',', '');
+                        const fileName = `${randomName}_finished_at_${timestamp}.csv`;
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.setAttribute('download', fileName);
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        this.status = `Data file downloaded: ${fileName}`;
+                    } catch (error) {
+                        console.error('Error fetching data:', error);
+                        this.status = 'Error: ' + error.message;
+                    }
+                },
+                async fetchData() {
+                    try {
+                        const response = await axios.get('/data');
+                        this.status = JSON.stringify(response.data);
+                        
+                        let angleRadians = (12.5 * Math.PI) / 180;
+                        let beamCoverageDiameter = ((2 * Math.atan(angleRadians) * response.data[3])/100).toFixed(2);
+                        
+                        this.tableItems = [{
+                            latitude: response.data[6],
+                            longitude: response.data[7],
+                            depth: response.data[3]/ 100,
+                            beamCoverageDiameter: beamCoverageDiameter,
+                            confidence: response.data[4],
+                            yaw: response.data[5]
+                        }];
+
+                        this.updateMarker(response.data[6], response.data[7], response.data[3], response.data[4], response.data[5]);
+                        if (!this.firstCoordinateReceived) {
+                            this.firstCoordinateReceived = true;
+                            this.map.setView([response.data[6], response.data[7]], 18);
+                        }
+                        this.receivingData = !this.receivingData; // toggle for logo animation
+                    } catch (error) {
+                        console.error('Error fetching data:', error);
+                        this.status = 'Error: ' + error.message;
+                    }
+                },
+                updateMarker(lat, lon, depth, confidence, yaw) {
+                    if (this.marker) {
+                        this.map.removeLayer(this.marker);
+                    }
+                    
+                    this.marker = L.marker([lat, lon], {
+                        icon: this.customIcon, 
+                        rotationAngle: yaw, 
+                        rotationOrigin: 'center center'
+                    });
+                    this.marker.addTo(this.map);
+                    
+                    if (confidence > 90) {   
+                        const radiusInMeters = (depth/100) * Math.tan(12.5 * Math.PI / 180);
+                        const radius = radiusInMeters * this.map.getZoomScale(this.map.getZoom());
+                        const circleMarker = L.circle([lat, lon], {
+                            color: 'blue',
+                            fillColor: this.getColor(depth),
+                            fillOpacity: 0.5,
+                            weight: 0,
+                            radius: radius
+                        });
+                        circleMarker.addTo(this.map);
+                        this.circleMarkers.push(circleMarker);
+                    }
+                },
+                clearHeatmap() {
+                    this.circleMarkers.forEach(circleMarker => {
+                        circleMarker.remove();
+                    });
+                    this.circleMarkers = [];
+                },
+                onCenterMapButtonClick() {
+                    this.firstCoordinateReceived = false;
+                },
+                getColor(depth) {
+                    const colorStops = [
+                        {depth: 0, color: [209, 233, 255]},
+                        {depth: 1000, color: [193, 218, 243]},
+                        {depth: 2000, color: [178, 204, 232]},
+                        {depth: 3000, color: [163, 190, 220]},
+                        {depth: 4000, color: [147, 176, 209]},
+                        {depth: 5000, color: [132, 162, 197]},
+                        {depth: 6000, color: [117, 147, 186]},
+                        {depth: 7000, color: [101, 133, 174]},
+                        {depth: 8000, color: [86, 119, 163]},
+                        {depth: 9000, color: [71, 105, 151]},
+                        {depth: 10000, color: [56, 91, 140]}
+                    ];
+                    
+                    let color1, color2;
+                    for (let i = 0; i < colorStops.length - 1; i++) {
+                        if (depth >= colorStops[i].depth && depth <= colorStops[i + 1].depth) {
+                            color1 = colorStops[i];
+                            color2 = colorStops[i + 1];
+                            break;
+                        }
+                    }
+                    
+                    if (!color1) {
+                        return depth <= 0 ? `rgb(${colorStops[0].color})` : `rgb(${colorStops[colorStops.length - 1].color})`;
+                    }
+                    
+                    const t = (depth - color1.depth) / (color2.depth - color1.depth);
+                    const color = color1.color.map((start, i) => {
+                        return Math.round(start + (color2.color[i] - start) * t);
+                    });
+                    
+                    return `rgb(${color})`;
+                },
+                getConfidenceClass(confidence) {
+                    if (confidence > 95) return 'confidence-high';
+                    if (confidence > 80) return 'confidence-medium';
+                    return 'confidence-low';
+                },
+                async checkLoggingStatus() {
+                    try {
+                        const response = await axios.get('/status');
+                        if (response.data.logging_active) {
+                            this.run = true;
+                            this.icon = 'mdi-stop';
+                            this.map.setView([9.2,-133], 10);
+                            L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+                                maxZoom: 21,
+                                attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
+                            }).addTo(this.map);
+                            this.intervalId = setInterval(this.fetchData, 1000);
+                        } else {
+                            this.run = false;
+                            this.icon = 'mdi-play';
+                        }
+                    } catch (error) {
+                        console.error('Error fetching status:', error);
+                        this.run = false;
+                        this.icon = 'mdi-play';
+                    }
+                }
+            },
+            mounted() {
+                this.$nextTick(() => {
+                    // Initialize map after DOM is fully rendered
+                    this.map = L.map('map').setView([9.2,-133], 10);
+                    L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+                        maxZoom: 21,
+                        attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
+                    }).addTo(this.map);
+                    
+                    // Add CSS for logo rotation
+                    const style = document.createElement('style');
+                    style.textContent = `
+                        @keyframes spin {
+                            from { transform: rotate(0deg); }
+                            to { transform: rotate(360deg); }
+                        }
+                        .rotate {
+                            animation: spin 2s linear infinite;
+                        }
+                    `;
+                    document.head.appendChild(style);
+                    
+                    this.checkLoggingStatus();
+                });
+            }
+        })
+    </script>
+</body>
+</html> 

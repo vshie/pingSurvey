@@ -124,6 +124,10 @@ def home():
 def widget():
     return app.send_static_file("widget.html")
 
+@app.route('/new')
+def new_interface():
+    return app.send_static_file("new_index.html")
+
 def get_data():
     return jsonify(data)
 
