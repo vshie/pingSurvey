@@ -122,7 +122,7 @@
             border-radius: 50%;
             width: 56px;
             height: 56px;
-            display: flex;
+            display: none; /* Hidden by default, shown only on very small screens */
             align-items: center;
             justify-content: center;
             box-shadow: 0 3px 5px rgba(0, 0, 0, 0.3);
@@ -134,6 +134,15 @@
             gap: 8px;
             padding: 12px;
             background-color: #1E1E1E;
+            justify-content: space-between; /* Distribute sections evenly */
+        }
+        
+        .controls-section {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: center;
+            align-items: center;
         }
         
         .status-panel {
@@ -170,6 +179,13 @@
         @media (max-width: 600px) {
             .controls {
                 justify-content: center;
+                flex-direction: column;
+                gap: 16px;
+            }
+            
+            .controls-section {
+                width: 100%;
+                justify-content: center;
             }
             
             .title {
@@ -198,6 +214,13 @@
             .v-data-table th, .v-data-table td {
                 padding: 0 8px !important;
                 font-size: 12px !important;
+            }
+            
+            /* Show floating button on very small screens */
+            @media (max-width: 400px) {
+                .map-center-button {
+                    display: flex;
+                }
             }
             
             /* Mobile legend adjustments */
@@ -274,24 +297,42 @@
                 </div>
                 
                 <div class="controls">
-                    <v-btn :disabled="isLoading || simulation.active" outlined rounded text @click="toggleRun">
-                        <v-icon>{{ icon }}</v-icon>
-                    </v-btn>
-                    <v-btn outlined rounded text @click="download">
-                        <v-icon>mdi-download</v-icon>
-                    </v-btn>
-                    <v-spacer></v-spacer>
-                    <v-btn color="amber" :disabled="isLoading || run" outlined rounded text @click="toggleSimulation">
-                        <v-icon left>{{ simulation.active ? 'mdi-stop' : 'mdi-play-circle-outline' }}</v-icon>
-                        {{ simulation.active ? 'Stop Simulation' : 'Start Simulation (5x)' }}
-                    </v-btn>
-                    <v-spacer></v-spacer>
-                    <v-btn outlined rounded text @click="clearHeatmap">
-                        <v-icon left>mdi-delete</v-icon> Clear Map
-                    </v-btn>
-                    <v-btn outlined rounded text @click="toggleLegend">
-                        <v-icon left>mdi-{{ showLegend ? 'eye-off' : 'eye' }}</v-icon> {{ showLegend ? 'Hide' : 'Show' }} Legend
-                    </v-btn>
+                    <!-- Left side - Start/Stop and Download -->
+                    <div class="controls-section">
+                        <v-btn :color="run ? 'error' : 'success'" :disabled="isLoading || simulation.active" 
+                               dark rounded elevation="2" @click="toggleRun">
+                            <v-icon left>{{ run ? 'mdi-stop' : 'mdi-play' }}</v-icon>
+                            {{ run ? 'Stop' : 'Start' }}
+                        </v-btn>
+                        <v-btn color="primary" dark rounded elevation="2" @click="download">
+                            <v-icon left>mdi-download</v-icon>
+                            Download
+                        </v-btn>
+                    </div>
+                    
+                    <!-- Center section - Map Controls -->
+                    <div class="controls-section">
+                        <v-btn color="info" dark rounded elevation="2" @click="onCenterMapButtonClick">
+                            <v-icon left>mdi-crosshairs-gps</v-icon>
+                            Center
+                        </v-btn>
+                        <v-btn color="warning" dark rounded elevation="2" @click="clearHeatmap">
+                            <v-icon left>mdi-delete</v-icon>
+                            Clear
+                        </v-btn>
+                        <v-btn color="info" dark rounded elevation="2" @click="toggleLegend">
+                            <v-icon left>mdi-{{ showLegend ? 'eye-off' : 'eye' }}</v-icon>
+                            {{ showLegend ? 'Hide' : 'Show' }}
+                        </v-btn>
+                    </div>
+                    
+                    <!-- Right side - Simulation -->
+                    <div class="controls-section">
+                        <v-btn color="amber" :disabled="isLoading || run" dark rounded elevation="2" @click="toggleSimulation">
+                            <v-icon left>{{ simulation.active ? 'mdi-stop' : 'mdi-play-circle-outline' }}</v-icon>
+                            {{ simulation.active ? 'Stop Sim' : 'Start Sim (5x)' }}
+                        </v-btn>
+                    </div>
                 </div>
                 
                 <div class="status-panel">
