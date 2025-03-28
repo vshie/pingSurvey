@@ -202,7 +202,10 @@
                         { text: 'Depth (m)', value: 'depth', align: 'center' },
                         { text: 'Beam Coverage Diameter (m)', value: 'beamCoverageDiameter', align: 'center' },
                         { text: 'Confidence (%)', value: 'confidence', align: 'center' },
-                        { text: 'Yaw (deg)', value: 'yaw', align: 'center' }
+                        { text: 'Yaw (deg)', value: 'yaw', align: 'center' },
+                        { text: 'Roll (deg)', value: 'roll', align: 'center' },
+                        { text: 'Pitch (deg)', value: 'pitch', align: 'center' },
+                        { text: 'Altitude (m)', value: 'altitude', align: 'center' }
                     ],
                     tableItems: [],
                     randomNames: [
@@ -291,18 +294,21 @@
                         let beamCoverageDiameter = ((2 * Math.atan(angleRadians) * response.data[3])/100).toFixed(2);
                         
                         this.tableItems = [{
-                            latitude: response.data[6],
-                            longitude: response.data[7],
+                            latitude: response.data[8],
+                            longitude: response.data[9],
                             depth: response.data[3]/ 100,
                             beamCoverageDiameter: beamCoverageDiameter,
                             confidence: response.data[4],
-                            yaw: response.data[5]
+                            yaw: response.data[5],
+                            roll: response.data[6],
+                            pitch: response.data[7],
+                            altitude: response.data[10]
                         }];
 
-                        this.updateMarker(response.data[6], response.data[7], response.data[3], response.data[4], response.data[5]);
+                        this.updateMarker(response.data[8], response.data[9], response.data[3], response.data[4], response.data[5]);
                         if (!this.firstCoordinateReceived) {
                             this.firstCoordinateReceived = true;
-                            this.map.setView([response.data[6], response.data[7]], 18);
+                            this.map.setView([response.data[8], response.data[9]], 18);
                         }
                         
                         // Toggle animation only if still logging
