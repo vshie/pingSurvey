@@ -6,12 +6,17 @@ import threading #used to run main app within a thread
 import math #used for yaw radian to degree calc
 from datetime import datetime #used for timestamps
 import json #used for JSON decoding
+import os #used for file operations
 print("hello we are in the script world")
 app = Flask(__name__, static_url_path="/static", static_folder="static") #setup flask app
 
 logging_active = False# Global variable to control the logging 
+simulation_active = False # Global variable to control simulation mode
+simulation_index = 0 # Index to track which row of simulation data we're on
+simulation_data = [] # Store simulation data from CSV
 base_url = 'http://host.docker.internal/mavlink2rest/mavlink'
 log_file = '/app/logs/sensordata.csv'
+simulation_file = '/app/logs/simulation.csv'
 log_rate = 2 #Desired rate in Hz
 data = []
 row_counter = 0
@@ -170,7 +175,69 @@ def get_data():
 
 @app.route('/status', methods=['GET'])
 def status():
-    return {"logging_active": logging_active}
+    return {"logging_active": logging_active, "simulation_active": simulation_active}
+
+@app.route('/start_simulation')
+def start_simulation():
+    global simulation_active, simulation_data, simulation_index, logging_active, data
+    
+    # Stop normal logging if it's running
+    if logging_active:
+        logging_active = False
+    
+    # Load simulation data from CSV file
+    if os.path.exists(simulation_file):
+        simulation_data = []
+        try:
+            with open(simulation_file, 'r') as csvfile:
+                reader = csv.reader(csvfile)
+                # Skip header row
+                next(reader, None)
+                for row in reader:
+                    if len(row) >= 8:
+                        simulation_data.append(row)
+            
+            if simulation_data:
+                simulation_active = True
+                simulation_index = 0
+                
+                # Initialize data with first row
+                if simulation_index < len(simulation_data):
+                    data = simulation_data[simulation_index]
+                    simulation_index = (simulation_index + 1) % len(simulation_data)
+                
+                # Start simulation thread
+                thread = threading.Thread(target=simulation_loop)
+                thread.start()
+                return jsonify({"success": True, "message": f"Loaded {len(simulation_data)} rows from simulation file"})
+            else:
+                return jsonify({"success": False, "message": "Simulation file is empty"})
+        except Exception as e:
+            return jsonify({"success": False, "message": f"Error loading simulation file: {str(e)}"})
+    else:
+        return jsonify({"success": False, "message": f"Simulation file not found: {simulation_file}"})
+
+def simulation_loop():
+    global simulation_active, simulation_data, simulation_index, data
+    
+    while simulation_active:
+        if simulation_index < len(simulation_data):
+            data = simulation_data[simulation_index]
+            simulation_index = (simulation_index + 1) % len(simulation_data)
+        
+        time.sleep(1 / log_rate)
+
+@app.route('/stop_simulation')
+def stop_simulation():
+    global simulation_active
+    simulation_active = False
+    return jsonify({"success": True, "message": "Simulation stopped"})
+
+@app.route('/simulation_status')
+def simulation_status():
+    return jsonify({"simulation_active": simulation_active, 
+                    "data_rows": len(simulation_data) if simulation_data else 0,
+                    "current_index": simulation_index})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5420)
