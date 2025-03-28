@@ -185,6 +185,7 @@
                     circleMarkers: [],
                     isLoading: false,
                     receivingData: false,
+                    scaleAdded: false,
                     simulation: {
                         active: false,
                         dataRows: 0,
@@ -233,13 +234,8 @@
                         }
                         this.status = 'Data logging started.';
                         this.receivingData = true;
-                        this.map.setView([9.2,-133], 10);
-                        L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
-                            maxZoom: 19,
-                            attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
-                        }).addTo(this.map);
+                        this.resetMap(9.2, -133, 10);
                         this.intervalId = setInterval(this.fetchData, 1000);
-                        L.control.scale({imperial: false}).addTo(this.map);
                     } catch (error) {
                         console.error('Error fetching data:', error);
                         this.status = 'Error: ' + error.message;
@@ -368,6 +364,15 @@
                 },
                 onCenterMapButtonClick() {
                     this.firstCoordinateReceived = false;
+                    
+                    // If we have data already, center on that
+                    if (this.tableItems.length > 0) {
+                        const item = this.tableItems[0];
+                        this.resetMap(item.latitude, item.longitude, 18);
+                    } else {
+                        // Otherwise reset to default view
+                        this.resetMap(9.2, -133, 10);
+                    }
                 },
                 getColor(depth) {
                     const colorStops = [
@@ -420,8 +425,7 @@
                                 this.simulation.dataRows = result.data_rows || 0;
                                 this.receivingData = true;
                                 this.intervalId = setInterval(this.fetchData, 1000);
-                                this.map.setView([9.2,-133], 10);
-                                L.control.scale({imperial: false}).addTo(this.map);
+                                this.resetMap(9.2, -133, 10);
                                 
                                 // Get more detailed simulation status
                                 const statusResponse = await fetch('/simulation_status');
@@ -454,11 +458,7 @@
                         if (response.data.logging_active) {
                             this.run = true;
                             this.icon = 'mdi-stop';
-                            this.map.setView([9.2,-133], 10);
-                            L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
-                                maxZoom: 21,
-                                attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
-                            }).addTo(this.map);
+                            this.resetMap(9.2, -133, 10);
                             this.intervalId = setInterval(this.fetchData, 1000);
                         } else {
                             this.run = false;
@@ -475,6 +475,37 @@
                         this.run = false;
                         this.icon = 'mdi-play';
                     }
+                },
+                resetMap(lat, lon, zoom) {
+                    // Remove existing layers to prevent duplicate controls
+                    if (this.map) {
+                        this.map.eachLayer((layer) => {
+                            if (layer instanceof L.TileLayer) {
+                                this.map.removeLayer(layer);
+                            }
+                        });
+                    
+                        // Clear any existing controls including scale
+                        const controls = this.map._controlCorners;
+                        if (controls && controls.bottomleft) {
+                            while (controls.bottomleft.firstChild) {
+                                controls.bottomleft.removeChild(controls.bottomleft.firstChild);
+                            }
+                        }
+                        
+                        // Reset the map view
+                        this.map.setView([lat, lon], zoom);
+                        
+                        // Add base layer
+                        L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+                            maxZoom: 21,
+                            attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
+                        }).addTo(this.map);
+                        
+                        // Add fresh scale control
+                        L.control.scale({imperial: false}).addTo(this.map);
+                        this.scaleAdded = true;
+                    }
                 }
             },
             mounted() {
@@ -488,6 +519,7 @@
                     
                     // Add scale control
                     L.control.scale({imperial: false}).addTo(this.map);
+                    this.scaleAdded = true;
                     
                     // Add CSS for logo rotation
                     const style = document.createElement('style');
