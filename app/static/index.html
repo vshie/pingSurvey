@@ -67,6 +67,51 @@
             height: 100%;
         }
         
+        /* Depth legend styles */
+        .legend {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 1000;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            color: white;
+            font-size: 12px;
+            width: 120px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .legend h4 {
+            margin: 0 0 5px 0;
+            text-align: center;
+            font-size: 14px;
+        }
+        
+        .legend-gradient {
+            height: 150px;
+            width: 30px;
+            margin: 5px auto;
+            background: linear-gradient(to bottom, 
+                rgb(255, 255, 255) 0%,
+                rgb(180, 210, 255) 20%,
+                rgb(100, 150, 240) 40%,
+                rgb(40, 90, 200) 60%,
+                rgb(10, 30, 160) 80%,
+                rgb(0, 0, 120) 100%);
+            border: 1px solid #444;
+        }
+        
+        .legend-labels {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            height: 140px;
+            margin-left: 40px;
+            margin-top: -145px;
+            font-size: 11px;
+        }
+        
         /* Floating center map button for mobile */
         .map-center-button {
             position: absolute;
@@ -154,6 +199,31 @@
                 padding: 0 8px !important;
                 font-size: 12px !important;
             }
+            
+            /* Mobile legend adjustments */
+            .legend {
+                width: 100px;
+                font-size: 10px;
+                bottom: 70px; /* Above the center button */
+                left: 10px;
+                padding: 5px;
+            }
+            
+            .legend h4 {
+                font-size: 12px;
+            }
+            
+            .legend-gradient {
+                height: 120px;
+                width: 20px;
+            }
+            
+            .legend-labels {
+                height: 110px;
+                margin-top: -115px;
+                margin-left: 30px;
+                font-size: 9px;
+            }
         }
         
         /* Fix for map scrolling issues */
@@ -188,6 +258,19 @@
                     <div class="map-center-button" @click="onCenterMapButtonClick">
                         <v-icon color="white">mdi-crosshairs-gps</v-icon>
                     </div>
+                    <!-- Depth legend -->
+                    <div class="legend" v-if="showLegend">
+                        <h4>Depth (m)</h4>
+                        <div class="legend-gradient"></div>
+                        <div class="legend-labels">
+                            <span>0</span>
+                            <span>20</span>
+                            <span>40</span>
+                            <span>60</span>
+                            <span>80</span>
+                            <span>100</span>
+                        </div>
+                    </div>
                 </div>
                 
                 <div class="controls">
@@ -205,6 +288,9 @@
                     <v-spacer></v-spacer>
                     <v-btn outlined rounded text @click="clearHeatmap">
                         <v-icon left>mdi-delete</v-icon> Clear Map
+                    </v-btn>
+                    <v-btn outlined rounded text @click="toggleLegend">
+                        <v-icon left>mdi-{{ showLegend ? 'eye-off' : 'eye' }}</v-icon> {{ showLegend ? 'Hide' : 'Show' }} Legend
                     </v-btn>
                 </div>
                 
@@ -252,6 +338,7 @@
                     isLoading: false,
                     receivingData: false,
                     scaleAdded: false,
+                    showLegend: true,
                     simulation: {
                         active: false,
                         dataRows: 0,
@@ -411,11 +498,14 @@
                     if (confidence > 90) {   
                         const radiusInMeters = (depth/100) * Math.tan(12.5 * Math.PI / 180);
                         const radius = radiusInMeters * this.map.getZoomScale(this.map.getZoom());
+                        const fillColor = this.getColor(depth);
+                        
+                        // Create a more visible circle with stronger border
                         const circleMarker = L.circle([lat, lon], {
-                            color: 'blue',
-                            fillColor: this.getColor(depth),
-                            fillOpacity: 0.5,
-                            weight: 0,
+                            color: 'black',       // Black outline for contrast against all colors
+                            fillColor: fillColor,
+                            fillOpacity: 0.7,     // Higher opacity for better visibility
+                            weight: 1,           // Thin but visible border
                             radius: radius
                         });
                         circleMarker.addTo(this.map);
@@ -442,18 +532,22 @@
                 },
                 getColor(depth) {
                     const colorStops = [
-                        {depth: 0, color: [255, 255, 255]},    // White for shallow
-                        {depth: 1000, color: [230, 240, 255]}, 
-                        {depth: 2000, color: [200, 220, 255]},
-                        {depth: 3000, color: [170, 200, 240]},
-                        {depth: 4000, color: [140, 180, 230]},
-                        {depth: 5000, color: [110, 160, 220]},
-                        {depth: 6000, color: [80, 140, 210]},
-                        {depth: 7000, color: [60, 120, 200]},
-                        {depth: 8000, color: [40, 100, 180]},
-                        {depth: 9000, color: [20, 80, 160]},
-                        {depth: 10000, color: [0, 60, 150]}     // Dark blue for deep
+                        {depth: 0, color: [255, 255, 255]},    // Pure white for shallow
+                        {depth: 1000, color: [220, 230, 255]}, 
+                        {depth: 2000, color: [180, 210, 255]},
+                        {depth: 3000, color: [140, 180, 250]},
+                        {depth: 4000, color: [100, 150, 240]},
+                        {depth: 5000, color: [70, 120, 220]},
+                        {depth: 6000, color: [40, 90, 200]},
+                        {depth: 7000, color: [20, 60, 180]},
+                        {depth: 8000, color: [10, 30, 160]},
+                        {depth: 9000, color: [5, 15, 140]},
+                        {depth: 10000, color: [0, 0, 120]}      // Dark blue for deep
                     ];
+                    
+                    // Add higher contrast to circles
+                    const opacity = 0.7; // Higher opacity for better visibility
+                    const strokeWeight = 1; // Add stroke to improve contrast
                     
                     let color1, color2;
                     for (let i = 0; i < colorStops.length - 1; i++) {
@@ -583,6 +677,9 @@
                         L.control.scale({imperial: false}).addTo(this.map);
                         this.scaleAdded = true;
                     }
+                },
+                toggleLegend() {
+                    this.showLegend = !this.showLegend;
                 }
             },
             mounted() {
