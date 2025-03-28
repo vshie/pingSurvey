@@ -290,25 +290,39 @@
                         const response = await axios.get('/data');
                         this.status = JSON.stringify(response.data);
                         
+                        // Make sure we have valid data to work with
+                        if (!response.data || !Array.isArray(response.data) || response.data.length < 8) {
+                            console.error('Invalid data format received:', response.data);
+                            return;
+                        }
+                        
                         let angleRadians = (12.5 * Math.PI) / 180;
                         let beamCoverageDiameter = ((2 * Math.atan(angleRadians) * response.data[3])/100).toFixed(2);
                         
+                        // Ensure we handle both old and new data formats
+                        const data = response.data;
+                        const hasNewFormat = data.length >= 11;
+                        
                         this.tableItems = [{
-                            latitude: response.data[8],
-                            longitude: response.data[9],
-                            depth: response.data[3]/ 100,
+                            latitude: hasNewFormat ? data[8] : data[6],
+                            longitude: hasNewFormat ? data[9] : data[7],
+                            depth: data[3]/ 100,
                             beamCoverageDiameter: beamCoverageDiameter,
-                            confidence: response.data[4],
-                            yaw: response.data[5],
-                            roll: response.data[6],
-                            pitch: response.data[7],
-                            altitude: response.data[10]
+                            confidence: data[4],
+                            yaw: data[5],
+                            roll: hasNewFormat ? data[6] : 0,
+                            pitch: hasNewFormat ? data[7] : 0,
+                            altitude: hasNewFormat ? data[10] : 0
                         }];
 
-                        this.updateMarker(response.data[8], response.data[9], response.data[3], response.data[4], response.data[5]);
+                        // Use the correct lat/lon based on format
+                        const lat = hasNewFormat ? data[8] : data[6];
+                        const lon = hasNewFormat ? data[9] : data[7];
+                        
+                        this.updateMarker(lat, lon, data[3], data[4], data[5]);
                         if (!this.firstCoordinateReceived) {
                             this.firstCoordinateReceived = true;
-                            this.map.setView([response.data[8], response.data[9]], 18);
+                            this.map.setView([lat, lon], 18);
                         }
                         
                         // Toggle animation only if still logging
@@ -408,7 +422,15 @@
                                 this.intervalId = setInterval(this.fetchData, 1000);
                                 this.map.setView([9.2,-133], 10);
                                 L.control.scale({imperial: false}).addTo(this.map);
-                                this.status = `Simulation started with ${result.data_rows} data points at 5x speed`;
+                                
+                                // Get more detailed simulation status
+                                const statusResponse = await fetch('/simulation_status');
+                                const statusData = await statusResponse.json();
+                                const formatMessage = statusData.data_format === "legacy" ? 
+                                    " (legacy format - roll, pitch, altitude set to 0)" : 
+                                    " (enhanced format with roll, pitch, altitude)";
+                                
+                                this.status = `Simulation started with ${result.data_rows} data points at 5x speed${formatMessage}`;
                             } else {
                                 alert(`Failed to start simulation: ${result.message}`);
                             }

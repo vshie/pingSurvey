@@ -206,7 +206,20 @@ def start_simulation():
                 # Skip header row
                 next(reader, None)
                 for row in reader:
-                    if len(row) >= 11:  # Updated to expect 11 columns instead of 8
+                    # Handle both old format (8 columns) and new format (11 columns)
+                    if len(row) >= 8:
+                        # If using old format (without roll, pitch, altitude), add default values
+                        if len(row) < 11:
+                            # Original format: [timestamp, date, time, depth, confidence, yaw, lat, lon]
+                            # Add default values for roll(0), pitch(0), and altitude(0) at the correct positions
+                            # New format: [timestamp, date, time, depth, confidence, yaw, roll, pitch, lat, lon, alt]
+                            lat = row[6]
+                            lon = row[7]
+                            # Insert roll and pitch after yaw, and before lat/lon
+                            row.insert(6, "0")  # Roll
+                            row.insert(7, "0")  # Pitch
+                            # Add altitude at the end
+                            row.append("0")     # Altitude
                         simulation_data.append(row)
             
             if simulation_data:
@@ -221,11 +234,12 @@ def start_simulation():
                 # Start simulation thread
                 thread = threading.Thread(target=simulation_loop)
                 thread.start()
-                return jsonify({"success": True, "message": f"Loaded {len(simulation_data)} rows from simulation file"})
+                return jsonify({"success": True, "data_rows": len(simulation_data), "message": f"Loaded {len(simulation_data)} rows from simulation file"})
             else:
-                return jsonify({"success": False, "message": "Simulation file is empty"})
+                return jsonify({"success": False, "message": "Simulation file is empty or contains invalid data format. The file needs at least 8 columns of data."})
         except Exception as e:
-            return jsonify({"success": False, "message": f"Error loading simulation file: {str(e)}"})
+            print(f"Simulation error: {str(e)}")
+            return jsonify({"success": False, "message": f"Error loading simulation file: {str(e)}. Check if your CSV has at least 8 columns of data."})
     else:
         return jsonify({"success": False, "message": f"Simulation file not found: {simulation_file}"})
 
@@ -234,8 +248,34 @@ def simulation_loop():
     
     while simulation_active:
         if simulation_index < len(simulation_data):
-            data = simulation_data[simulation_index]
-            simulation_index = (simulation_index + 1) % len(simulation_data)
+            try:
+                current_row = simulation_data[simulation_index]
+                
+                # Ensure data has the required format
+                if len(current_row) >= 11:
+                    # Good to go, use as is
+                    data = current_row
+                elif len(current_row) >= 8:
+                    # Old format - need to add roll, pitch, altitude
+                    # This should have been handled during loading, but just in case
+                    padded_row = list(current_row)
+                    lat = padded_row[6]
+                    lon = padded_row[7]
+                    # Insert roll and pitch after yaw, before lat/lon
+                    padded_row.insert(6, "0")  # Roll
+                    padded_row.insert(7, "0")  # Pitch
+                    # Add altitude at the end
+                    padded_row.append("0")     # Altitude
+                    data = padded_row
+                else:
+                    # Invalid format, skip this row
+                    print(f"Warning: Skipping invalid data row at index {simulation_index}")
+                    
+                simulation_index = (simulation_index + 1) % len(simulation_data)
+            except Exception as e:
+                print(f"Error in simulation loop: {str(e)}")
+                # Move to next row
+                simulation_index = (simulation_index + 1) % len(simulation_data)
         
         # Use adjusted sleep time for faster playback
         time.sleep((1 / log_rate) / simulation_speed)
@@ -248,9 +288,12 @@ def stop_simulation():
 
 @app.route('/simulation_status')
 def simulation_status():
-    return jsonify({"simulation_active": simulation_active, 
-                    "data_rows": len(simulation_data) if simulation_data else 0,
-                    "current_index": simulation_index})
+    return jsonify({
+        "simulation_active": simulation_active, 
+        "data_rows": len(simulation_data) if simulation_data else 0,
+        "current_index": simulation_index,
+        "data_format": "enhanced" if simulation_data and len(simulation_data[0]) >= 11 else "legacy"
+    })
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5420)
