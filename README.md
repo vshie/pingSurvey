@@ -30,7 +30,7 @@ To add the compact widget to your Cockpit interface:
 2. Add a new iframe widget
 3. Set the iframe URL to:
 ```
-http://your-vehicle-ip:5420/widget
+http://"your.vehicle.ip"/extension/simpleping2survey/widget?full_page=true
 ```
 
 ### Data Collection
