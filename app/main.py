@@ -86,7 +86,7 @@ def main():
                 print(f"GPS response: {gps_response.text}")
                 print(f"Yaw response: {yaw_response.text}")
                 raise e
-            column_labels = ['Unix Timestamp', 'Date', 'Time','Depth (cm)', 'Confidence (%)', 'Vessel heading (deg)','Latitude', 'Longitude']
+            column_labels = ['Unix Timestamp', 'Date', 'Time','Depth (cm)', 'Confidence (%)', 'Vessel heading (deg)', 'Roll (deg)', 'Pitch (deg)', 'Latitude', 'Longitude', 'Altitude (m)']
             timestamp = int(time.time() * 1000)  # Convert current time to milliseconds
             dt = datetime.fromtimestamp(timestamp / 1000)  # Convert timestamp to datetime object 
             unix_timestamp = timestamp
@@ -94,12 +94,23 @@ def main():
             date = dt.strftime('%m/%d/%y')
             distance = distance_data['current_distance']
             confidence = distance_data['signal_quality']
+            # Yaw
             yawRad = yaw_data['yaw']
             yawDeg = math.degrees(yawRad)
             yaw = round(((yawDeg + 360) % 360),2)
+            # Roll
+            rollRad = yaw_data['roll']
+            rollDeg = math.degrees(rollRad)
+            roll = round(((rollDeg + 360) % 360),2)
+            # Pitch
+            pitchRad = yaw_data['pitch']
+            pitchDeg = math.degrees(pitchRad)
+            pitch = round(((pitchDeg + 360) % 360),2)
+            # Coordinates
             latitude = gps_data['lat'] / 1e7
             longitude = gps_data['lon'] / 1e7
-            data = [unix_timestamp, date, timenow, distance, confidence, yaw, latitude, longitude]
+            altitude = gps_data['alt'] / 1e7
+            data = [unix_timestamp, date, timenow, distance, confidence, yaw, roll, pitch, latitude, longitude, altitude]
             with open(log_file, 'a', newline='') as csvfile: # Create or append to the log file and write the data
                 writer = csv.writer(csvfile)
                 if csvfile.tell() == 0: # Write the column labels as the header row (only for the first write)
@@ -195,7 +206,7 @@ def start_simulation():
                 # Skip header row
                 next(reader, None)
                 for row in reader:
-                    if len(row) >= 8:
+                    if len(row) >= 11:  # Updated to expect 11 columns instead of 8
                         simulation_data.append(row)
             
             if simulation_data:
