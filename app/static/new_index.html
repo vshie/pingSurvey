@@ -294,7 +294,10 @@
                             this.firstCoordinateReceived = true;
                             this.map.setView([response.data[6], response.data[7]], 18);
                         }
-                        this.receivingData = !this.receivingData; // toggle for logo animation
+                        
+                        if (this.run) {
+                            this.receivingData = !this.receivingData;
+                        }
                     } catch (error) {
                         console.error('Error fetching data:', error);
                         this.status = 'Error: ' + error.message;
