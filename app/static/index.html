@@ -351,17 +351,17 @@
                 },
                 getColor(depth) {
                     const colorStops = [
-                        {depth: 0, color: [209, 233, 255]},
-                        {depth: 1000, color: [193, 218, 243]},
-                        {depth: 2000, color: [178, 204, 232]},
-                        {depth: 3000, color: [163, 190, 220]},
-                        {depth: 4000, color: [147, 176, 209]},
-                        {depth: 5000, color: [132, 162, 197]},
-                        {depth: 6000, color: [117, 147, 186]},
-                        {depth: 7000, color: [101, 133, 174]},
-                        {depth: 8000, color: [86, 119, 163]},
-                        {depth: 9000, color: [71, 105, 151]},
-                        {depth: 10000, color: [56, 91, 140]}
+                        {depth: 0, color: [255, 255, 255]},    // White for shallow
+                        {depth: 1000, color: [230, 240, 255]}, 
+                        {depth: 2000, color: [200, 220, 255]},
+                        {depth: 3000, color: [170, 200, 240]},
+                        {depth: 4000, color: [140, 180, 230]},
+                        {depth: 5000, color: [110, 160, 220]},
+                        {depth: 6000, color: [80, 140, 210]},
+                        {depth: 7000, color: [60, 120, 200]},
+                        {depth: 8000, color: [40, 100, 180]},
+                        {depth: 9000, color: [20, 80, 160]},
+                        {depth: 10000, color: [0, 60, 150]}     // Dark blue for deep
                     ];
                     
                     let color1, color2;
