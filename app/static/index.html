@@ -401,6 +401,7 @@
                                 this.receivingData = true;
                                 this.intervalId = setInterval(this.fetchData, 1000);
                                 this.map.setView([9.2,-133], 10);
+                                L.control.scale({imperial: false}).addTo(this.map);
                                 this.status = `Simulation started with ${result.data_rows} data points at 5x speed`;
                             } else {
                                 alert(`Failed to start simulation: ${result.message}`);
@@ -456,6 +457,9 @@
                         maxZoom: 21,
                         attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
                     }).addTo(this.map);
+                    
+                    // Add scale control
+                    L.control.scale({imperial: false}).addTo(this.map);
                     
                     // Add CSS for logo rotation
                     const style = document.createElement('style');
