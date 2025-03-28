@@ -57,14 +57,17 @@
         }
         
         .map-container {
-            flex: 1;
             position: relative;
-            min-height: 400px;
+            height: calc(100% - 150px);
+            width: 100%;
+            z-index: 1;
+            overflow: hidden;
         }
         
         #map {
-            width: 100%;
             height: 100%;
+            width: 100%;
+            background-color: #333;
         }
         
         /* Depth legend styles */
@@ -175,89 +178,104 @@
             min-height: 100vh;
         }
         
-        /* Mobile responsiveness */
+        /* Mobile adjustments */
         @media (max-width: 600px) {
-            .controls {
-                justify-content: center;
-                flex-direction: column;
-                gap: 16px;
-            }
-            
-            .controls-section {
-                width: 100%;
+            .title-container {
+                padding: 10px 5px;
                 justify-content: center;
             }
             
             .title {
-                font-size: 1.2rem;
+                font-size: 18px;
             }
             
             .logo {
-                width: 30px;
-                height: 30px;
+                height: 24px;
+                margin-right: 5px;
             }
             
             .map-container {
-                min-height: 300px; /* Smaller map on mobile */
+                height: calc(100% - 200px);
             }
             
-            .status-panel h4 {
-                margin-top: 0;
-                margin-bottom: 8px;
-                font-size: 16px;
+            .controls {
+                flex-direction: column;
+                align-items: center;
+                gap: 10px;
+                padding: 10px 0;
+            }
+            
+            .controls-section {
+                justify-content: center;
+                width: 100%;
             }
             
             .status-panel {
-                padding: 8px;
-            }
-            
-            .v-data-table th, .v-data-table td {
-                padding: 0 8px !important;
-                font-size: 12px !important;
-            }
-            
-            /* Show floating button on very small screens */
-            @media (max-width: 400px) {
-                .map-center-button {
-                    display: flex;
-                }
-            }
-            
-            /* Mobile legend adjustments */
-            .legend {
-                width: 100px;
-                font-size: 10px;
-                bottom: 70px; /* Above the center button */
-                left: 10px;
                 padding: 5px;
             }
             
-            .legend h4 {
-                font-size: 12px;
+            .depth-legend {
+                right: 5px;
+                bottom: 60px;
+                width: 30px;
+                max-height: 200px;
             }
             
-            .legend-gradient {
-                height: 120px;
-                width: 20px;
+            .depth-text {
+                font-size: 10px;
+            }
+        }
+        
+        /* Very small screens - show floating button */
+        @media (max-width: 400px) {
+            .map-center-button {
+                display: block;
             }
             
-            .legend-labels {
-                height: 110px;
-                margin-top: -115px;
-                margin-left: 30px;
-                font-size: 9px;
+            .map-container {
+                height: calc(100% - 220px);
             }
         }
         
         /* Fix for map scrolling issues */
         .leaflet-container {
-            touch-action: none;
+            background-color: #333 !important;
+            height: 100% !important;
+            width: 100% !important;
+        }
+        
+        /* Ensure the map tiles render */
+        .leaflet-tile-container {
+            z-index: 5;
         }
         
         /* Fix for table on mobile */
         .v-data-table {
             width: 100%;
             overflow-x: auto;
+        }
+        
+        /* Force leaflet panes to be visible */
+        .leaflet-pane {
+            z-index: 10 !important;
+        }
+        
+        .leaflet-overlay-pane {
+            z-index: 11 !important;
+        }
+        
+        .leaflet-marker-pane {
+            z-index: 12 !important;
+        }
+        
+        /* Logo rotation animation */
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        
+        .rotate {
+            animation: spin 2s linear infinite;
         }
     </style>
     <link href="/static/css/materialdesignicons.min.css" rel="stylesheet">
@@ -370,44 +388,37 @@
             }),
             data() {
                 return {
-                    status: "",
-                    firstCoordinateReceived: false,
-                    icon: 'mdi-play',
-                    run: false,
+                    logging: false,
+                    simulating: false,
+                    status: 'Ready',
                     map: null,
-                    circleMarkers: [],
-                    isLoading: false,
-                    receivingData: false,
                     scaleAdded: false,
                     showLegend: true,
-                    simulation: {
-                        active: false,
-                        dataRows: 0,
-                        currentIndex: 0
-                    },
-                    customIcon: L.icon({
-                        iconUrl: '/static/BB.png',
-                        iconSize: [32, 45],
-                        iconAnchor: [12, 26],
-                        className: 'leaflet-rotated-marker'
-                    }),
-                    tableHeaders: [
-                        { text: 'Latitude', value: 'latitude', align: 'center' },
-                        { text: 'Longitude', value: 'longitude', align: 'center' },
-                        { text: 'Depth (m)', value: 'depth', align: 'center' },
-                        { text: 'Beam Coverage Diameter (m)', value: 'beamCoverageDiameter', align: 'center' },
-                        { text: 'Confidence (%)', value: 'confidence', align: 'center' },
-                        { text: 'Yaw (deg)', value: 'yaw', align: 'center' },
-                        { text: 'Roll (deg)', value: 'roll', align: 'center' },
-                        { text: 'Pitch (deg)', value: 'pitch', align: 'center' },
-                        { text: 'Altitude (m)', value: 'altitude', align: 'center' }
-                    ],
                     tableItems: [],
-                    randomNames: [
-                        'Ocean_Opulence_Survey', 'Tidal_Tidbits_Collection', 'Seabed_Delights_Map',
+                    headers: [
+                        {text: 'Time', value: 'timestamp', sortable: false},
+                        {text: 'Lat', value: 'latitude', sortable: false},
+                        {text: 'Long', value: 'longitude', sortable: false},
+                        {text: 'Depth (m)', value: 'depth', sortable: false}
+                    ],
+                    run: false,
+                    icon: 'mdi-play',
+                    vehicleMarker: null,
+                    heatLayer: null,
+                    depthLayer: null,
+                    datasetNames: [
+                        'Mariana_Trench_Survey', 'Baltic_Sea_Expedition', 'Great_Barrier_Reef_Mapping',
                         'Benthic_Base_Basis', 'Whimsy_Wavy_Data', 'Infinite_Seas_Quantified',
                         'Tide_Tomfoolery_Tracking', 'Marine_Mirth_Measurements', 'Aqua_Antics_Archive'
-                    ]
+                    ],
+                    vehicleMarker: null,
+                    heatLayer: null,
+                    depthLayer: null,
+                    isWidget: false,
+                    firstMapCentered: false,
+                    ws: null,
+                    connected: false,
+                    firstCoordinateReceived: false
                 }
             },
             methods: {
@@ -565,11 +576,28 @@
                     // If we have data already, center on that
                     if (this.tableItems.length > 0) {
                         const item = this.tableItems[0];
-                        this.resetMap(item.latitude, item.longitude, 18);
+                        // Center with offset to account for UI elements
+                        this.centerMapOnPosition(item.latitude, item.longitude);
                     } else {
                         // Otherwise reset to default view
                         this.resetMap(9.2, -133, 10);
                     }
+                },
+                
+                centerMapOnPosition(lat, lon) {
+                    if (!this.map) return;
+                    
+                    // Get the map container size
+                    const mapSize = this.map.getSize();
+                    
+                    // Calculate point with offset to center the marker in the visible area
+                    // Offset upward to account for controls at the bottom
+                    const targetPoint = this.map.project([lat, lon], 18)
+                                         .subtract([0, -mapSize.y * 0.15]); // Offset upward by 15% of height
+                    
+                    // Convert back to lat/lon and set view
+                    const targetLatLng = this.map.unproject(targetPoint, 18);
+                    this.resetMap(targetLatLng.lat, targetLatLng.lng, 18);
                 },
                 getColor(depth) {
                     const colorStops = [
@@ -721,50 +749,238 @@
                 },
                 toggleLegend() {
                     this.showLegend = !this.showLegend;
+                },
+                checkConnection() {
+                    // Check if the WebSocket connection is alive
+                    if (this.ws && this.ws.readyState !== WebSocket.OPEN) {
+                        this.connected = false;
+                        this.status = 'Disconnected';
+                        // Try to reconnect
+                        this.connectWebSocket();
+                    }
+                },
+                onStartButtonClick() {
+                    if (this.run) {
+                        // Stop logging
+                        fetch('/api/stop_logging')
+                        .then(response => response.json())
+                        .then(data => {
+                            this.run = false;
+                            this.icon = 'mdi-play';
+                            this.status = 'Stopped';
+                            document.getElementById('logoImg').classList.remove('rotate');
+                        });
+                    } else {
+                        // Start logging
+                        fetch('/api/start_logging')
+                        .then(response => response.json())
+                        .then(data => {
+                            this.run = true;
+                            this.icon = 'mdi-stop';
+                            this.status = 'Recording';
+                            document.getElementById('logoImg').classList.add('rotate');
+                            
+                            // If this is the first start, center the map appropriately
+                            if (!this.firstMapCentered && this.tableItems.length > 0) {
+                                const item = this.tableItems[0];
+                                this.centerMapOnPosition(item.latitude, item.longitude);
+                                this.firstMapCentered = true;
+                            }
+                            
+                            // Add scale control if not already added
+                            if (!this.scaleAdded) {
+                                L.control.scale({imperial: false}).addTo(this.map);
+                                this.scaleAdded = true;
+                            }
+                        });
+                    }
+                },
+                checkLoggingStatus() {
+                    // Check if logging is already in progress on page load
+                    fetch('/api/status')
+                    .then(response => response.json())
+                    .then(data => {
+                        this.run = data.logging;
+                        if (this.run) {
+                            this.status = 'Recording';
+                            document.getElementById('logoImg').classList.add('rotate');
+                        }
+                    });
+                },
+                connectWebSocket() {
+                    // Close existing connection if any
+                    if (this.ws) {
+                        this.ws.close();
+                    }
+                    
+                    // Determine WebSocket URL (ws or wss depending on http/https)
+                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsUrl = `${protocol}//${window.location.host}/ws`;
+                    
+                    // Create new WebSocket connection
+                    this.ws = new WebSocket(wsUrl);
+                    
+                    this.ws.onopen = () => {
+                        this.connected = true;
+                        this.status = this.run ? 'Recording' : 'Connected';
+                    };
+                    
+                    this.ws.onclose = () => {
+                        this.connected = false;
+                        this.status = 'Disconnected';
+                        // Try to reconnect after a delay
+                        setTimeout(() => this.connectWebSocket(), 3000);
+                    };
+                    
+                    this.ws.onerror = () => {
+                        this.connected = false;
+                        this.status = 'Connection Error';
+                    };
+                    
+                    this.ws.onmessage = (event) => {
+                        const data = JSON.parse(event.data);
+                        this.processIncomingData(data);
+                    };
+                },
+                processIncomingData(data) {
+                    // Handle different types of messages
+                    if (data.type === 'ping') {
+                        // Ping message, ignore (keep-alive)
+                        return;
+                    }
+                    
+                    if (data.type === 'data') {
+                        // New data point received
+                        const item = data.data;
+                        
+                        // Add to table data
+                        this.tableItems.unshift(item);
+                        
+                        // Limit table size to prevent memory issues
+                        if (this.tableItems.length > 100) {
+                            this.tableItems.pop();
+                        }
+                        
+                        // Update vehicle position on map
+                        this.updateVehicle(item.latitude, item.longitude);
+                        
+                        // Update heat map (only if depth is available)
+                        if (item.depth !== undefined && item.depth !== null) {
+                            this.updateHeatMap(item.latitude, item.longitude, item.depth);
+                            this.addDepthCircle(item.latitude, item.longitude, item.depth);
+                        }
+                        
+                        // Center map on first coordinate
+                        if (!this.firstCoordinateReceived) {
+                            this.centerMapOnPosition(item.latitude, item.longitude);
+                            this.firstCoordinateReceived = true;
+                        }
+                    }
+                    
+                    if (data.type === 'status') {
+                        // Status update
+                        this.status = data.message;
+                    }
+                },
+                
+                updateVehicle(lat, lon) {
+                    if (!this.map || !this.vehicleMarker) return;
+                    
+                    // Update vehicle marker position
+                    this.vehicleMarker.setLatLng([lat, lon]);
+                    this.vehicleMarker.setOpacity(1); // Make sure it's visible
+                },
+                
+                updateHeatMap(lat, lon, depth) {
+                    if (!this.map || !this.heatLayer) return;
+                    
+                    // Calculate intensity based on depth (normalized value)
+                    const intensity = Math.max(0, Math.min(1, 1 - depth / 100));
+                    
+                    // Add point to heatmap
+                    this.heatLayer.addLatLng([lat, lon, intensity]);
+                },
+                
+                addDepthCircle(lat, lon, depth) {
+                    if (!this.map || !this.depthLayer) return;
+                    
+                    // Get color for depth
+                    const color = this.getColor(depth);
+                    
+                    // Create circle
+                    const circle = L.circle([lat, lon], {
+                        color: 'black',         // black outline
+                        weight: 1,              // outline width
+                        fillColor: color,       // fill with depth color
+                        fillOpacity: 0.8,       // mostly opaque
+                        radius: 5               // small fixed radius in meters
+                    }).addTo(this.depthLayer);
+                    
+                    // Add tooltip with depth information
+                    circle.bindTooltip(`Depth: ${depth.toFixed(1)} m`, {
+                        permanent: false,
+                        direction: 'top'
+                    });
                 }
             },
             mounted() {
+                // Initialize map
                 this.$nextTick(() => {
-                    // Initialize map after DOM is fully rendered
-                    this.map = L.map('map', {
-                        // These options improve mobile handling
-                        tap: true, // Enable tap handler for touch devices
-                        dragging: !L.Browser.mobile, // Disable drag by default on mobile
-                        tap: L.Browser.safari && L.Browser.mobile, // Use tap instead of click for Safari on iOS
-                        bounceAtZoomLimits: false, // Don't bounce at zoom limits
-                        touchZoom: 'center' // Center zoom on mobile touch
-                    }).setView([9.2,-133], 10);
+                    this.map = L.map('map').setView([9.2, -133], 10);
                     
-                    // Enable dragging after a short delay (prevents scrolling issues)
-                    if (L.Browser.mobile) {
-                        setTimeout(() => {
-                            this.map.dragging.enable();
-                        }, 1000);
-                    }
-                    
-                    L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
-                        maxZoom: 21,
-                        attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
+                    // Add map tiles with proper attribution
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+                        maxZoom: 19,
+                        minZoom: 2
                     }).addTo(this.map);
                     
-                    // Add scale control
+                    // Add scale control (metric only)
                     L.control.scale({imperial: false}).addTo(this.map);
-                    this.scaleAdded = true;
                     
-                    // Add CSS for logo rotation
-                    const style = document.createElement('style');
-                    style.textContent = `
-                        @keyframes spin {
-                            from { transform: rotate(0deg); }
-                            to { transform: rotate(360deg); }
-                        }
-                        .rotate {
-                            animation: spin 2s linear infinite;
-                        }
-                    `;
-                    document.head.appendChild(style);
+                    // Create vehicle marker if not already created
+                    if (!this.vehicleMarker) {
+                        const carIcon = L.icon({
+                            iconUrl: '/static/img/car.png',
+                            iconSize: [32, 32],
+                            iconAnchor: [16, 16]
+                        });
+                        this.vehicleMarker = L.marker([0, 0], {icon: carIcon}).addTo(this.map);
+                        this.vehicleMarker.setOpacity(0); // Hide until we have data
+                    }
                     
+                    // Initialize heatmap layer
+                    this.heatLayer = L.heatLayer([], {
+                        radius: 25,
+                        blur: 15,
+                        maxZoom: 10,
+                    }).addTo(this.map);
+                    
+                    // Force a resize after initialization to ensure proper rendering
+                    setTimeout(() => {
+                        this.map.invalidateSize();
+                    }, 100);
+                    
+                    // Initialize the depth visualization layer
+                    this.depthLayer = L.layerGroup().addTo(this.map);
+                    
+                    // Get URL parameters
+                    const urlParams = new URLSearchParams(window.location.search);
+                    this.isWidget = urlParams.get('widget') === 'true';
+                    
+                    // If in widget mode, auto-start data logging
+                    if (this.isWidget) {
+                        this.onStartButtonClick();
+                    }
+                    
+                    // Check WebSocket connection status periodically
+                    this.connectionCheckInterval = setInterval(this.checkConnection, 5000);
+                    
+                    // Check if logging is already active
                     this.checkLoggingStatus();
+                    
+                    // Initialize WebSocket connection
+                    this.connectWebSocket();
                 });
             }
         })
