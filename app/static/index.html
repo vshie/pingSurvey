@@ -53,6 +53,7 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            position: relative; /* For floating buttons */
         }
         
         .map-container {
@@ -66,8 +67,25 @@
             height: 100%;
         }
         
+        /* Floating center map button for mobile */
+        .map-center-button {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+            background-color: rgba(33, 33, 33, 0.8);
+            border-radius: 50%;
+            width: 56px;
+            height: 56px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 3px 5px rgba(0, 0, 0, 0.3);
+        }
+        
         .controls {
             display: flex;
+            flex-wrap: wrap; /* Allow buttons to wrap on small screens */
             gap: 8px;
             padding: 12px;
             background-color: #1E1E1E;
@@ -77,6 +95,7 @@
             padding: 16px;
             background-color: #1E1E1E;
             margin-top: 1px;
+            overflow-x: auto; /* Allow horizontal scrolling for the table */
         }
         
         .confidence-high {
@@ -101,11 +120,57 @@
         .v-application--wrap {
             min-height: 100vh;
         }
+        
+        /* Mobile responsiveness */
+        @media (max-width: 600px) {
+            .controls {
+                justify-content: center;
+            }
+            
+            .title {
+                font-size: 1.2rem;
+            }
+            
+            .logo {
+                width: 30px;
+                height: 30px;
+            }
+            
+            .map-container {
+                min-height: 300px; /* Smaller map on mobile */
+            }
+            
+            .status-panel h4 {
+                margin-top: 0;
+                margin-bottom: 8px;
+                font-size: 16px;
+            }
+            
+            .status-panel {
+                padding: 8px;
+            }
+            
+            .v-data-table th, .v-data-table td {
+                padding: 0 8px !important;
+                font-size: 12px !important;
+            }
+        }
+        
+        /* Fix for map scrolling issues */
+        .leaflet-container {
+            touch-action: none;
+        }
+        
+        /* Fix for table on mobile */
+        .v-data-table {
+            width: 100%;
+            overflow-x: auto;
+        }
     </style>
     <link href="/static/css/materialdesignicons.min.css" rel="stylesheet">
     <link href="/static/css/vuetify.min.css" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/leaflet.css" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, minimal-ui">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 </head>
 <body>
     <div id="app">
@@ -119,6 +184,10 @@
             <div class="content">
                 <div class="map-container">
                     <div id="map"></div>
+                    <!-- Floating center map button for mobile -->
+                    <div class="map-center-button" @click="onCenterMapButtonClick">
+                        <v-icon color="white">mdi-crosshairs-gps</v-icon>
+                    </div>
                 </div>
                 
                 <div class="controls">
@@ -136,9 +205,6 @@
                     <v-spacer></v-spacer>
                     <v-btn outlined rounded text @click="clearHeatmap">
                         <v-icon left>mdi-delete</v-icon> Clear Map
-                    </v-btn>
-                    <v-btn outlined rounded text @click="onCenterMapButtonClick">
-                        <v-icon left>mdi-crosshairs-gps</v-icon> Center Vehicle
                     </v-btn>
                 </div>
                 
@@ -496,6 +562,17 @@
                         // Reset the map view
                         this.map.setView([lat, lon], zoom);
                         
+                        // Fix mobile handling if needed
+                        if (L.Browser.mobile) {
+                            // Ensure touch handling is properly set
+                            this.map.tap.enable();
+                            // Disable dragging and re-enable after a slight delay
+                            this.map.dragging.disable();
+                            setTimeout(() => {
+                                this.map.dragging.enable();
+                            }, 500);
+                        }
+                        
                         // Add base layer
                         L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
                             maxZoom: 21,
@@ -511,7 +588,22 @@
             mounted() {
                 this.$nextTick(() => {
                     // Initialize map after DOM is fully rendered
-                    this.map = L.map('map').setView([9.2,-133], 10);
+                    this.map = L.map('map', {
+                        // These options improve mobile handling
+                        tap: true, // Enable tap handler for touch devices
+                        dragging: !L.Browser.mobile, // Disable drag by default on mobile
+                        tap: L.Browser.safari && L.Browser.mobile, // Use tap instead of click for Safari on iOS
+                        bounceAtZoomLimits: false, // Don't bounce at zoom limits
+                        touchZoom: 'center' // Center zoom on mobile touch
+                    }).setView([9.2,-133], 10);
+                    
+                    // Enable dragging after a short delay (prevents scrolling issues)
+                    if (L.Browser.mobile) {
+                        setTimeout(() => {
+                            this.map.dragging.enable();
+                        }, 1000);
+                    }
+                    
                     L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
                         maxZoom: 21,
                         attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
