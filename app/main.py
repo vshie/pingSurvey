@@ -18,6 +18,7 @@ base_url = 'http://host.docker.internal/mavlink2rest/mavlink'
 log_file = '/app/logs/sensordata.csv'
 simulation_file = '/app/logs/simulation.csv'
 log_rate = 2 #Desired rate in Hz
+simulation_speed = 5 #Playback speed multiplier for simulation
 data = []
 row_counter = 0
 feedback_interval = 5 # Define the feedback interval (in seconds)
@@ -225,7 +226,8 @@ def simulation_loop():
             data = simulation_data[simulation_index]
             simulation_index = (simulation_index + 1) % len(simulation_data)
         
-        time.sleep(1 / log_rate)
+        # Use adjusted sleep time for faster playback
+        time.sleep((1 / log_rate) / simulation_speed)
 
 @app.route('/stop_simulation')
 def stop_simulation():

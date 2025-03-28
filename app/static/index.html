@@ -131,7 +131,7 @@
                     <v-spacer></v-spacer>
                     <v-btn color="amber" :disabled="isLoading || run" outlined rounded text @click="toggleSimulation">
                         <v-icon left>{{ simulation.active ? 'mdi-stop' : 'mdi-play-circle-outline' }}</v-icon>
-                        {{ simulation.active ? 'Stop Simulation' : 'Start Simulation' }}
+                        {{ simulation.active ? 'Stop Simulation' : 'Start Simulation (5x)' }}
                     </v-btn>
                     <v-spacer></v-spacer>
                     <v-btn outlined rounded text @click="clearHeatmap">
@@ -401,6 +401,7 @@
                                 this.receivingData = true;
                                 this.intervalId = setInterval(this.fetchData, 1000);
                                 this.map.setView([9.2,-133], 10);
+                                this.status = `Simulation started with ${result.data_rows} data points at 5x speed`;
                             } else {
                                 alert(`Failed to start simulation: ${result.message}`);
                             }
@@ -409,6 +410,7 @@
                             this.simulation.active = false;
                             this.receivingData = false;
                             clearInterval(this.intervalId);
+                            this.status = 'Simulation stopped';
                         }
                     } catch (error) {
                         console.error('Simulation error:', error);

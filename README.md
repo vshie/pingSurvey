@@ -56,13 +56,14 @@ You can test the interface without connecting to real hardware by using the simu
 1. Create a file called `simulation.csv` in the `/app/logs/` directory
 2. Format it with the same columns as the regular data export (see Data Format section)
 3. Click the "Start Simulation" button in the interface
-4. The interface will play back the data from your CSV file as if it were coming from a live sensor
+4. The interface will play back the data from your CSV file at 5x real-time speed
 
 This is useful for:
 - Testing the interface without hardware
 - Reviewing past survey data in the map view
 - Demonstrating the tool's capabilities
 - Development and testing
+- Quickly visualizing large datasets (5x speed playback)
 
 To create a simulation file from a previous survey, simply rename a downloaded data file to `simulation.csv` and place it in the logs directory.
 
