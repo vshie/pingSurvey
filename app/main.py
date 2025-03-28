@@ -119,6 +119,11 @@ def main():
 @app.route('/')
 def home():
     return app.send_static_file("index.html")
+
+@app.route('/widget')
+def widget():
+    return app.send_static_file("widget.html")
+
 def get_data():
     return jsonify(data)
 

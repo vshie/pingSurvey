@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ping2 Survey Widget</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 10px;
+            background-color: #1e1e1e;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        .widget-container {
+            width: 300px;
+            background-color: #2d2d2d;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        .button-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .status-console {
+            background-color: #1a1a1a;
+            border-radius: 4px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 12px;
+            height: 150px;
+            overflow-y: auto;
+        }
+        .status-row {
+            margin: 5px 0;
+            display: flex;
+            justify-content: space-between;
+        }
+        .status-label {
+            color: #888;
+        }
+        .status-value {
+            color: #fff;
+        }
+        .confidence-high {
+            color: #4CAF50;
+        }
+        .confidence-medium {
+            color: #FFC107;
+        }
+        .confidence-low {
+            color: #F44336;
+        }
+    </style>
+    <link href="/static/css/materialdesignicons.min.css" rel="stylesheet">
+    <link href="/static/css/vuetify.min.css" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, minimal-ui">
+</head>
+<body>
+    <div id="app">
+        <div class="widget-container">
+            <div class="button-container">
+                <v-btn :disabled="isLoading" outlined rounded text @click="toggleRun">
+                    <v-icon>{{ icon }}</v-icon>
+                </v-btn>
+                <v-btn outlined rounded text @click="download">
+                    <v-icon>mdi-download</v-icon>
+                </v-btn>
+            </div>
+            <div class="status-console">
+                <div class="status-row">
+                    <span class="status-label">Depth:</span>
+                    <span class="status-value">{{ depth }} m</span>
+                </div>
+                <div class="status-row">
+                    <span class="status-label">Confidence:</span>
+                    <span class="status-value" :class="getConfidenceClass(confidence)">
+                        {{ confidence }}%
+                    </span>
+                </div>
+                <div class="status-row">
+                    <span class="status-label">Heading:</span>
+                    <span class="status-value">{{ yaw }}°</span>
+                </div>
+                <div class="status-row">
+                    <span class="status-label">Latitude:</span>
+                    <span class="status-value">{{ latitude }}°</span>
+                </div>
+                <div class="status-row">
+                    <span class="status-label">Longitude:</span>
+                    <span class="status-value">{{ longitude }}°</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/vue.js"></script>
+    <script src="/static/js/vuetify.js"></script>
+    <script src="/static/js/axios.min.js"></script>
+    <script>
+        new Vue({
+            el: '#app',
+            vuetify: new Vuetify({
+                theme: {
+                    dark: true,
+                },
+            }),
+            data() {
+                return {
+                    icon: 'mdi-play',
+                    run: false,
+                    isLoading: false,
+                    depth: '--',
+                    confidence: '--',
+                    yaw: '--',
+                    latitude: '--',
+                    longitude: '--',
+                    intervalId: null
+                }
+            },
+            methods: {
+                async toggleRun() {
+                    this.icon = this.icon === 'mdi-play' ? 'mdi-stop' : 'mdi-play';
+                    this.run = !this.run;
+                    if (this.run) {
+                        await this.start();
+                    } else {
+                        await this.stop();
+                    }
+                },
+                async start() {
+                    try {
+                        const response = await fetch('/start');
+                        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+                        this.intervalId = setInterval(this.fetchData, 1000);
+                    } catch (error) {
+                        console.error('Error starting:', error);
+                    }
+                },
+                async stop() {
+                    try {
+                        const response = await fetch('/stop');
+                        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+                        clearInterval(this.intervalId);
+                    } catch (error) {
+                        console.error('Error stopping:', error);
+                    }
+                },
+                async download() {
+                    try {
+                        const response = await fetch('/download');
+                        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+                        const blob = await response.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.setAttribute('download', 'ping2_survey_data.csv');
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                    } catch (error) {
+                        console.error('Error downloading:', error);
+                    }
+                },
+                async fetchData() {
+                    try {
+                        const response = await axios.get('/data');
+                        const data = response.data;
+                        if (data && data.length >= 8) {
+                            this.depth = (data[3] / 100).toFixed(2);
+                            this.confidence = data[4];
+                            this.yaw = data[5];
+                            this.latitude = data[6].toFixed(6);
+                            this.longitude = data[7].toFixed(6);
+                        }
+                    } catch (error) {
+                        console.error('Error fetching data:', error);
+                    }
+                },
+                getConfidenceClass(confidence) {
+                    if (confidence > 95) return 'confidence-high';
+                    if (confidence > 80) return 'confidence-medium';
+                    return 'confidence-low';
+                }
+            },
+            mounted() {
+                this.checkLoggingStatus();
+            }
+        });
+    </script>
+</body>
+</html> 
