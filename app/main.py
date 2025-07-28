@@ -1,4 +1,4 @@
-from flask import Flask, render_template, send_file, jsonify #used as back-end service for Vue2 WebApp
+from flask import Flask, render_template, send_file, jsonify, request, Response #used as back-end service for Vue2 WebApp
 import requests #used to communicate with Vue2 app
 import csv #used to work with output data file
 import time #used for getting current OS time
@@ -7,6 +7,7 @@ import math #used for yaw radian to degree calc
 from datetime import datetime #used for timestamps
 import json #used for JSON decoding
 import os #used for file operations
+import hashlib #used for tile cache filenames
 print("hello we are in the script world")
 app = Flask(__name__, static_url_path="/static", static_folder="static") #setup flask app
 
@@ -17,6 +18,7 @@ simulation_data = [] # Store simulation data from CSV
 base_url = 'http://host.docker.internal/mavlink2rest/mavlink'
 log_file = '/app/logs/sensordata.csv'
 simulation_file = '/app/logs/simulation.csv'
+offline_maps_dir = '/app/static/offlinemaps'
 log_rate = 2 #Desired rate in Hz
 simulation_speed = 5 #Playback speed multiplier for simulation
 data = []
@@ -330,6 +332,126 @@ def simulation_status():
         "current_index": simulation_index,
         "data_format": "enhanced" if simulation_data and len(simulation_data[0]) >= 11 else "legacy"
     })
+
+def get_tile_cache_path(z, x, y, tile_url):
+    """Generate a cache file path for a tile."""
+    # Create a hash of the tile URL to avoid filesystem issues with special characters
+    url_hash = hashlib.md5(tile_url.encode()).hexdigest()
+    return os.path.join(offline_maps_dir, f"{z}_{x}_{y}_{url_hash}.png")
+
+def cache_tile(z, x, y, tile_url, tile_data):
+    """Cache a tile to the offline maps directory."""
+    try:
+        # Ensure the directory exists
+        os.makedirs(offline_maps_dir, exist_ok=True)
+        
+        # Only cache tiles at zoom level 17 or higher
+        if z >= 17:
+            cache_path = get_tile_cache_path(z, x, y, tile_url)
+            with open(cache_path, 'wb') as f:
+                f.write(tile_data)
+            print(f"Cached tile: z={z}, x={x}, y={y}")
+    except Exception as e:
+        print(f"Error caching tile: {e}")
+
+def get_cached_tile(z, x, y, tile_url):
+    """Get a cached tile if it exists."""
+    try:
+        cache_path = get_tile_cache_path(z, x, y, tile_url)
+        if os.path.exists(cache_path):
+            with open(cache_path, 'rb') as f:
+                return f.read()
+    except Exception as e:
+        print(f"Error reading cached tile: {e}")
+    return None
+
+@app.route('/tile/<int:z>/<int:x>/<int:y>')
+def serve_tile(z, x, y):
+    """Serve map tiles with offline caching support."""
+    # Get the original tile URL from the request
+    tile_url = request.args.get('url', 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}')
+    
+    # Check if we have a cached version
+    cached_tile = get_cached_tile(z, x, y, tile_url)
+    if cached_tile:
+        print(f"Serving cached tile: z={z}, x={x}, y={y}")
+        return Response(cached_tile, mimetype='image/png')
+    
+    # Try to fetch from the original source
+    try:
+        formatted_url = tile_url.format(x=x, y=y, z=z)
+        response = requests.get(formatted_url, timeout=10)
+        
+        if response.status_code == 200:
+            tile_data = response.content
+            
+            # Cache the tile for future use
+            cache_tile(z, x, y, tile_url, tile_data)
+            
+            return Response(tile_data, mimetype='image/png')
+        else:
+            # If online fetch fails, try to serve any cached tile (even from different zoom levels)
+            print(f"Online tile fetch failed for z={z}, x={x}, y={y}, trying cached alternatives")
+            
+            # Try to find any cached tile for this area at different zoom levels
+            for cache_z in range(17, 22):  # Try zoom levels 17-21
+                if cache_z != z:
+                    # Calculate the equivalent tile coordinates at different zoom levels
+                    scale_factor = 2 ** (cache_z - z)
+                    cache_x = x * scale_factor
+                    cache_y = y * scale_factor
+                    
+                    # Try a few tiles around this area
+                    for dx in range(-1, 2):
+                        for dy in range(-1, 2):
+                            alt_cache_tile = get_cached_tile(cache_z, cache_x + dx, cache_y + dy, tile_url)
+                            if alt_cache_tile:
+                                print(f"Serving alternative cached tile: z={cache_z}, x={cache_x + dx}, y={cache_y + dy}")
+                                return Response(alt_cache_tile, mimetype='image/png')
+            
+            # If no cached tiles found, return a placeholder
+            return Response('Tile not available', status=404)
+            
+    except Exception as e:
+        print(f"Error fetching tile: {e}")
+        # Try to serve any cached tile as fallback
+        cached_tile = get_cached_tile(z, x, y, tile_url)
+        if cached_tile:
+            return Response(cached_tile, mimetype='image/png')
+        return Response('Tile not available', status=404)
+
+@app.route('/clear_cache')
+def clear_cache():
+    """Clear all cached tiles."""
+    try:
+        import shutil
+        if os.path.exists(offline_maps_dir):
+            shutil.rmtree(offline_maps_dir)
+        os.makedirs(offline_maps_dir, exist_ok=True)
+        return jsonify({"success": True, "message": "Cache cleared successfully"})
+    except Exception as e:
+        return jsonify({"success": False, "message": f"Error clearing cache: {str(e)}"})
+
+@app.route('/cache_status')
+def cache_status():
+    """Get information about the cache."""
+    try:
+        if os.path.exists(offline_maps_dir):
+            cache_files = [f for f in os.listdir(offline_maps_dir) if f.endswith('.png')]
+            cache_size = sum(os.path.getsize(os.path.join(offline_maps_dir, f)) for f in cache_files)
+            return jsonify({
+                "success": True,
+                "cached_tiles": len(cache_files),
+                "cache_size_mb": round(cache_size / (1024 * 1024), 2)
+            })
+        else:
+            return jsonify({
+                "success": True,
+                "cached_tiles": 0,
+                "cache_size_mb": 0
+            })
+    except Exception as e:
+        return jsonify({"success": False, "message": f"Error getting cache status: {str(e)}"})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5420)
