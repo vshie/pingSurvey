@@ -53,11 +53,29 @@ def get_system_id():
         print(f"Warning: Error detecting system ID: {e}, using default value of 1")
         return 1
 
+def get_distance_sensor_component():
+    """Detect the correct component ID for the distance sensor."""
+    system_id = get_system_id()
+    try:
+        # Try common component IDs for distance sensors
+        common_ids = [194, 195, 196, 197, 198, 199, 200]
+        for component_id in common_ids:
+            response = requests.get(f"{base_url}/vehicles/{system_id}/components/{component_id}/messages/DISTANCE_SENSOR")
+            if response.status_code == 200:
+                print(f"Found distance sensor at component ID: {component_id}")
+                return component_id
+        print("Warning: No distance sensor found, using default component ID 194")
+        return 194
+    except Exception as e:
+        print(f"Warning: Error detecting distance sensor component ID: {e}, using default value of 194")
+        return 194
+
 def get_urls():
     """Get the correct URLs based on the detected system ID."""
     system_id = get_system_id()
+    distance_component = get_distance_sensor_component()
     return {
-        'distance': f"{base_url}/vehicles/{system_id}/components/194/messages/DISTANCE_SENSOR",
+        'distance': f"{base_url}/vehicles/{system_id}/components/{distance_component}/messages/DISTANCE_SENSOR",
         'gps': f"{base_url}/vehicles/{system_id}/components/1/messages/GLOBAL_POSITION_INT",
         'yaw': f"{base_url}/vehicles/{system_id}/components/1/messages/ATTITUDE"
     }
@@ -75,16 +93,29 @@ def main():
         distance_response = requests.get(urls['distance'])
         gps_response = requests.get(urls['gps'])
         yaw_response = requests.get(urls['yaw'])
-        if distance_response.status_code == 200 and gps_response.status_code == 200 and yaw_response.status_code == 200: # Check if the requests were successful
+        
+        # Check if GPS and yaw data are available (required)
+        if gps_response.status_code == 200 and yaw_response.status_code == 200:
             try:
-                distance_data = distance_response.json()['message'] # Extract the data from the responses
                 gps_data = gps_response.json()['message']
                 yaw_data = yaw_response.json()['message']
+                
+                # Handle distance sensor data (optional)
+                distance_data = None
+                if distance_response.status_code == 200:
+                    try:
+                        distance_data = distance_response.json()['message']
+                    except json.JSONDecodeError as e:
+                        print(f"Warning: Error decoding distance sensor JSON response: {distance_response.text}")
+                        distance_data = None
+                else:
+                    print(f"Warning: Distance sensor not available (status: {distance_response.status_code})")
+                
             except json.JSONDecodeError as e:
                 print(f"Error decoding JSON response:")
-                print(f"Distance response: {distance_response.text}")
                 print(f"GPS response: {gps_response.text}")
                 print(f"Yaw response: {yaw_response.text}")
+                print(f"Distance response: {distance_response.text}")
                 raise e
             column_labels = ['Unix Timestamp', 'Date', 'Time','Depth (cm)', 'Confidence (%)', 'Vessel heading (deg)', 'Roll (deg)', 'Pitch (deg)', 'Latitude', 'Longitude', 'Altitude (m)']
             timestamp = int(time.time() * 1000)  # Convert current time to milliseconds
@@ -92,8 +123,13 @@ def main():
             unix_timestamp = timestamp
             timenow = dt.strftime('%H:%M:%S')
             date = dt.strftime('%m/%d/%y')
-            distance = distance_data['current_distance']
-            confidence = distance_data['signal_quality']
+            # Handle distance data (use default values if not available)
+            if distance_data is not None:
+                distance = distance_data['current_distance']
+                confidence = distance_data['signal_quality']
+            else:
+                distance = 0  # Default depth value
+                confidence = 0  # Default confidence value
             # Yaw
             yawRad = yaw_data['yaw']
             yawDeg = math.degrees(yawRad)
@@ -119,10 +155,13 @@ def main():
                 row_counter += 1 # Increment the row counter
 
         else:
-            # Print an error message if any of the requests were unsuccessful
-            print(f"Error: Ping2 Data - {distance_response.status_code} - {distance_response.reason}")
-            print(f"Error: GPS Data - {gps_response.status_code} - {gps_response.reason}")
-            print(f"Error: Attitude Data - {yaw_response.status_code} - {yaw_response.reason}")
+            # Print an error message if any of the required requests were unsuccessful
+            if gps_response.status_code != 200:
+                print(f"Error: GPS Data - {gps_response.status_code} - {gps_response.reason}")
+            if yaw_response.status_code != 200:
+                print(f"Error: Attitude Data - {yaw_response.status_code} - {yaw_response.reason}")
+            if distance_response.status_code != 200:
+                print(f"Warning: Distance sensor not available - {distance_response.status_code} - {distance_response.reason}")
 
         if row_counter % (log_rate * feedback_interval) == 0:
             print(f"Rows added to CSV: {row_counter}")
@@ -144,9 +183,6 @@ def widget():
 @app.route('/new')
 def new_interface():
     return app.send_static_file("new_index.html")
-
-def get_data():
-    return jsonify(data)
 
 @app.route('/start')
 def start_logging():
