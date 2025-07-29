@@ -152,6 +152,77 @@
             overflow-x: auto; /* Allow horizontal scrolling for the table */
         }
         
+        .cache-progress-panel {
+            padding: 16px;
+            background-color: #1E1E1E;
+            margin-top: 1px;
+            border-top: 2px solid #9C27B0;
+        }
+        
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        
+        .progress-header h4 {
+            margin: 0;
+            color: #9C27B0;
+        }
+        
+        .progress-content {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .progress-bar-container {
+            margin-bottom: 8px;
+        }
+        
+        .progress-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            font-size: 14px;
+        }
+        
+        .progress-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .progress-label {
+            color: #888;
+            font-weight: 500;
+        }
+        
+        .progress-value {
+            color: white;
+            font-weight: 600;
+        }
+        
+        /* Mobile responsiveness for progress panel */
+        @media (max-width: 600px) {
+            .progress-details {
+                grid-template-columns: 1fr;
+                gap: 6px;
+                font-size: 12px;
+            }
+            
+            .progress-header {
+                flex-direction: column;
+                gap: 8px;
+                align-items: flex-start;
+            }
+            
+            .cache-progress-panel {
+                padding: 12px;
+            }
+        }
+        
         .confidence-high {
             background-color: #4CAF50;
             color: white;
@@ -324,7 +395,7 @@
                             <v-icon left>mdi-{{ showLegend ? 'eye-off' : 'eye' }}</v-icon>
                             {{ showLegend ? 'Hide' : 'Show' }}
                         </v-btn>
-                        <v-btn color="purple" dark rounded elevation="2" @click="cacheVisibleTiles" :loading="cacheLoading">
+                        <v-btn color="purple" dark rounded elevation="2" @click="cacheVisibleTiles" :loading="cacheLoading" :disabled="cacheProgress.active">
                             <v-icon left>mdi-cached</v-icon>
                             Cache: {{ cacheStats.cachedTiles }}
                         </v-btn>
@@ -348,6 +419,54 @@
                             <v-icon left>{{ simulation.active ? 'mdi-stop' : 'mdi-play-circle-outline' }}</v-icon>
                             {{ simulation.active ? 'Stop Sim' : 'Start Sim (5x)' }}
                         </v-btn>
+                    </div>
+                </div>
+                
+                <!-- Cache Progress Bar -->
+                <div v-if="cacheProgress.active" class="cache-progress-panel">
+                    <div class="progress-header">
+                        <h4>Cache Progress</h4>
+                        <v-btn small color="error" @click="cancelCaching" :disabled="!cacheProgress.active">
+                            <v-icon left>mdi-close</v-icon>
+                            Cancel
+                        </v-btn>
+                    </div>
+                    <div class="progress-content">
+                        <div class="progress-bar-container">
+                            <v-progress-linear
+                                :value="cacheProgress.percentage"
+                                color="purple"
+                                height="25"
+                                striped
+                                stream
+                            >
+                                <template v-slot:default="{ value }">
+                                    <strong>{{ Math.ceil(value) }}%</strong>
+                                </template>
+                            </v-progress-linear>
+                        </div>
+                        <div class="progress-details">
+                            <div class="progress-row">
+                                <span class="progress-label">Zoom Level:</span>
+                                <span class="progress-value">{{ cacheProgress.currentZoom }} → {{ cacheProgress.maxZoom }}</span>
+                            </div>
+                            <div class="progress-row">
+                                <span class="progress-label">Tiles Processed:</span>
+                                <span class="progress-value">{{ cacheProgress.tilesProcessed }} / {{ cacheProgress.totalTiles }}</span>
+                            </div>
+                            <div class="progress-row">
+                                <span class="progress-label">New Tiles Cached:</span>
+                                <span class="progress-value">{{ cacheProgress.newTilesCached }}</span>
+                            </div>
+                            <div class="progress-row">
+                                <span class="progress-label">Already Cached:</span>
+                                <span class="progress-value">{{ cacheProgress.alreadyCached }}</span>
+                            </div>
+                            <div class="progress-row">
+                                <span class="progress-label">Status:</span>
+                                <span class="progress-value">{{ cacheProgress.status }}</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 
@@ -407,6 +526,17 @@
                         cacheLimitMB: 5120
                     },
                     cacheLoading: false,
+                    cacheProgress: {
+                        active: false,
+                        percentage: 0,
+                        currentZoom: 0,
+                        maxZoom: 0,
+                        tilesProcessed: 0,
+                        totalTiles: 0,
+                        newTilesCached: 0,
+                        alreadyCached: 0,
+                        status: ''
+                    },
                     cacheStatsRefreshTimeout: null,
                     cacheStatsInterval: null,
                     recentCachedArea: {
@@ -781,6 +911,19 @@
                         return;
                     }
                     
+                    // Initialize progress tracking
+                    this.cacheProgress = {
+                        active: true,
+                        percentage: 0,
+                        currentZoom: this.map.getZoom(),
+                        maxZoom: 21,
+                        tilesProcessed: 0,
+                        totalTiles: 0,
+                        newTilesCached: 0,
+                        alreadyCached: 0,
+                        status: 'Calculating tiles...'
+                    };
+                    
                     this.cacheLoading = true;
                     
                     try {
@@ -794,11 +937,22 @@
                         let newTilesCached = 0;
                         let alreadyCached = 0;
                         
-                        // Cache tiles for each zoom level from current to max
+                        // Calculate total tiles first
+                        this.cacheProgress.status = 'Calculating total tiles...';
                         for (let z = currentZoom; z <= maxZoom; z++) {
                             const tiles = this.getTilesForBounds(bounds, z);
                             totalTiles += tiles.length;
+                        }
+                        
+                        this.cacheProgress.totalTiles = totalTiles;
+                        this.cacheProgress.status = `Starting cache process for ${totalTiles} tiles...`;
+                        
+                        // Cache tiles for each zoom level from current to max
+                        for (let z = currentZoom; z <= maxZoom; z++) {
+                            this.cacheProgress.currentZoom = z;
+                            this.cacheProgress.status = `Processing zoom level ${z}...`;
                             
+                            const tiles = this.getTilesForBounds(bounds, z);
                             console.log(`Zoom ${z}: ${tiles.length} tiles to check/cache`);
                             
                             // Skip if no tiles to process
@@ -807,57 +961,89 @@
                                 continue;
                             }
                             
-                            // Process tiles in batches to avoid overwhelming the server
-                            const batchSize = 5;
-                            for (let i = 0; i < tiles.length; i += batchSize) {
-                                const batch = tiles.slice(i, i + batchSize);
-                                
-                                // Check which tiles are already cached
-                                const checkPromises = batch.map(tile => this.checkTileCached(tile.z, tile.x, tile.y));
-                                const checkResults = await Promise.allSettled(checkPromises);
-                                
-                                // Filter out already cached tiles
-                                const tilesToCache = [];
-                                for (let j = 0; j < batch.length; j++) {
-                                    const result = checkResults[j];
-                                    if (result.status === 'fulfilled' && !result.value) {
-                                        tilesToCache.push(batch[j]);
-                                    } else if (result.status === 'fulfilled' && result.value) {
-                                        alreadyCached++;
+                                                            // Process tiles in batches to avoid overwhelming the server
+                                const batchSize = 5;
+                                for (let i = 0; i < tiles.length; i += batchSize) {
+                                    // Check if caching was cancelled
+                                    if (!this.cacheProgress.active) {
+                                        console.log('Caching cancelled by user');
+                                        return;
                                     }
-                                }
-                                
-                                console.log(`Batch ${Math.floor(i/batchSize) + 1}: ${tilesToCache.length} new tiles to cache, ${batch.length - tilesToCache.length} already cached`);
-                                
-                                // Cache only new tiles
-                                if (tilesToCache.length > 0) {
-                                    const cachePromises = tilesToCache.map(tile => this.cacheTile(tile.z, tile.x, tile.y));
-                                    const cacheResults = await Promise.allSettled(cachePromises);
                                     
-                                    // Count successful caches
-                                    newTilesCached += cacheResults.filter(r => r.status === 'fulfilled' && r.value).length;
+                                    const batch = tiles.slice(i, i + batchSize);
+                                    
+                                    // Check which tiles are already cached
+                                    const checkPromises = batch.map(tile => this.checkTileCached(tile.z, tile.x, tile.y));
+                                    const checkResults = await Promise.allSettled(checkPromises);
+                                    
+                                    // Filter out already cached tiles
+                                    const tilesToCache = [];
+                                    for (let j = 0; j < batch.length; j++) {
+                                        const result = checkResults[j];
+                                        if (result.status === 'fulfilled' && !result.value) {
+                                            tilesToCache.push(batch[j]);
+                                        } else if (result.status === 'fulfilled' && result.value) {
+                                            alreadyCached++;
+                                        }
+                                    }
+                                    
+                                    console.log(`Batch ${Math.floor(i/batchSize) + 1}: ${tilesToCache.length} new tiles to cache, ${batch.length - tilesToCache.length} already cached`);
+                                    
+                                    // Cache only new tiles
+                                    if (tilesToCache.length > 0) {
+                                        const cachePromises = tilesToCache.map(tile => this.cacheTile(tile.z, tile.x, tile.y));
+                                        const cacheResults = await Promise.allSettled(cachePromises);
+                                        
+                                        // Count successful caches
+                                        newTilesCached += cacheResults.filter(r => r.status === 'fulfilled' && r.value).length;
+                                    }
+                                    
+                                    // Update progress
+                                    this.cacheProgress.tilesProcessed += batch.length;
+                                    this.cacheProgress.newTilesCached = newTilesCached;
+                                    this.cacheProgress.alreadyCached = alreadyCached;
+                                    this.cacheProgress.percentage = (this.cacheProgress.tilesProcessed / this.cacheProgress.totalTiles) * 100;
+                                    this.cacheProgress.status = `Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(tiles.length/batchSize)} (${this.cacheProgress.tilesProcessed}/${this.cacheProgress.totalTiles} tiles)`;
+                                    
+                                    // Update cache stats every few batches
+                                    if (i % (batchSize * 3) === 0) {
+                                        await this.getCacheStats();
+                                    }
+                                    
+                                    // Small delay to avoid overwhelming the server
+                                    await new Promise(resolve => setTimeout(resolve, 200));
                                 }
-                                
-                                // Update progress every few batches
-                                if (i % (batchSize * 3) === 0) {
-                                    await this.getCacheStats();
-                                }
-                                
-                                // Small delay to avoid overwhelming the server
-                                await new Promise(resolve => setTimeout(resolve, 200));
-                            }
                         }
                         
                         console.log(`Caching complete: ${newTilesCached} new tiles cached, ${alreadyCached} already cached, ${totalTiles} total processed`);
                         await this.getCacheStats();
                         
-                        alert(`Caching complete!\n\n${newTilesCached} new tiles cached\n${alreadyCached} tiles already cached\nTotal tiles processed: ${totalTiles}\nZoom levels: ${currentZoom} to ${maxZoom}`);
+                        // Update final progress
+                        this.cacheProgress.percentage = 100;
+                        this.cacheProgress.status = 'Caching complete!';
+                        
+                        // Show completion message
+                        setTimeout(() => {
+                            alert(`Caching complete!\n\n${newTilesCached} new tiles cached\n${alreadyCached} tiles already cached\nTotal tiles processed: ${totalTiles}\nZoom levels: ${currentZoom} to ${maxZoom}`);
+                            
+                            // Hide progress panel after a delay
+                            setTimeout(() => {
+                                this.cacheProgress.active = false;
+                            }, 3000);
+                        }, 500);
                         
                     } catch (error) {
                         console.error('Error caching visible tiles:', error);
+                        this.cacheProgress.status = 'Error: ' + error.message;
                         alert('Error caching tiles: ' + error.message);
                     } finally {
                         this.cacheLoading = false;
+                        if (this.cacheProgress.active) {
+                            // Keep progress panel visible for a moment to show error
+                            setTimeout(() => {
+                                this.cacheProgress.active = false;
+                            }, 5000);
+                        }
                     }
                 },
                 getTilesForBounds(bounds, zoom) {
@@ -992,6 +1178,12 @@
                     } catch (error) {
                         console.error('Error fetching recent cached area:', error);
                     }
+                },
+                cancelCaching() {
+                    this.cacheProgress.active = false;
+                    this.cacheProgress.status = 'Cancelled by user';
+                    this.cacheLoading = false;
+                    console.log('Caching cancelled by user');
                 }
             },
             mounted() {
