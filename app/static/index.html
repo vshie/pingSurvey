@@ -128,6 +128,114 @@
             box-shadow: 0 3px 5px rgba(0, 0, 0, 0.3);
         }
         
+        /* Compass rose styles */
+        .compass-rose {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+            width: 80px;
+            height: 80px;
+            background-color: rgba(33, 33, 33, 0.9);
+            border-radius: 50%;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: grab;
+            user-select: none;
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.4);
+            transition: transform 0.1s ease;
+        }
+        
+        .compass-rose:active {
+            cursor: grabbing;
+        }
+        
+        .compass-rose-inner {
+            position: relative;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, #2196F3, #1976D2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            font-size: 14px;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+        }
+        
+        .compass-rose-north {
+            position: absolute;
+            top: -2px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #FF5722;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: bold;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+        }
+        
+        .compass-rose-rotation-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 2px;
+            height: 25px;
+            background-color: #FF5722;
+            transform-origin: center bottom;
+            transform: translate(-50%, -50%);
+            border-radius: 1px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        }
+        
+        .compass-reset-btn {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background-color: #FF5722 !important;
+            color: white !important;
+            width: 24px !important;
+            height: 24px !important;
+            min-width: 24px !important;
+            border: 2px solid rgba(255, 255, 255, 0.8);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .compass-reset-btn:hover {
+            background-color: #E64A19 !important;
+        }
+        
+        /* Mobile adjustments for compass rose */
+        @media (max-width: 600px) {
+            .compass-rose {
+                width: 70px;
+                height: 70px;
+                bottom: 15px;
+                right: 15px;
+            }
+            
+            .compass-rose-inner {
+                width: 50px;
+                height: 50px;
+                font-size: 12px;
+            }
+            
+            .compass-rose-north {
+                font-size: 9px;
+                padding: 1px 5px;
+            }
+            
+            .compass-rose-rotation-indicator {
+                height: 20px;
+            }
+        }
+        
         /* Caching indicator overlay */
         .caching-indicator {
             position: absolute;
@@ -353,6 +461,31 @@
             touch-action: none;
         }
         
+        /* Map rotation styles */
+        .map-rotated {
+            transition: transform 0.1s ease-out;
+        }
+        
+        /* Enhanced compass rose for rotated state */
+        .compass-rose.rotated {
+            background-color: rgba(255, 87, 34, 0.9);
+            border-color: rgba(255, 255, 255, 0.6);
+        }
+        
+        .compass-rose.rotated .compass-rose-inner {
+            background: linear-gradient(45deg, #FF5722, #E64A19);
+        }
+        
+        /* Compass rose interaction improvements */
+        .compass-rose:hover {
+            background-color: rgba(33, 33, 33, 1);
+            border-color: rgba(255, 255, 255, 0.5);
+        }
+        
+        .compass-rose-inner:hover {
+            background: linear-gradient(45deg, #1976D2, #1565C0);
+        }
+        
         /* Fix for table on mobile */
         .v-data-table {
             width: 100%;
@@ -379,6 +512,27 @@
                     <!-- Floating center map button for mobile -->
                     <div class="map-center-button" @click="onCenterMapButtonClick">
                         <v-icon color="white">mdi-crosshairs-gps</v-icon>
+                    </div>
+                    
+                    <!-- Compass Rose -->
+                    <div class="compass-rose" 
+                         :class="{ 'rotated': mapRotation !== 0 }"
+                         @mousedown="startCompassDrag" 
+                         @touchstart="startCompassDrag"
+                         title="Drag to rotate map - aligns with coastline for efficient tile caching">
+                        <div class="compass-rose-inner">
+                            <div class="compass-rose-north">N</div>
+                            <div class="compass-rose-rotation-indicator" :style="{ transform: `translate(-50%, -50%) rotate(${mapRotation}deg)` }"></div>
+                            <span>{{ Math.round(mapRotation) }}°</span>
+                        </div>
+                        <!-- Reset button -->
+                        <v-btn icon small 
+                               class="compass-reset-btn" 
+                               @click="resetMapRotation"
+                               v-if="mapRotation !== 0"
+                               title="Reset map rotation to North">
+                            <v-icon small>mdi-refresh</v-icon>
+                        </v-btn>
                     </div>
                     
                     <!-- Caching indicator overlay -->
@@ -464,7 +618,7 @@
                     
                     <!-- Right side - Simulation -->
                     <div class="controls-section">
-                        <v-btn color="amber" :disabled="isLoading || run" dark rounded elevation="2" @click="toggleSimulation">
+                        <v-btn color="amber" :disabled="isLoading || run" dark rounded elevation="2" @click="showSimulationDialog">
                             <v-icon left>{{ simulation.active ? 'mdi-stop' : 'mdi-play-circle-outline' }}</v-icon>
                             {{ simulation.active ? 'Stop Sim' : 'Start Sim (5x)' }}
                         </v-btn>
@@ -601,6 +755,63 @@
                 </v-card-text>
             </v-card>
         </v-dialog>
+        
+        <!-- Simulation File Selection Dialog -->
+        <v-dialog v-model="simulationDialog" max-width="600px">
+            <v-card dark>
+                <v-card-title>
+                    <span class="headline">Select Simulation File</span>
+                    <v-spacer></v-spacer>
+                    <v-btn icon @click="simulationDialog = false">
+                        <v-icon>mdi-close</v-icon>
+                    </v-btn>
+                </v-card-title>
+                <v-card-text>
+                    <div class="mb-4">
+                        <p>Choose a log file to simulate at 5x speed:</p>
+                    </div>
+                    
+                    <div v-if="logFiles.length === 0" class="text-center pa-4">
+                        <v-alert type="warning" dark>
+                            <strong>No log files found.</strong><br>
+                            Start a survey session first to create log files for simulation.
+                        </v-alert>
+                    </div>
+                    
+                    <v-data-table
+                        v-else
+                        :headers="simulationFileHeaders"
+                        :items="logFiles"
+                        :items-per-page="8"
+                        class="elevation-1"
+                        dark
+                        @click:row="selectSimulationFile"
+                    >
+                        <template v-slot:item.filename="{ item }">
+                            <v-chip small color="amber">{{ item.filename }}</v-chip>
+                        </template>
+                        <template v-slot:item.size_mb="{ item }">
+                            <span>{{ item.size_mb }} MB</span>
+                        </template>
+                        <template v-slot:item.modified="{ item }">
+                            <span>{{ formatDate(item.modified) }}</span>
+                        </template>
+                        <template v-slot:item.actions="{ item }">
+                            <v-btn small color="amber" @click="startSimulationWithFile(item.filename)">
+                                <v-icon left small>mdi-play</v-icon>
+                                Simulate
+                            </v-btn>
+                        </template>
+                    </v-data-table>
+                    
+                    <div class="mt-4 text-center">
+                        <v-alert type="info" dark>
+                            <strong>Note:</strong> Simulation will play the selected file at 5x speed and loop continuously until stopped.
+                        </v-alert>
+                    </div>
+                </v-card-text>
+            </v-card>
+        </v-dialog>
     </div>
 
     <script src="/static/js/vue.js"></script>
@@ -608,7 +819,62 @@
     <script src="/static/js/axios.min.js"></script>
     <script src="/static/js/leaflet.js"></script>
     <script src="/static/js/leaflet.rotatedMarker.js"></script>
+    <script src="/static/js/leaflet-heat.js"></script>
     <script>
+        // Custom map rotation implementation for Leaflet
+        L.Map.include({
+            setBearing: function(bearing) {
+                this._bearing = bearing || 0;
+                this._updateBearing();
+                return this;
+            },
+            
+            getBearing: function() {
+                return this._bearing || 0;
+            },
+            
+            _updateBearing: function() {
+                const container = this.getContainer();
+                const bearing = this._bearing || 0;
+                
+                // Apply rotation to the map container
+                container.style.transform = `rotate(${bearing}deg)`;
+                container.style.transformOrigin = 'center center';
+                
+                // Trigger a resize to ensure proper rendering
+                this.invalidateSize();
+                
+                // Fire a custom event
+                this.fire('bearingchanged', { bearing: bearing });
+            }
+        });
+        
+        // Custom rotation-aware tile layer
+        L.TileLayer.Rotated = L.TileLayer.extend({
+            _updateBearing: function() {
+                if (this._map && this._map.getBearing) {
+                    const bearing = this._map.getBearing();
+                    // For now, just redraw the layer
+                    // In a more sophisticated implementation, we could adjust tile loading
+                    this.redraw();
+                }
+            },
+            
+            onAdd: function(map) {
+                L.TileLayer.prototype.onAdd.call(this, map);
+                map.on('bearingchanged', this._updateBearing, this);
+            },
+            
+            onRemove: function(map) {
+                L.TileLayer.prototype.onRemove.call(this, map);
+                map.off('bearingchanged', this._updateBearing, this);
+            }
+        });
+        
+        L.tileLayer.rotated = function(url, options) {
+            return new L.TileLayer.Rotated(url, options);
+        };
+        
         new Vue({
             el: '#app',
             vuetify: new Vuetify({
@@ -675,7 +941,14 @@
                     currentLogFile: '',
                     logFiles: [],
                     logFilesDialog: false,
+                    simulationDialog: false,
                     logFileHeaders: [
+                        { text: 'Filename', value: 'filename', align: 'left' },
+                        { text: 'Size', value: 'size_mb', align: 'center' },
+                        { text: 'Modified', value: 'modified', align: 'center' },
+                        { text: 'Actions', value: 'actions', align: 'center', sortable: false }
+                    ],
+                    simulationFileHeaders: [
                         { text: 'Filename', value: 'filename', align: 'left' },
                         { text: 'Size', value: 'size_mb', align: 'center' },
                         { text: 'Modified', value: 'modified', align: 'center' },
@@ -703,7 +976,9 @@
                         'Ocean_Opulence_Survey', 'Tidal_Tidbits_Collection', 'Seabed_Delights_Map',
                         'Benthic_Base_Basis', 'Whimsy_Wavy_Data', 'Infinite_Seas_Quantified',
                         'Tide_Tomfoolery_Tracking', 'Marine_Mirth_Measurements', 'Aqua_Antics_Archive'
-                    ]
+                    ],
+                    mapRotation: 0, // New data property for compass rotation
+                    isCompassDragging: false // New data property for compass dragging state
                 }
             },
             methods: {
@@ -921,27 +1196,10 @@
                     try {
                         this.isLoading = true;
                         if (!this.simulation.active) {
-                            const response = await fetch('/start_simulation');
-                            const result = await response.json();
-                            if (result.success) {
-                                this.simulation.active = true;
-                                this.simulation.dataRows = result.data_rows || 0;
-                                this.receivingData = true;
-                                this.intervalId = setInterval(this.fetchData, 1000);
-                                this.resetMap(9.2, -133, 10);
-                                
-                                // Get more detailed simulation status
-                                const statusResponse = await fetch('/simulation_status');
-                                const statusData = await statusResponse.json();
-                                const formatMessage = statusData.data_format === "legacy" ? 
-                                    " (legacy format - roll, pitch, altitude set to 0)" : 
-                                    " (enhanced format with roll, pitch, altitude)";
-                                
-                                this.status = `Simulation started with ${result.data_rows} data points at 5x speed${formatMessage}`;
-                            } else {
-                                alert(`Failed to start simulation: ${result.message}`);
-                            }
+                            // Show simulation file selection dialog
+                            await this.showSimulationDialog();
                         } else {
+                            // Stop simulation
                             await fetch('/stop_simulation');
                             this.simulation.active = false;
                             this.receivingData = false;
@@ -1272,7 +1530,7 @@
                 createOfflineTileLayer() {
                     // Create a custom tile layer that uses our offline-capable backend
                     const sourceConfig = this.mapSources[this.selectedMapSource];
-                    const tileLayer = L.tileLayer(`/tiles/{z}/{x}/{y}.png?source=${this.selectedMapSource}`, {
+                    const tileLayer = L.tileLayer.rotated(`/tiles/{z}/{x}/{y}.png?source=${this.selectedMapSource}`, {
                         maxZoom: 21,
                         attribution: sourceConfig.attribution + ' (Offline Cached)',
                         errorTileUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7' // Transparent tile for missing tiles
@@ -1393,6 +1651,177 @@
                 formatDate(dateString) {
                     const date = new Date(dateString);
                     return date.toLocaleString();
+                },
+                async showSimulationDialog() {
+                    this.simulationDialog = true;
+                    await this.loadLogFiles(); // Load log files for simulation selection
+                },
+                selectSimulationFile(event, item) {
+                    this.currentLogFile = item.filename;
+                    this.simulationDialog = false; // Close dialog after selection
+                },
+                async startSimulationWithFile(filename) {
+                    try {
+                        this.isLoading = true;
+                        const response = await fetch(`/start_simulation?filename=${encodeURIComponent(filename)}`);
+                        const result = await response.json();
+                        if (result.success) {
+                            this.simulation.active = true;
+                            this.simulation.dataRows = result.data_rows || 0;
+                            this.receivingData = true;
+                            this.intervalId = setInterval(this.fetchData, 1000);
+                            this.resetMap(9.2, -133, 10);
+                            
+                            // Get more detailed simulation status
+                            const statusResponse = await fetch('/simulation_status');
+                            const statusData = await statusResponse.json();
+                            const formatMessage = statusData.data_format === "legacy" ? 
+                                " (legacy format - roll, pitch, altitude set to 0)" : 
+                                " (enhanced format with roll, pitch, altitude)";
+                            
+                            this.status = `Simulation started with file: ${filename} (${result.data_rows} data points at 5x speed)${formatMessage}`;
+                            this.simulationDialog = false; // Close dialog after successful start
+                        } else {
+                            alert(`Failed to start simulation with file: ${filename}\n${result.message}`);
+                        }
+                    } catch (error) {
+                        console.error('Error starting simulation with file:', error);
+                        alert(`Error starting simulation with file: ${filename}\n${error.message}`);
+                    } finally {
+                        this.isLoading = false;
+                    }
+                },
+                // New methods for compass rose interaction
+                startCompassDrag(event) {
+                    event.preventDefault();
+                    this.isCompassDragging = true;
+                    
+                    // Disable map dragging while dragging compass
+                    if (this.map) {
+                        this.map.dragging.disable();
+                    }
+                    
+                    // Add global event listeners
+                    document.addEventListener('mousemove', this.updateCompassDrag);
+                    document.addEventListener('touchmove', this.updateCompassDrag, { passive: false });
+                    document.addEventListener('mouseup', this.stopCompassDrag);
+                    document.addEventListener('touchend', this.stopCompassDrag);
+                    
+                    // Start the drag
+                    this.updateCompassRotation(event);
+                },
+                
+                updateCompassDrag(event) {
+                    if (this.isCompassDragging) {
+                        event.preventDefault();
+                        this.updateCompassRotation(event);
+                    }
+                },
+                
+                stopCompassDrag() {
+                    this.isCompassDragging = false;
+                    
+                    // Re-enable map dragging
+                    if (this.map) {
+                        this.map.dragging.enable();
+                    }
+                    
+                    // Remove global event listeners
+                    document.removeEventListener('mousemove', this.updateCompassDrag);
+                    document.removeEventListener('touchmove', this.updateCompassDrag);
+                    document.removeEventListener('mouseup', this.stopCompassDrag);
+                    document.removeEventListener('touchend', this.stopCompassDrag);
+                },
+                
+                updateCompassRotation(event) {
+                    if (!this.isCompassDragging) return;
+                    
+                    const compass = event.currentTarget;
+                    const rect = compass.getBoundingClientRect();
+                    const centerX = rect.left + rect.width / 2;
+                    const centerY = rect.top + rect.height / 2;
+                    
+                    // Get client coordinates (handle both mouse and touch events)
+                    const clientX = event.clientX || (event.touches && event.touches[0] ? event.touches[0].clientX : 0);
+                    const clientY = event.clientY || (event.touches && event.touches[0] ? event.touches[0].clientY : 0);
+                    
+                    // Calculate angle from center
+                    const dx = clientX - centerX;
+                    const dy = clientY - centerY;
+                    let angle = Math.atan2(dy, dx) * (180 / Math.PI);
+                    
+                    // Convert to compass heading (0° = North, 90° = East, etc.)
+                    angle = (90 - angle + 360) % 360;
+                    
+                    // Update map rotation
+                    this.mapRotation = angle;
+                    
+                    // Apply rotation to the map using Leaflet API
+                    this.applyMapRotation(angle);
+                },
+                
+                applyMapRotation(angle) {
+                    if (this.map && this.map.setBearing) {
+                        // Use Leaflet's setBearing method
+                        this.map.setBearing(angle);
+                        
+                        // Show rotation feedback
+                        this.showRotationFeedback(angle);
+                    } else {
+                        // Fallback to direct CSS manipulation
+                        const mapContainer = this.map.getContainer();
+                        mapContainer.style.transform = `rotate(${angle}deg)`;
+                        mapContainer.style.transformOrigin = 'center center';
+                        
+                        // Add a class to indicate rotation
+                        if (angle !== 0) {
+                            mapContainer.classList.add('map-rotated');
+                        } else {
+                            mapContainer.classList.remove('map-rotated');
+                        }
+                        
+                        // Show rotation feedback
+                        this.showRotationFeedback(angle);
+                    }
+                },
+                
+                showRotationFeedback(angle) {
+                    // Show a brief notification about rotation
+                    if (angle !== 0) {
+                        this.status = `Map rotated ${Math.round(angle)}° - tiles will be cached in rotated orientation`;
+                    } else {
+                        this.status = 'Map rotation reset to North';
+                    }
+                },
+                
+                resetMapRotation() {
+                    this.mapRotation = 0;
+                    this.applyMapRotation(0);
+                },
+                
+                initializeCompassRose() {
+                    // Ensure compass rose is properly initialized
+                    this.mapRotation = 0;
+                    this.isCompassDragging = false;
+                    
+                    // Apply initial rotation
+                    this.$nextTick(() => {
+                        this.applyMapRotation(0);
+                    });
+                    
+                    // Listen for bearing changes from the map
+                    if (this.map) {
+                        this.map.on('bearingchanged', (e) => {
+                            this.mapRotation = e.bearing;
+                        });
+                    }
+                },
+                
+                // Method to sync compass with map bearing
+                syncCompassWithMap() {
+                    if (this.map && this.map.getBearing) {
+                        this.mapRotation = this.map.getBearing();
+                    }
                 }
             },
             mounted() {
@@ -1420,6 +1849,11 @@
                     L.control.scale({imperial: false}).addTo(this.map);
                     this.scaleAdded = true;
                     
+                    // Add event listeners for map changes
+                    this.map.on('viewreset', this.syncCompassWithMap);
+                    this.map.on('zoomend', this.syncCompassWithMap);
+                    this.map.on('moveend', this.syncCompassWithMap);
+                    
                     // Add CSS for logo rotation
                     const style = document.createElement('style');
                     style.textContent = `
@@ -1438,6 +1872,7 @@
                     this.getRecentCachedArea();
                     this.startCacheStatsRefresh();
                     this.loadMapSources();
+                    this.initializeCompassRose(); // Initialize compass rose on mount
                 });
             }
         })

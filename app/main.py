@@ -37,6 +37,7 @@ logging_active = False# Global variable to control the logging
 simulation_active = False # Global variable to control simulation mode
 simulation_index = 0 # Index to track which row of simulation data we're on
 simulation_data = [] # Store simulation data from CSV
+simulation_filename = None # Track the current simulation file being played
 base_url = 'http://host.docker.internal/mavlink2rest/mavlink'
 log_rate = 2 #Desired rate in Hz
 simulation_speed = 5 #Playback speed multiplier for simulation
@@ -647,14 +648,22 @@ def status():
 
 @app.route('/start_simulation')
 def start_simulation():
-    global simulation_active, simulation_data, simulation_index, logging_active, data
+    global simulation_active, simulation_data, simulation_index, logging_active, data, simulation_filename
     
     # Stop normal logging if it's running
     if logging_active:
         logging_active = False
     
-    # Load simulation data from CSV file
-    simulation_file = '/app/logs/simulation.csv'
+    # Get the filename from query parameter, default to simulation.csv
+    filename = request.args.get('filename', 'simulation.csv')
+    simulation_filename = filename # Store the filename
+    
+    # Validate filename to prevent directory traversal
+    if not filename.startswith('ping_survey_') or not filename.endswith('.csv'):
+        return jsonify({"success": False, "message": "Invalid filename. Must be a ping survey log file."})
+    
+    # Load simulation data from the selected CSV file
+    simulation_file = f'/app/logs/{filename}'
     if os.path.exists(simulation_file):
         simulation_data = []
         try:
@@ -691,17 +700,22 @@ def start_simulation():
                 # Start simulation thread
                 thread = threading.Thread(target=simulation_loop)
                 thread.start()
-                return jsonify({"success": True, "data_rows": len(simulation_data), "message": f"Loaded {len(simulation_data)} rows from simulation file"})
+                return jsonify({
+                    "success": True, 
+                    "data_rows": len(simulation_data), 
+                    "filename": filename,
+                    "message": f"Loaded {len(simulation_data)} rows from {filename}"
+                })
             else:
-                return jsonify({"success": False, "message": "Simulation file is empty or contains invalid data format. The file needs at least 8 columns of data."})
+                return jsonify({"success": False, "message": f"File {filename} is empty or contains invalid data format. The file needs at least 8 columns of data."})
         except Exception as e:
             print(f"Simulation error: {str(e)}")
-            return jsonify({"success": False, "message": f"Error loading simulation file: {str(e)}. Check if your CSV has at least 8 columns of data."})
+            return jsonify({"success": False, "message": f"Error loading file {filename}: {str(e)}. Check if your CSV has at least 8 columns of data."})
     else:
-        return jsonify({"success": False, "message": f"Simulation file not found: {simulation_file}"})
+        return jsonify({"success": False, "message": f"File not found: {simulation_file}"})
 
 def simulation_loop():
-    global simulation_active, simulation_data, simulation_index, data
+    global simulation_active, simulation_data, simulation_index, data, simulation_filename
     
     while simulation_active:
         if simulation_index < len(simulation_data):
@@ -749,7 +763,8 @@ def simulation_status():
         "simulation_active": simulation_active, 
         "data_rows": len(simulation_data) if simulation_data else 0,
         "current_index": simulation_index,
-        "data_format": "enhanced" if simulation_data and len(simulation_data[0]) >= 11 else "legacy"
+        "data_format": "enhanced" if simulation_data and len(simulation_data[0]) >= 11 else "legacy",
+        "current_file": simulation_filename if simulation_filename else None
     })
 
 if __name__ == '__main__':
