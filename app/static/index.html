@@ -324,11 +324,11 @@
                             <v-icon left>mdi-{{ showLegend ? 'eye-off' : 'eye' }}</v-icon>
                             {{ showLegend ? 'Hide' : 'Show' }}
                         </v-btn>
-                        <v-btn color="purple" dark rounded elevation="2" @click="getCacheStats">
+                        <v-btn color="purple" dark rounded elevation="2" @click="getCacheStats" :loading="cacheLoading">
                             <v-icon left>mdi-cached</v-icon>
-                            Cache: {{ cacheStats.cachedTiles }}
+                            Cache: {{ cacheStats.cachedTiles || 0 }}
                         </v-btn>
-                        <v-btn color="red" dark rounded elevation="2" @click="clearCache">
+                        <v-btn color="red" dark rounded elevation="2" @click="confirmClearCache">
                             <v-icon left>mdi-delete-sweep</v-icon>
                             Clear Cache
                         </v-btn>
@@ -398,6 +398,9 @@
                         cacheSizeMB: 0,
                         cacheLimitMB: 5120
                     },
+                    cacheLoading: false,
+                    cacheStatsRefreshTimeout: null,
+                    cacheStatsInterval: null,
                     customIcon: L.icon({
                         iconUrl: '/static/BB.png',
                         iconSize: [32, 45],
@@ -733,12 +736,31 @@
                     this.showLegend = !this.showLegend;
                 },
                 async getCacheStats() {
+                    this.cacheLoading = true;
                     try {
                         const response = await fetch('/cache_stats');
                         const stats = await response.json();
                         this.cacheStats = stats;
                     } catch (error) {
                         console.error('Error fetching cache stats:', error);
+                        this.cacheStats = { cachedTiles: 0, cacheSizeMB: 0, cacheLimitMB: 5120 };
+                    } finally {
+                        this.cacheLoading = false;
+                    }
+                },
+                async confirmClearCache() {
+                    // Get current cache stats first
+                    await this.getCacheStats();
+                    
+                    if (this.cacheStats.cachedTiles === 0) {
+                        alert('No tiles are currently cached.');
+                        return;
+                    }
+                    
+                    const message = `Are you sure you want to clear the cache?\n\nThis will remove ${this.cacheStats.cachedTiles} cached tiles (${this.cacheStats.cacheSizeMB} MB).\n\nThis action cannot be undone.`;
+                    
+                    if (confirm(message)) {
+                        await this.clearCache();
                     }
                 },
                 async clearCache() {
@@ -746,7 +768,7 @@
                         const response = await fetch('/clear_cache');
                         const result = await response.json();
                         alert(result.message);
-                        this.getCacheStats();
+                        await this.getCacheStats();
                     } catch (error) {
                         console.error('Error clearing cache:', error);
                         alert('Error clearing cache');
@@ -754,11 +776,36 @@
                 },
                 createOfflineTileLayer() {
                     // Create a custom tile layer that uses our offline-capable backend
-                    return L.tileLayer('/tiles/{z}/{x}/{y}.png', {
+                    const tileLayer = L.tileLayer('/tiles/{z}/{x}/{y}.png', {
                         maxZoom: 21,
                         attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a> (Offline Cached)',
                         errorTileUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7' // Transparent tile for missing tiles
                     });
+                    
+                    // Refresh cache stats when tiles are loaded
+                    tileLayer.on('tileload', () => {
+                        // Debounce cache stats refresh to avoid too many requests
+                        if (this.cacheStatsRefreshTimeout) {
+                            clearTimeout(this.cacheStatsRefreshTimeout);
+                        }
+                        this.cacheStatsRefreshTimeout = setTimeout(() => {
+                            this.getCacheStats();
+                        }, 2000); // Refresh after 2 seconds of inactivity
+                    });
+                    
+                    return tileLayer;
+                },
+                startCacheStatsRefresh() {
+                    // Refresh cache stats every 30 seconds
+                    this.cacheStatsInterval = setInterval(() => {
+                        this.getCacheStats();
+                    }, 30000);
+                },
+                stopCacheStatsRefresh() {
+                    if (this.cacheStatsInterval) {
+                        clearInterval(this.cacheStatsInterval);
+                        this.cacheStatsInterval = null;
+                    }
                 }
             },
             mounted() {
@@ -801,6 +848,7 @@
                     
                     this.checkLoggingStatus();
                     this.getCacheStats();
+                    this.startCacheStatsRefresh();
                 });
             }
         })
