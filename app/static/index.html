@@ -128,187 +128,7 @@
             box-shadow: 0 3px 5px rgba(0, 0, 0, 0.3);
         }
         
-        /* Compass rose styles */
-        .compass-rose {
-            position: absolute;
-            bottom: 20px;
-            right: 20px;
-            z-index: 1000;
-            width: 80px;
-            height: 80px;
-            background-color: rgba(33, 33, 33, 0.9);
-            border-radius: 50%;
-            border: 2px solid rgba(255, 255, 255, 0.3);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: grab;
-            user-select: none;
-            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.4);
-            transition: transform 0.1s ease;
-        }
-        
-        .compass-rose:active {
-            cursor: grabbing;
-        }
-        
-        .compass-rose-inner {
-            position: relative;
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            background: linear-gradient(45deg, #2196F3, #1976D2);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            color: white;
-            font-size: 14px;
-            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
-        }
-        
-        .compass-rose-north {
-            position: absolute;
-            top: -15px;
-            left: 50%;
-            transform: translateX(-50%);
-            background-color: #FF5722;
-            color: white;
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: bold;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-            cursor: grab;
-            user-select: none;
-            z-index: 10;
-            transition: all 0.1s ease;
-        }
-        
-        .compass-rose-north:hover {
-            background-color: #E64A19;
-            transform: translateX(-50%) scale(1.1);
-        }
-        
-        .compass-rose-north:active {
-            cursor: grabbing;
-            transform: translateX(-50%) scale(0.95);
-        }
-        
-        .compass-rose-track {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            border-radius: 50%;
-            border: 2px dashed rgba(255, 255, 255, 0.2);
-            pointer-events: none;
-        }
-        
-        .compass-rose-track::before {
-            content: '';
-            position: absolute;
-            top: -2px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 4px;
-            height: 4px;
-            background-color: rgba(255, 255, 255, 0.5);
-            border-radius: 50%;
-        }
-        
-        .compass-rose-track::after {
-            content: '';
-            position: absolute;
-            bottom: -2px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 4px;
-            height: 4px;
-            background-color: rgba(255, 255, 255, 0.5);
-            border-radius: 50%;
-        }
-        
-        .compass-rose-track .track-marker {
-            position: absolute;
-            width: 4px;
-            height: 4px;
-            background-color: rgba(255, 255, 255, 0.3);
-            border-radius: 50%;
-        }
-        
-        .compass-rose-track .track-marker:nth-child(1) { top: 0; left: 50%; transform: translateX(-50%); }
-        .compass-rose-track .track-marker:nth-child(2) { top: 50%; right: 0; transform: translateY(-50%); }
-        .compass-rose-track .track-marker:nth-child(3) { bottom: 0; left: 50%; transform: translateX(-50%); }
-        .compass-rose-track .track-marker:nth-child(4) { top: 50%; left: 0; transform: translateY(-50%); }
-        
-        .compass-rose-center {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 4px;
-            height: 4px;
-            background-color: #FF5722;
-            border-radius: 50%;
-            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-        }
-        
-        .compass-rose-rotation-indicator {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 2px;
-            height: 25px;
-            background-color: #FF5722;
-            transform-origin: center bottom;
-            transform: translate(-50%, -50%);
-            border-radius: 1px;
-            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-        }
-        
-        .compass-reset-btn {
-            position: absolute;
-            top: -8px;
-            right: -8px;
-            background-color: #FF5722 !important;
-            color: white !important;
-            width: 24px !important;
-            height: 24px !important;
-            min-width: 24px !important;
-            border: 2px solid rgba(255, 255, 255, 0.8);
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-        }
-        
-        .compass-reset-btn:hover {
-            background-color: #E64A19 !important;
-        }
-        
-        /* Mobile adjustments for compass rose */
-        @media (max-width: 600px) {
-            .compass-rose {
-                width: 70px;
-                height: 70px;
-                bottom: 15px;
-                right: 15px;
-            }
-            
-            .compass-rose-inner {
-                width: 50px;
-                height: 50px;
-                font-size: 12px;
-            }
-            
-            .compass-rose-north {
-                font-size: 9px;
-                padding: 1px 5px;
-            }
-            
-            .compass-rose-rotation-indicator {
-                height: 20px;
-            }
-        }
+
         
         /* Caching indicator overlay */
         .caching-indicator {
@@ -535,53 +355,10 @@
             touch-action: none;
         }
         
-        /* Map rotation styles */
-        .map-rotated {
-            transition: transform 0.1s ease-out;
-        }
-        
-        /* Enhanced compass rose for rotated state */
-        .compass-rose.rotated {
-            background-color: rgba(255, 87, 34, 0.9);
-            border-color: rgba(255, 255, 255, 0.6);
-        }
-        
-        .compass-rose.rotated .compass-rose-inner {
-            background: linear-gradient(45deg, #FF5722, #E64A19);
-        }
-        
-        /* Compass rose interaction improvements */
-        .compass-rose:hover {
-            background-color: rgba(33, 33, 33, 1);
-            border-color: rgba(255, 255, 255, 0.5);
-        }
-        
-        .compass-rose-inner:hover {
-            background: linear-gradient(45deg, #1976D2, #1565C0);
-        }
-        
         /* Fix for table on mobile */
         .v-data-table {
             width: 100%;
             overflow-x: auto;
-        }
-        
-        .compass-rose-north:active {
-            cursor: grabbing;
-            transform: translateX(-50%) scale(0.95);
-        }
-        
-        .compass-rose.dragging {
-            background-color: rgba(255, 87, 34, 0.9);
-            border-color: rgba(255, 255, 255, 0.6);
-        }
-        
-        .compass-rose.dragging .compass-rose-inner {
-            background: linear-gradient(45deg, #FF5722, #E64A19);
-        }
-        
-        .compass-rose.dragging .compass-rose-track {
-            border-color: rgba(255, 255, 255, 0.4);
         }
         
         /* Remove all compass rose styles and add polygon drawing styles */
@@ -990,62 +767,10 @@
     <script src="/static/js/vuetify.js"></script>
     <script src="/static/js/axios.min.js"></script>
     <script src="/static/js/leaflet.js"></script>
-    <script src="/static/js/leaflet.rotatedMarker.js"></script>
+
     <script src="/static/js/leaflet-heat.js"></script>
     <script>
-        // Custom map rotation implementation for Leaflet
-        L.Map.include({
-            setBearing: function(bearing) {
-                this._bearing = bearing || 0;
-                this._updateBearing();
-                return this;
-            },
-            
-            getBearing: function() {
-                return this._bearing || 0;
-            },
-            
-            _updateBearing: function() {
-                const container = this.getContainer();
-                const bearing = this._bearing || 0;
-                
-                // Apply rotation to the map container
-                container.style.transform = `rotate(${bearing}deg)`;
-                container.style.transformOrigin = 'center center';
-                
-                // Trigger a resize to ensure proper rendering
-                this.invalidateSize();
-                
-                // Fire a custom event
-                this.fire('bearingchanged', { bearing: bearing });
-            }
-        });
-        
-        // Custom rotation-aware tile layer
-        L.TileLayer.Rotated = L.TileLayer.extend({
-            _updateBearing: function() {
-                if (this._map && this._map.getBearing) {
-                    const bearing = this._map.getBearing();
-                    // For now, just redraw the layer
-                    // In a more sophisticated implementation, we could adjust tile loading
-                    this.redraw();
-                }
-            },
-            
-            onAdd: function(map) {
-                L.TileLayer.prototype.onAdd.call(this, map);
-                map.on('bearingchanged', this._updateBearing, this);
-            },
-            
-            onRemove: function(map) {
-                L.TileLayer.prototype.onRemove.call(this, map);
-                map.off('bearingchanged', this._updateBearing, this);
-            }
-        });
-        
-        L.tileLayer.rotated = function(url, options) {
-            return new L.TileLayer.Rotated(url, options);
-        };
+
         
         new Vue({
             el: '#app',
@@ -1129,8 +854,7 @@
                     customIcon: L.icon({
                         iconUrl: '/static/BB.png',
                         iconSize: [32, 45],
-                        iconAnchor: [12, 26],
-                        className: 'leaflet-rotated-marker'
+                        iconAnchor: [12, 26]
                     }),
                     tableHeaders: [
                         { text: 'Latitude', value: 'latitude', align: 'center' },
@@ -1149,8 +873,7 @@
                         'Benthic_Base_Basis', 'Whimsy_Wavy_Data', 'Infinite_Seas_Quantified',
                         'Tide_Tomfoolery_Tracking', 'Marine_Mirth_Measurements', 'Aqua_Antics_Archive'
                     ],
-                    mapRotation: 0, // New data property for compass rotation
-                    isCompassDragging: false, // New data property for compass dragging state
+
                     polygonVertices: [],
                     polygonActive: false,
                     polygonLayers: [],
@@ -1279,9 +1002,7 @@
                     }
                     
                     this.marker = L.marker([lat, lon], {
-                        icon: this.customIcon, 
-                        rotationAngle: yaw, 
-                        rotationOrigin: 'center center'
+                        icon: this.customIcon
                     });
                     this.marker.addTo(this.map);
                     
@@ -1706,7 +1427,7 @@
                 createOfflineTileLayer() {
                     // Create a custom tile layer that uses our offline-capable backend
                     const sourceConfig = this.mapSources[this.selectedMapSource];
-                    const tileLayer = L.tileLayer.rotated(`/tiles/{z}/{x}/{y}.png?source=${this.selectedMapSource}`, {
+                    const tileLayer = L.tileLayer(`/tiles/{z}/{x}/{y}.png?source=${this.selectedMapSource}`, {
                         maxZoom: 21,
                         attribution: sourceConfig.attribution + ' (Offline Cached)',
                         errorTileUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7' // Transparent tile for missing tiles
@@ -2126,18 +1847,7 @@
                     L.control.scale({imperial: false}).addTo(this.map);
                     this.scaleAdded = true;
                     
-                    // Add CSS for logo rotation
-                    const style = document.createElement('style');
-                    style.textContent = `
-                        @keyframes spin {
-                            from { transform: rotate(0deg); }
-                            to { transform: rotate(360deg); }
-                        }
-                        .rotate {
-                            animation: spin 2s linear infinite;
-                        }
-                    `;
-                    document.head.appendChild(style);
+
                     
                     this.checkLoggingStatus();
                     this.getCacheStats();
