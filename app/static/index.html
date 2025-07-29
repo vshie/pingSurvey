@@ -169,16 +169,90 @@
         
         .compass-rose-north {
             position: absolute;
-            top: -2px;
+            top: -15px;
             left: 50%;
             transform: translateX(-50%);
             background-color: #FF5722;
             color: white;
-            padding: 2px 6px;
-            border-radius: 10px;
-            font-size: 10px;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
             font-weight: bold;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+            cursor: grab;
+            user-select: none;
+            z-index: 10;
+            transition: all 0.1s ease;
+        }
+        
+        .compass-rose-north:hover {
+            background-color: #E64A19;
+            transform: translateX(-50%) scale(1.1);
+        }
+        
+        .compass-rose-north:active {
+            cursor: grabbing;
+            transform: translateX(-50%) scale(0.95);
+        }
+        
+        .compass-rose-track {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            border: 2px dashed rgba(255, 255, 255, 0.2);
+            pointer-events: none;
+        }
+        
+        .compass-rose-track::before {
+            content: '';
+            position: absolute;
+            top: -2px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 4px;
+            height: 4px;
+            background-color: rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+        }
+        
+        .compass-rose-track::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 4px;
+            height: 4px;
+            background-color: rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+        }
+        
+        .compass-rose-track .track-marker {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background-color: rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+        }
+        
+        .compass-rose-track .track-marker:nth-child(1) { top: 0; left: 50%; transform: translateX(-50%); }
+        .compass-rose-track .track-marker:nth-child(2) { top: 50%; right: 0; transform: translateY(-50%); }
+        .compass-rose-track .track-marker:nth-child(3) { bottom: 0; left: 50%; transform: translateX(-50%); }
+        .compass-rose-track .track-marker:nth-child(4) { top: 50%; left: 0; transform: translateY(-50%); }
+        
+        .compass-rose-center {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 4px;
+            height: 4px;
+            background-color: #FF5722;
+            border-radius: 50%;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
         }
         
         .compass-rose-rotation-indicator {
@@ -491,6 +565,24 @@
             width: 100%;
             overflow-x: auto;
         }
+        
+        .compass-rose-north:active {
+            cursor: grabbing;
+            transform: translateX(-50%) scale(0.95);
+        }
+        
+        .compass-rose.dragging {
+            background-color: rgba(255, 87, 34, 0.9);
+            border-color: rgba(255, 255, 255, 0.6);
+        }
+        
+        .compass-rose.dragging .compass-rose-inner {
+            background: linear-gradient(45deg, #FF5722, #E64A19);
+        }
+        
+        .compass-rose.dragging .compass-rose-track {
+            border-color: rgba(255, 255, 255, 0.4);
+        }
     </style>
     <link href="/static/css/materialdesignicons.min.css" rel="stylesheet">
     <link href="/static/css/vuetify.min.css" rel="stylesheet">
@@ -517,13 +609,25 @@
                     <!-- Compass Rose -->
                     <div class="compass-rose" 
                          :class="{ 'rotated': mapRotation !== 0 }"
-                         @mousedown="startCompassDrag" 
-                         @touchstart="startCompassDrag"
-                         title="Drag to rotate map - aligns with coastline for efficient tile caching">
+                         title="Drag the N symbol around the circle to rotate the map">
+                        <div class="compass-rose-track">
+                            <div class="track-marker"></div>
+                            <div class="track-marker"></div>
+                            <div class="track-marker"></div>
+                            <div class="track-marker"></div>
+                        </div>
+                        <div class="compass-rose-center"></div>
                         <div class="compass-rose-inner">
-                            <div class="compass-rose-north">N</div>
                             <div class="compass-rose-rotation-indicator" :style="{ transform: `translate(-50%, -50%) rotate(${mapRotation}deg)` }"></div>
                             <span>{{ Math.round(mapRotation) }}°</span>
+                        </div>
+                        <!-- Draggable N symbol -->
+                        <div class="compass-rose-north" 
+                             :style="{ transform: `translate(-50%, -50%) rotate(${mapRotation}deg) translateY(-30px)` }"
+                             @mousedown="startCompassDrag" 
+                             @touchstart="startCompassDrag"
+                             title="Drag N around the circle to rotate map">
+                            N
                         </div>
                         <!-- Reset button -->
                         <v-btn icon small 
@@ -772,9 +876,18 @@
                     </div>
                     
                     <div v-if="logFiles.length === 0" class="text-center pa-4">
-                        <v-alert type="warning" dark>
+                        <v-alert type="info" dark>
                             <strong>No log files found.</strong><br>
-                            Start a survey session first to create log files for simulation.
+                            <p class="mt-2">To create log files for simulation:</p>
+                            <ol class="text-left mt-2">
+                                <li>Click "Start" to begin a survey session</li>
+                                <li>Collect some data (GPS and ping readings)</li>
+                                <li>Click "Stop" to end the session</li>
+                                <li>Return here to select the created log file</li>
+                            </ol>
+                            <p class="mt-2 text-caption">
+                                Log files are stored in: /usr/blueos/extensions/ping-survey/
+                            </p>
                         </v-alert>
                     </div>
                     
@@ -1619,12 +1732,59 @@
                 },
                 async loadLogFiles() {
                     try {
+                        console.log('Loading log files...');
+                        
+                        // First test the logs directory
+                        const testResponse = await fetch('/test_logs');
+                        const testStatus = await testResponse.json();
+                        console.log('Logs directory test:', testStatus);
+                        
                         const response = await fetch('/log_files');
+                        console.log('Log files response status:', response.status);
+                        
+                        if (!response.ok) {
+                            const errorData = await response.json();
+                            console.error('Server error loading log files:', errorData);
+                            
+                            if (response.status === 404) {
+                                this.status = 'Logs directory not found. Check BlueOS volume configuration.';
+                            } else if (response.status === 403) {
+                                this.status = 'Permission denied accessing logs directory.';
+                            } else {
+                                this.status = `Error loading log files: ${errorData.error || 'Unknown error'}`;
+                            }
+                            
+                            this.logFiles = [];
+                            return;
+                        }
+                        
                         const files = await response.json();
-                        this.logFiles = files;
                         console.log('Loaded log files:', files);
+                        
+                        if (Array.isArray(files)) {
+                            this.logFiles = files;
+                            if (files.length === 0) {
+                                this.status = 'No log files found. Start a survey session to create log files.';
+                            } else {
+                                this.status = `Loaded ${files.length} log files.`;
+                            }
+                        } else if (files.message) {
+                            // Handle informational message (no files found)
+                            console.log('Server message:', files.message);
+                            this.status = files.message;
+                            this.logFiles = [];
+                        } else if (files.error) {
+                            console.error('Server error loading log files:', files.error);
+                            this.status = `Error: ${files.error}`;
+                            this.logFiles = [];
+                        } else {
+                            console.error('Unexpected response format:', files);
+                            this.status = 'Unexpected response format from server.';
+                            this.logFiles = [];
+                        }
                     } catch (error) {
                         console.error('Error loading log files:', error);
+                        this.status = `Error loading log files: ${error.message}`;
                         this.logFiles = [];
                     }
                 },
@@ -1653,8 +1813,18 @@
                     return date.toLocaleString();
                 },
                 async showSimulationDialog() {
+                    console.log('Opening simulation dialog...');
                     this.simulationDialog = true;
-                    await this.loadLogFiles(); // Load log files for simulation selection
+                    
+                    // Load log files for simulation selection
+                    try {
+                        await this.loadLogFiles();
+                        console.log('Log files loaded for simulation dialog:', this.logFiles.length);
+                    } catch (error) {
+                        console.error('Failed to load log files for simulation dialog:', error);
+                        // Show error to user
+                        this.status = 'Error loading log files for simulation selection';
+                    }
                 },
                 selectSimulationFile(event, item) {
                     this.currentLogFile = item.filename;
@@ -1694,7 +1864,14 @@
                 // New methods for compass rose interaction
                 startCompassDrag(event) {
                     event.preventDefault();
+                    event.stopPropagation();
                     this.isCompassDragging = true;
+                    
+                    // Add dragging visual feedback
+                    const compass = document.querySelector('.compass-rose');
+                    if (compass) {
+                        compass.classList.add('dragging');
+                    }
                     
                     // Disable map dragging while dragging compass
                     if (this.map) {
@@ -1721,6 +1898,12 @@
                 stopCompassDrag() {
                     this.isCompassDragging = false;
                     
+                    // Remove dragging visual feedback
+                    const compass = document.querySelector('.compass-rose');
+                    if (compass) {
+                        compass.classList.remove('dragging');
+                    }
+                    
                     // Re-enable map dragging
                     if (this.map) {
                         this.map.dragging.enable();
@@ -1736,7 +1919,10 @@
                 updateCompassRotation(event) {
                     if (!this.isCompassDragging) return;
                     
-                    const compass = event.currentTarget;
+                    // Find the compass rose element
+                    const compass = document.querySelector('.compass-rose');
+                    if (!compass) return;
+                    
                     const rect = compass.getBoundingClientRect();
                     const centerX = rect.left + rect.width / 2;
                     const centerY = rect.top + rect.height / 2;

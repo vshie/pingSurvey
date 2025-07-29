@@ -49,22 +49,34 @@ current_log_file = None  # Will be set when logging starts
 def ensure_logs_dir():
     """Ensure the logs directory exists."""
     logs_dir = '/app/logs'
-    if not os.path.exists(logs_dir):
-        os.makedirs(logs_dir, exist_ok=True)
-        print(f"Created logs directory: {logs_dir}")
-    else:
-        print(f"Using existing logs directory: {logs_dir}")
+    print(f"Ensuring logs directory exists: {logs_dir}")
     
-    # Check if we can write to the directory
     try:
+        if not os.path.exists(logs_dir):
+            print(f"Creating logs directory: {logs_dir}")
+            os.makedirs(logs_dir, exist_ok=True)
+        else:
+            print(f"Logs directory already exists: {logs_dir}")
+        
+        # Check if we can write to the directory
         test_file = os.path.join(logs_dir, '.test_write')
         with open(test_file, 'w') as f:
             f.write('test')
         os.remove(test_file)
         print(f"✓ Write access confirmed for logs directory")
+        
+        # List contents to verify
+        contents = os.listdir(logs_dir)
+        print(f"Logs directory contents: {contents}")
+        
     except Exception as e:
-        print(f"⚠ Warning: Cannot write to logs directory: {e}")
-        print(f"  Logs will not be saved. Check file system permissions.")
+        print(f"⚠ Warning: Cannot access logs directory: {e}")
+        print(f"  This may be due to volume mount issues on BlueOS")
+        print(f"  Expected mount: /usr/blueos/extensions/ping-survey:/app/logs")
+        print(f"  Logs will not be saved. Check BlueOS volume configuration.")
+        return False
+    
+    return True
 
 def generate_log_filename():
     """Generate a timestamped log filename."""
@@ -415,30 +427,68 @@ def list_log_files():
     """List all available log files."""
     try:
         logs_dir = '/app/logs'
+        print(f"Checking logs directory: {logs_dir}")
+        
         if not os.path.exists(logs_dir):
-            return jsonify([])
+            print(f"Logs directory does not exist: {logs_dir}")
+            print("This may indicate a BlueOS volume mount issue")
+            return jsonify({
+                'error': 'Logs directory not found. Check BlueOS volume configuration.',
+                'logs_dir': logs_dir,
+                'expected_mount': '/usr/blueos/extensions/ping-survey:/app/logs'
+            }), 404
+        
+        print(f"Logs directory exists, checking contents...")
+        try:
+            all_files = os.listdir(logs_dir)
+            print(f"All files in logs directory: {all_files}")
+        except PermissionError:
+            print(f"Permission denied accessing logs directory: {logs_dir}")
+            return jsonify({
+                'error': 'Permission denied accessing logs directory',
+                'logs_dir': logs_dir
+            }), 403
         
         log_files = []
-        for filename in os.listdir(logs_dir):
+        for filename in all_files:
+            print(f"Checking file: {filename}")
             if filename.startswith('ping_survey_') and filename.endswith('.csv'):
-                file_path = os.path.join(logs_dir, filename)
-                file_size = os.path.getsize(file_path)
-                file_mtime = os.path.getmtime(file_path)
-                
-                log_files.append({
-                    'filename': filename,
-                    'size_bytes': file_size,
-                    'size_mb': round(file_size / (1024 * 1024), 2),
-                    'modified': datetime.fromtimestamp(file_mtime).isoformat(),
-                    'path': file_path
-                })
+                try:
+                    file_path = os.path.join(logs_dir, filename)
+                    file_size = os.path.getsize(file_path)
+                    file_mtime = os.path.getmtime(file_path)
+                    
+                    log_file_info = {
+                        'filename': filename,
+                        'size_bytes': file_size,
+                        'size_mb': round(file_size / (1024 * 1024), 2),
+                        'modified': datetime.fromtimestamp(file_mtime).isoformat(),
+                        'path': file_path
+                    }
+                    log_files.append(log_file_info)
+                    print(f"Added log file: {log_file_info}")
+                except OSError as e:
+                    print(f"Error accessing file {filename}: {e}")
+                    continue
         
         # Sort by modification time (newest first)
         log_files.sort(key=lambda x: x['modified'], reverse=True)
+        print(f"Returning {len(log_files)} log files: {log_files}")
+        
+        if not log_files:
+            print("No ping survey log files found")
+            return jsonify({
+                'message': 'No ping survey log files found. Start a survey session to create log files.',
+                'logs_dir': logs_dir,
+                'all_files': all_files
+            })
+        
         return jsonify(log_files)
         
     except Exception as e:
         print(f"Error listing log files: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 @app.route('/download/<filename>')
@@ -767,5 +817,38 @@ def simulation_status():
         "current_file": simulation_filename if simulation_filename else None
     })
 
+@app.route('/test_logs')
+def test_logs():
+    """Test route to check logs directory status."""
+    try:
+        logs_dir = '/app/logs'
+        status = {
+            'logs_dir': logs_dir,
+            'exists': os.path.exists(logs_dir),
+            'is_dir': os.path.isdir(logs_dir) if os.path.exists(logs_dir) else False,
+            'readable': os.access(logs_dir, os.R_OK) if os.path.exists(logs_dir) else False,
+            'writable': os.access(logs_dir, os.W_OK) if os.path.exists(logs_dir) else False,
+            'contents': []
+        }
+        
+        if status['exists'] and status['is_dir']:
+            try:
+                status['contents'] = os.listdir(logs_dir)
+            except Exception as e:
+                status['list_error'] = str(e)
+        
+        return jsonify(status)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
+    # Ensure logs directory exists at startup
+    ensure_logs_dir()
+    ensure_offline_maps_dir()
+    
+    print("Starting Ping Survey Extension...")
+    print(f"Logs directory: /app/logs")
+    print(f"Offline maps directory: {OFFLINE_MAPS_DIR}")
+    print(f"Cache size limit: {TILE_CACHE_SIZE_LIMIT / (1024**3):.1f} GB")
+    
     app.run(host='0.0.0.0', port=5420)
