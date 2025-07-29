@@ -9,6 +9,8 @@ import json #used for JSON decoding
 import os #used for file operations
 import hashlib #used for tile caching
 print("hello we are in the script world")
+print(f"Offline map tiles will be stored in: {OFFLINE_MAPS_DIR}")
+print(f"Cache size limit: {TILE_CACHE_SIZE_LIMIT / (1024**3):.1f} GB")
 app = Flask(__name__, static_url_path="/static", static_folder="static") #setup flask app
 
 logging_active = False# Global variable to control the logging 
@@ -24,8 +26,8 @@ data = []
 row_counter = 0
 feedback_interval = 5 # Define the feedback interval (in seconds)
 
-# Offline map tile caching
-OFFLINE_MAPS_DIR = '/app/static/offlinemaps'
+# Offline map tile caching - store in external file system alongside logs
+OFFLINE_MAPS_DIR = '/app/logs/offline_maps'
 TILE_CACHE_SIZE_LIMIT = 5 * 1024 * 1024 * 1024  # 5GB cache limit
 
 def ensure_offline_maps_dir():
@@ -33,6 +35,19 @@ def ensure_offline_maps_dir():
     if not os.path.exists(OFFLINE_MAPS_DIR):
         os.makedirs(OFFLINE_MAPS_DIR, exist_ok=True)
         print(f"Created offline maps directory: {OFFLINE_MAPS_DIR}")
+    else:
+        print(f"Using existing offline maps directory: {OFFLINE_MAPS_DIR}")
+    
+    # Check if we can write to the directory
+    try:
+        test_file = os.path.join(OFFLINE_MAPS_DIR, '.test_write')
+        with open(test_file, 'w') as f:
+            f.write('test')
+        os.remove(test_file)
+        print(f"✓ Write access confirmed for offline maps directory")
+    except Exception as e:
+        print(f"⚠ Warning: Cannot write to offline maps directory: {e}")
+        print(f"  Tiles will not be cached. Check file system permissions.")
 
 def get_tile_cache_path(z, x, y):
     """Get the cache file path for a specific tile."""
@@ -388,7 +403,8 @@ def cache_stats():
             return jsonify({
                 'cached_tiles': 0,
                 'cache_size_mb': 0,
-                'cache_limit_mb': TILE_CACHE_SIZE_LIMIT / (1024 * 1024)
+                'cache_limit_mb': TILE_CACHE_SIZE_LIMIT / (1024 * 1024),
+                'cache_location': OFFLINE_MAPS_DIR
             })
         
         files = [f for f in os.listdir(OFFLINE_MAPS_DIR) if f.endswith('.png')]
@@ -397,7 +413,8 @@ def cache_stats():
         stats = {
             'cached_tiles': len(files),
             'cache_size_mb': round(total_size / (1024 * 1024), 2),
-            'cache_limit_mb': round(TILE_CACHE_SIZE_LIMIT / (1024 * 1024), 2)
+            'cache_limit_mb': round(TILE_CACHE_SIZE_LIMIT / (1024 * 1024), 2),
+            'cache_location': OFFLINE_MAPS_DIR
         }
         
         print(f"Cache stats: {stats}")

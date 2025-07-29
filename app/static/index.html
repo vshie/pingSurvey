@@ -461,6 +461,10 @@
                                 <v-icon left small>mdi-information</v-icon>
                                 Map can be moved freely
                             </v-chip>
+                            <v-chip small color="success" class="mr-2">
+                                <v-icon left small>mdi-content-save</v-icon>
+                                Persistent storage
+                            </v-chip>
                             <v-btn small color="error" @click="cancelCaching" :disabled="!cacheProgress.active">
                                 <v-icon left>mdi-close</v-icon>
                                 Cancel
@@ -501,6 +505,10 @@
                             <div class="progress-row">
                                 <span class="progress-label">Status:</span>
                                 <span class="progress-value">{{ cacheProgress.status }}</span>
+                            </div>
+                            <div class="progress-row">
+                                <span class="progress-label">Storage:</span>
+                                <span class="progress-value">{{ cacheStats.cacheLocation }}</span>
                             </div>
                         </div>
                     </div>
@@ -559,7 +567,8 @@
                     cacheStats: {
                         cachedTiles: 0,
                         cacheSizeMB: 0,
-                        cacheLimitMB: 5120
+                        cacheLimitMB: 5120,
+                        cacheLocation: '/app/logs/offline_maps'
                     },
                     cacheLoading: false,
                     cacheProgress: {
@@ -931,7 +940,8 @@
                         this.cacheStats = {
                             cachedTiles: stats.cached_tiles || 0,
                             cacheSizeMB: stats.cache_size_mb || 0,
-                            cacheLimitMB: stats.cache_limit_mb || 5120
+                            cacheLimitMB: stats.cache_limit_mb || 5120,
+                            cacheLocation: stats.cache_location || '/app/logs/offline_maps'
                         };
                         console.log('Cache stats converted:', this.cacheStats);
                     } catch (error) {
