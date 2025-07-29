@@ -328,7 +328,7 @@
                             <v-icon left>mdi-cached</v-icon>
                             Cache: {{ cacheStats.cachedTiles }}
                         </v-btn>
-                        <v-btn color="green" dark rounded elevation="2" @click="getRecentCachedArea" v-if="recentCachedArea.has_cached_tiles">
+                        <v-btn color="green" dark rounded elevation="2" @click="getRecentCachedArea" v-if="cacheStats.cachedTiles > 0">
                             <v-icon left>mdi-map-marker</v-icon>
                             Recent Area
                         </v-btn>
@@ -506,8 +506,8 @@
                         const response = await axios.get('/data');
                         this.status = JSON.stringify(response.data);
                         
-                        // Make sure we have valid data to work with
-                        if (!response.data || !Array.isArray(response.data) || response.data.length < 8) {
+                        // Make sure we have valid data to work with (should always be 11 points)
+                        if (!response.data || !Array.isArray(response.data) || response.data.length < 11) {
                             console.error('Invalid data format received:', response.data);
                             return;
                         }
@@ -536,6 +536,8 @@
                         const lon = hasNewFormat ? data[9] : data[7];
                         
                         this.updateMarker(lat, lon, data[3], data[4], data[5]);
+                        
+                        // Always center on GPS data if we haven't received coordinates yet
                         if (!this.firstCoordinateReceived) {
                             this.firstCoordinateReceived = true;
                             this.map.setView([lat, lon], 18);
@@ -562,7 +564,8 @@
                     });
                     this.marker.addTo(this.map);
                     
-                    if (confidence > 90) {   
+                    // Only show depth circles if we have valid ping data (confidence > 0)
+                    if (confidence > 0) {   
                         const radiusInMeters = (depth/100) * Math.tan(12.5 * Math.PI / 180);
                         const radius = radiusInMeters * this.map.getZoomScale(this.map.getZoom());
                         const fillColor = this.getColor(depth);
@@ -588,10 +591,13 @@
                 onCenterMapButtonClick() {
                     this.firstCoordinateReceived = false;
                     
-                    // If we have data already, center on that
+                    // If we have GPS data already, center on that
                     if (this.tableItems.length > 0) {
                         const item = this.tableItems[0];
                         this.resetMap(item.latitude, item.longitude, 18);
+                    } else if (this.recentCachedArea.has_cached_tiles) {
+                        // If we have cached tiles, center on the recent area
+                        this.resetMap(this.recentCachedArea.center_lat, this.recentCachedArea.center_lon, this.recentCachedArea.zoom);
                     } else {
                         // Otherwise reset to default view
                         this.resetMap(9.2, -133, 10);
