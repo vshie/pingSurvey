@@ -583,6 +583,80 @@
         .compass-rose.dragging .compass-rose-track {
             border-color: rgba(255, 255, 255, 0.4);
         }
+        
+        /* Remove all compass rose styles and add polygon drawing styles */
+        .polygon-drawing-controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 1000;
+            background-color: rgba(33, 33, 33, 0.9);
+            border-radius: 8px;
+            padding: 12px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.4);
+        }
+        
+        .polygon-drawing-controls h4 {
+            margin: 0 0 8px 0;
+            color: #9C27B0;
+            font-size: 14px;
+        }
+        
+        .polygon-controls-buttons {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        
+        .polygon-instructions {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #888;
+            line-height: 1.4;
+        }
+        
+        .polygon-active {
+            background-color: rgba(156, 39, 176, 0.9) !important;
+            border-color: rgba(255, 255, 255, 0.6) !important;
+        }
+        
+        /* Polygon vertex styles */
+        .polygon-vertex {
+            width: 12px;
+            height: 12px;
+            background-color: #9C27B0;
+            border: 2px solid white;
+            border-radius: 50%;
+            cursor: pointer;
+            z-index: 1001;
+        }
+        
+        .polygon-vertex:hover {
+            background-color: #E1BEE7;
+            transform: scale(1.2);
+        }
+        
+        .polygon-vertex.active {
+            background-color: #FF5722;
+            border-color: #FF5722;
+        }
+        
+        /* Polygon line styles */
+        .polygon-line {
+            stroke: #9C27B0;
+            stroke-width: 3;
+            stroke-dasharray: 5,5;
+            fill: none;
+            z-index: 1000;
+        }
+        
+        .polygon-fill {
+            fill: rgba(156, 39, 176, 0.2);
+            stroke: #9C27B0;
+            stroke-width: 2;
+            z-index: 999;
+        }
     </style>
     <link href="/static/css/materialdesignicons.min.css" rel="stylesheet">
     <link href="/static/css/vuetify.min.css" rel="stylesheet">
@@ -606,37 +680,22 @@
                         <v-icon color="white">mdi-crosshairs-gps</v-icon>
                     </div>
                     
-                    <!-- Compass Rose -->
-                    <div class="compass-rose" 
-                         :class="{ 'rotated': mapRotation !== 0 }"
-                         title="Drag the N symbol around the circle to rotate the map">
-                        <div class="compass-rose-track">
-                            <div class="track-marker"></div>
-                            <div class="track-marker"></div>
-                            <div class="track-marker"></div>
-                            <div class="track-marker"></div>
+                    <!-- Polygon Drawing Controls -->
+                    <div class="polygon-drawing-controls" v-if="isDrawingPolygon">
+                        <h4>Draw Cache Region</h4>
+                        <div class="polygon-controls-buttons">
+                            <v-btn color="green" dark rounded elevation="2" @click="confirmCacheRegions">
+                                <v-icon left>mdi-check</v-icon>
+                                Cache This Region
+                            </v-btn>
+                            <v-btn color="red" dark rounded elevation="2" @click="cancelPolygonDrawing">
+                                <v-icon left>mdi-close</v-icon>
+                                Cancel
+                            </v-btn>
                         </div>
-                        <div class="compass-rose-center"></div>
-                        <div class="compass-rose-inner">
-                            <div class="compass-rose-rotation-indicator" :style="{ transform: `translate(-50%, -50%) rotate(${mapRotation}deg)` }"></div>
-                            <span>{{ Math.round(mapRotation) }}°</span>
+                        <div class="polygon-instructions">
+                            Click on the map to add vertices to your cache region. You need at least 3 points to form a polygon. The region inside the polygon will be cached at high zoom levels.
                         </div>
-                        <!-- Draggable N symbol -->
-                        <div class="compass-rose-north" 
-                             :style="{ transform: `translate(-50%, -50%) rotate(${mapRotation}deg) translateY(-30px)` }"
-                             @mousedown="startCompassDrag" 
-                             @touchstart="startCompassDrag"
-                             title="Drag N around the circle to rotate map">
-                            N
-                        </div>
-                        <!-- Reset button -->
-                        <v-btn icon small 
-                               class="compass-reset-btn" 
-                               @click="resetMapRotation"
-                               v-if="mapRotation !== 0"
-                               title="Reset map rotation to North">
-                            <v-icon small>mdi-refresh</v-icon>
-                        </v-btn>
                     </div>
                     
                     <!-- Caching indicator overlay -->
@@ -1091,7 +1150,11 @@
                         'Tide_Tomfoolery_Tracking', 'Marine_Mirth_Measurements', 'Aqua_Antics_Archive'
                     ],
                     mapRotation: 0, // New data property for compass rotation
-                    isCompassDragging: false // New data property for compass dragging state
+                    isCompassDragging: false, // New data property for compass dragging state
+                    polygonVertices: [],
+                    polygonActive: false,
+                    polygonLayers: [],
+                    isDrawingPolygon: false
                 }
             },
             methods: {
@@ -1861,153 +1924,181 @@
                         this.isLoading = false;
                     }
                 },
-                // New methods for compass rose interaction
-                startCompassDrag(event) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    this.isCompassDragging = true;
+                // Polygon drawing methods
+                startPolygonDrawing() {
+                    this.isDrawingPolygon = true;
+                    this.polygonVertices = [];
+                    this.clearPolygonLayers();
                     
-                    // Add dragging visual feedback
-                    const compass = document.querySelector('.compass-rose');
-                    if (compass) {
-                        compass.classList.add('dragging');
-                    }
+                    // Add click handler to map
+                    this.map.on('click', this.addPolygonVertex);
                     
-                    // Disable map dragging while dragging compass
-                    if (this.map) {
-                        this.map.dragging.disable();
-                    }
-                    
-                    // Add global event listeners
-                    document.addEventListener('mousemove', this.updateCompassDrag);
-                    document.addEventListener('touchmove', this.updateCompassDrag, { passive: false });
-                    document.addEventListener('mouseup', this.stopCompassDrag);
-                    document.addEventListener('touchend', this.stopCompassDrag);
-                    
-                    // Start the drag
-                    this.updateCompassRotation(event);
+                    this.status = 'Click on the map to add vertices to your cache region polygon.';
                 },
                 
-                updateCompassDrag(event) {
-                    if (this.isCompassDragging) {
-                        event.preventDefault();
-                        this.updateCompassRotation(event);
+                addPolygonVertex(event) {
+                    if (!this.isDrawingPolygon) return;
+                    
+                    const latlng = event.latlng;
+                    this.polygonVertices.push([latlng.lat, latlng.lng]);
+                    
+                    // Add vertex marker
+                    const vertex = L.circleMarker(latlng, {
+                        radius: 6,
+                        fillColor: '#9C27B0',
+                        color: 'white',
+                        weight: 2,
+                        opacity: 1,
+                        fillOpacity: 0.8
+                    }).addTo(this.map);
+                    
+                    this.polygonLayers.push(vertex);
+                    
+                    // Draw polygon if we have enough vertices
+                    if (this.polygonVertices.length >= 3) {
+                        this.drawPolygon();
                     }
+                    
+                    this.status = `Added vertex ${this.polygonVertices.length}. Click to add more or use "Confirm Regions" to save.`;
                 },
                 
-                stopCompassDrag() {
-                    this.isCompassDragging = false;
+                drawPolygon() {
+                    // Remove existing polygon
+                    this.clearPolygonLayers();
                     
-                    // Remove dragging visual feedback
-                    const compass = document.querySelector('.compass-rose');
-                    if (compass) {
-                        compass.classList.remove('dragging');
-                    }
-                    
-                    // Re-enable map dragging
-                    if (this.map) {
-                        this.map.dragging.enable();
-                    }
-                    
-                    // Remove global event listeners
-                    document.removeEventListener('mousemove', this.updateCompassDrag);
-                    document.removeEventListener('touchmove', this.updateCompassDrag);
-                    document.removeEventListener('mouseup', this.stopCompassDrag);
-                    document.removeEventListener('touchend', this.stopCompassDrag);
-                },
-                
-                updateCompassRotation(event) {
-                    if (!this.isCompassDragging) return;
-                    
-                    // Find the compass rose element
-                    const compass = document.querySelector('.compass-rose');
-                    if (!compass) return;
-                    
-                    const rect = compass.getBoundingClientRect();
-                    const centerX = rect.left + rect.width / 2;
-                    const centerY = rect.top + rect.height / 2;
-                    
-                    // Get client coordinates (handle both mouse and touch events)
-                    const clientX = event.clientX || (event.touches && event.touches[0] ? event.touches[0].clientX : 0);
-                    const clientY = event.clientY || (event.touches && event.touches[0] ? event.touches[0].clientY : 0);
-                    
-                    // Calculate angle from center
-                    const dx = clientX - centerX;
-                    const dy = clientY - centerY;
-                    let angle = Math.atan2(dy, dx) * (180 / Math.PI);
-                    
-                    // Convert to compass heading (0° = North, 90° = East, etc.)
-                    angle = (90 - angle + 360) % 360;
-                    
-                    // Update map rotation
-                    this.mapRotation = angle;
-                    
-                    // Apply rotation to the map using Leaflet API
-                    this.applyMapRotation(angle);
-                },
-                
-                applyMapRotation(angle) {
-                    if (this.map && this.map.setBearing) {
-                        // Use Leaflet's setBearing method
-                        this.map.setBearing(angle);
-                        
-                        // Show rotation feedback
-                        this.showRotationFeedback(angle);
-                    } else {
-                        // Fallback to direct CSS manipulation
-                        const mapContainer = this.map.getContainer();
-                        mapContainer.style.transform = `rotate(${angle}deg)`;
-                        mapContainer.style.transformOrigin = 'center center';
-                        
-                        // Add a class to indicate rotation
-                        if (angle !== 0) {
-                            mapContainer.classList.add('map-rotated');
-                        } else {
-                            mapContainer.classList.remove('map-rotated');
-                        }
-                        
-                        // Show rotation feedback
-                        this.showRotationFeedback(angle);
-                    }
-                },
-                
-                showRotationFeedback(angle) {
-                    // Show a brief notification about rotation
-                    if (angle !== 0) {
-                        this.status = `Map rotated ${Math.round(angle)}° - tiles will be cached in rotated orientation`;
-                    } else {
-                        this.status = 'Map rotation reset to North';
-                    }
-                },
-                
-                resetMapRotation() {
-                    this.mapRotation = 0;
-                    this.applyMapRotation(0);
-                },
-                
-                initializeCompassRose() {
-                    // Ensure compass rose is properly initialized
-                    this.mapRotation = 0;
-                    this.isCompassDragging = false;
-                    
-                    // Apply initial rotation
-                    this.$nextTick(() => {
-                        this.applyMapRotation(0);
+                    // Add vertex markers
+                    this.polygonVertices.forEach(vertex => {
+                        const marker = L.circleMarker(vertex, {
+                            radius: 6,
+                            fillColor: '#9C27B0',
+                            color: 'white',
+                            weight: 2,
+                            opacity: 1,
+                            fillOpacity: 0.8
+                        }).addTo(this.map);
+                        this.polygonLayers.push(marker);
                     });
                     
-                    // Listen for bearing changes from the map
-                    if (this.map) {
-                        this.map.on('bearingchanged', (e) => {
-                            this.mapRotation = e.bearing;
-                        });
-                    }
+                    // Draw polygon
+                    const polygon = L.polygon(this.polygonVertices, {
+                        color: '#9C27B0',
+                        weight: 3,
+                        fillOpacity: 0.2,
+                        fillColor: '#9C27B0'
+                    }).addTo(this.map);
+                    
+                    this.polygonLayers.push(polygon);
                 },
                 
-                // Method to sync compass with map bearing
-                syncCompassWithMap() {
-                    if (this.map && this.map.getBearing) {
-                        this.mapRotation = this.map.getBearing();
+                clearPolygonLayers() {
+                    this.polygonLayers.forEach(layer => {
+                        if (this.map.hasLayer(layer)) {
+                            this.map.removeLayer(layer);
+                        }
+                    });
+                    this.polygonLayers = [];
+                },
+                
+                confirmCacheRegions() {
+                    if (this.polygonVertices.length < 3) {
+                        alert('Please draw a polygon with at least 3 vertices before caching.');
+                        return;
                     }
+                    
+                    this.isDrawingPolygon = false;
+                    this.map.off('click', this.addPolygonVertex);
+                    
+                    // Cache the region within the polygon
+                    this.cachePolygonRegion();
+                },
+                
+                cancelPolygonDrawing() {
+                    this.isDrawingPolygon = false;
+                    this.polygonVertices = [];
+                    this.clearPolygonLayers();
+                    this.map.off('click', this.addPolygonVertex);
+                    this.status = 'Polygon drawing cancelled.';
+                },
+                
+                async cachePolygonRegion() {
+                    if (this.polygonVertices.length < 3) {
+                        alert('No polygon region defined.');
+                        return;
+                    }
+                    
+                    this.status = 'Caching tiles within the defined polygon region...';
+                    
+                    // Calculate the bounding box of the polygon
+                    const bounds = this.getPolygonBounds();
+                    
+                    // Cache tiles for zoom levels 17-21 within the polygon bounds
+                    await this.cacheTilesInBounds(bounds, 17, 21);
+                },
+                
+                getPolygonBounds() {
+                    let minLat = Infinity, maxLat = -Infinity;
+                    let minLng = Infinity, maxLng = -Infinity;
+                    
+                    this.polygonVertices.forEach(vertex => {
+                        minLat = Math.min(minLat, vertex[0]);
+                        maxLat = Math.max(maxLat, vertex[0]);
+                        minLng = Math.min(minLng, vertex[1]);
+                        maxLng = Math.max(maxLng, vertex[1]);
+                    });
+                    
+                    return L.latLngBounds([minLat, minLng], [maxLat, maxLng]);
+                },
+                
+                async cacheTilesInBounds(bounds, minZoom, maxZoom) {
+                    let totalTiles = 0;
+                    let cachedTiles = 0;
+                    
+                    for (let z = minZoom; z <= maxZoom; z++) {
+                        const tiles = this.getTilesForBounds(bounds, z);
+                        totalTiles += tiles.length;
+                    }
+                    
+                    this.status = `Caching ${totalTiles} tiles in polygon region...`;
+                    
+                    for (let z = minZoom; z <= maxZoom; z++) {
+                        const tiles = this.getTilesForBounds(bounds, z);
+                        
+                        for (const tile of tiles) {
+                            // Check if tile is within polygon (simplified check)
+                            if (this.isTileInPolygon(tile, z)) {
+                                const success = await this.cacheTile(tile.z, tile.x, tile.y);
+                                if (success) cachedTiles++;
+                            }
+                        }
+                    }
+                    
+                    this.status = `Cached ${cachedTiles} tiles in polygon region.`;
+                    await this.getCacheStats();
+                },
+                
+                isTileInPolygon(tile, zoom) {
+                    // Simplified check - just use the tile center
+                    const tileCenter = this.tileToLatLng(tile.x, tile.y, zoom);
+                    return this.pointInPolygon(tileCenter, this.polygonVertices);
+                },
+                
+                tileToLatLng(x, y, zoom) {
+                    const n = Math.pow(2, zoom);
+                    const lng = x / n * 360 - 180;
+                    const lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * y / n))) * 180 / Math.PI;
+                    return [lat, lng];
+                },
+                
+                pointInPolygon(point, polygon) {
+                    // Ray casting algorithm
+                    let inside = false;
+                    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+                        if (((polygon[i][0] > point[0]) !== (polygon[j][0] > point[0])) &&
+                            (point[1] < (polygon[j][1] - polygon[i][1]) * (point[0] - polygon[i][0]) / (polygon[j][0] - polygon[i][0]) + polygon[i][1])) {
+                            inside = !inside;
+                        }
+                    }
+                    return inside;
                 }
             },
             mounted() {
@@ -2035,11 +2126,6 @@
                     L.control.scale({imperial: false}).addTo(this.map);
                     this.scaleAdded = true;
                     
-                    // Add event listeners for map changes
-                    this.map.on('viewreset', this.syncCompassWithMap);
-                    this.map.on('zoomend', this.syncCompassWithMap);
-                    this.map.on('moveend', this.syncCompassWithMap);
-                    
                     // Add CSS for logo rotation
                     const style = document.createElement('style');
                     style.textContent = `
@@ -2058,7 +2144,6 @@
                     this.getRecentCachedArea();
                     this.startCacheStatsRefresh();
                     this.loadMapSources();
-                    this.initializeCompassRose(); // Initialize compass rose on mount
                 });
             }
         })
