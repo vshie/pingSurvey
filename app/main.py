@@ -13,6 +13,20 @@ import hashlib #used for tile caching
 OFFLINE_MAPS_DIR = '/app/logs/offline_maps'
 TILE_CACHE_SIZE_LIMIT = 5 * 1024 * 1024 * 1024  # 5GB cache limit
 
+# Map tile sources
+MAP_SOURCES = {
+    'google': {
+        'name': 'Google Maps',
+        'url': 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+        'attribution': '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
+    },
+    'arcgis': {
+        'name': 'ArcGIS World Imagery',
+        'url': 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        'attribution': '&copy; <a href="https://www.esri.com/">Esri</a> — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'
+    }
+}
+
 print("hello we are in the script world")
 print(f"Offline map tiles will be stored in: {OFFLINE_MAPS_DIR}")
 print(f"Cache size limit: {TILE_CACHE_SIZE_LIMIT / (1024**3):.1f} GB")
@@ -364,7 +378,12 @@ def get_data():
 def serve_tile(z, x, y):
     """Serve map tiles with offline caching support."""
     try:
-        print(f"Tile request: z={z}, x={x}, y={y}")
+        # Get the map source from query parameter, default to 'google'
+        map_source = request.args.get('source', 'google')
+        if map_source not in MAP_SOURCES:
+            map_source = 'google'  # Fallback to Google if invalid source
+        
+        print(f"Tile request: z={z}, x={x}, y={y}, source={map_source}")
         
         # First check if we have the tile cached
         cached_tile = get_cached_tile(z, x, y)
@@ -372,14 +391,15 @@ def serve_tile(z, x, y):
             print(f"Serving cached tile: z={z}, x={x}, y={y}")
             return Response(cached_tile, mimetype='image/png')
         
-        # If not cached, try to fetch from Google Maps
-        tile_url = f'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}'
+        # If not cached, try to fetch from the selected map source
+        source_config = MAP_SOURCES[map_source]
+        tile_url = source_config['url'].format(x=x, y=y, z=z)
         print(f"Fetching tile from: {tile_url}")
         response = requests.get(tile_url, timeout=10)
         
         if response.status_code == 200:
             tile_data = response.content
-            print(f"Successfully fetched tile: z={z}, x={x}, y={y}, size={len(tile_data)} bytes")
+            print(f"Successfully fetched tile: z={z}, x={x}, y={y}, size={len(tile_data)} bytes, source={map_source}")
             
             # Cache the tile for future offline use
             cache_tile(z, x, y, tile_data)
@@ -387,7 +407,7 @@ def serve_tile(z, x, y):
             print(f"Serving fresh tile: z={z}, x={x}, y={y}")
             return Response(tile_data, mimetype='image/png')
         else:
-            print(f"Failed to fetch tile: z={z}, x={x}, y={y}, status={response.status_code}")
+            print(f"Failed to fetch tile: z={z}, x={x}, y={y}, status={response.status_code}, source={map_source}")
             return Response(status=404)
             
     except Exception as e:
@@ -446,6 +466,15 @@ def clear_cache():
             
     except Exception as e:
         print(f"Error clearing cache: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/map_sources')
+def get_map_sources():
+    """Get available map sources."""
+    try:
+        return jsonify(MAP_SOURCES)
+    except Exception as e:
+        print(f"Error getting map sources: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/tile_cached/<int:z>/<int:x>/<int:y>')

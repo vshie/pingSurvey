@@ -243,6 +243,12 @@
             .cache-progress-panel {
                 padding: 12px;
             }
+            
+            /* Map source selector on mobile */
+            .v-select {
+                min-width: 120px !important;
+                font-size: 12px;
+            }
         }
         
         .confidence-high {
@@ -425,6 +431,19 @@
                             <v-icon left>mdi-{{ showLegend ? 'eye-off' : 'eye' }}</v-icon>
                             {{ showLegend ? 'Hide' : 'Show' }}
                         </v-btn>
+                        <v-select
+                            v-model="selectedMapSource"
+                            :items="Object.keys(mapSources)"
+                            :item-text="key => mapSources[key].name"
+                            :item-value="key => key"
+                            label="Map Source"
+                            dark
+                            dense
+                            outlined
+                            hide-details
+                            style="min-width: 150px;"
+                            @change="changeMapSource"
+                        ></v-select>
                         <v-btn color="purple" dark rounded elevation="2" @click="cacheVisibleTiles" :loading="cacheLoading" :disabled="cacheProgress.active">
                             <v-icon left>mdi-cached</v-icon>
                             Cache: {{ cacheStats.cachedTiles }}
@@ -590,6 +609,19 @@
                         center_lon: -133,
                         zoom: 10
                     },
+                    mapSources: {
+                        google: {
+                            name: 'Google Maps',
+                            url: 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+                            attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
+                        },
+                        arcgis: {
+                            name: 'ArcGIS World Imagery',
+                            url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                            attribution: '&copy; <a href="https://www.esri.com/">Esri</a> — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'
+                        }
+                    },
+                    selectedMapSource: 'google',
                     customIcon: L.icon({
                         iconUrl: '/static/BB.png',
                         iconSize: [32, 45],
@@ -1143,7 +1175,7 @@
                 async cacheTile(z, x, y) {
                     try {
                         console.log(`Attempting to cache tile: ${z}/${x}/${y}`);
-                        const response = await fetch(`/tiles/${z}/${x}/${y}.png`);
+                        const response = await fetch(`/tiles/${z}/${x}/${y}.png?source=${this.selectedMapSource}`);
                         const success = response.ok;
                         console.log(`Tile ${z}/${x}/${y} cache result: ${success ? 'SUCCESS' : 'FAILED'} (${response.status})`);
                         return success;
@@ -1180,9 +1212,10 @@
                 },
                 createOfflineTileLayer() {
                     // Create a custom tile layer that uses our offline-capable backend
-                    const tileLayer = L.tileLayer('/tiles/{z}/{x}/{y}.png', {
+                    const sourceConfig = this.mapSources[this.selectedMapSource];
+                    const tileLayer = L.tileLayer(`/tiles/{z}/{x}/{y}.png?source=${this.selectedMapSource}`, {
                         maxZoom: 21,
-                        attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a> (Offline Cached)',
+                        attribution: sourceConfig.attribution + ' (Offline Cached)',
                         errorTileUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7' // Transparent tile for missing tiles
                     });
                     
@@ -1231,6 +1264,37 @@
                     this.cacheProgress.status = 'Cancelled by user';
                     this.cacheLoading = false;
                     console.log('Caching cancelled by user');
+                },
+                changeMapSource() {
+                    console.log(`Changing map source to: ${this.selectedMapSource}`);
+                    if (this.map) {
+                        // Remove existing tile layer
+                        this.map.eachLayer((layer) => {
+                            if (layer instanceof L.TileLayer) {
+                                this.map.removeLayer(layer);
+                            }
+                        });
+                        
+                        // Add new tile layer with selected source
+                        this.createOfflineTileLayer().addTo(this.map);
+                        
+                        // Update attribution
+                        const sourceConfig = this.mapSources[this.selectedMapSource];
+                        console.log(`Map source changed to: ${sourceConfig.name}`);
+                    }
+                },
+                async loadMapSources() {
+                    try {
+                        const response = await fetch('/map_sources');
+                        const sources = await response.json();
+                        if (sources && Object.keys(sources).length > 0) {
+                            this.mapSources = sources;
+                            console.log('Loaded map sources from backend:', sources);
+                        }
+                    } catch (error) {
+                        console.error('Error loading map sources:', error);
+                        // Keep using the default sources defined in data
+                    }
                 }
             },
             mounted() {
@@ -1275,6 +1339,7 @@
                     this.getCacheStats();
                     this.getRecentCachedArea();
                     this.startCacheStatsRefresh();
+                    this.loadMapSources();
                 });
             }
         })
