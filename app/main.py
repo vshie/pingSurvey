@@ -390,11 +390,14 @@ def cache_stats():
         files = [f for f in os.listdir(OFFLINE_MAPS_DIR) if f.endswith('.png')]
         total_size = sum(os.path.getsize(os.path.join(OFFLINE_MAPS_DIR, f)) for f in files)
         
-        return jsonify({
+        stats = {
             'cached_tiles': len(files),
             'cache_size_mb': round(total_size / (1024 * 1024), 2),
             'cache_limit_mb': round(TILE_CACHE_SIZE_LIMIT / (1024 * 1024), 2)
-        })
+        }
+        
+        print(f"Cache stats: {stats}")
+        return jsonify(stats)
         
     except Exception as e:
         print(f"Error getting cache stats: {e}")
@@ -421,6 +424,16 @@ def clear_cache():
             
     except Exception as e:
         print(f"Error clearing cache: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/tile_cached/<int:z>/<int:x>/<int:y>')
+def check_tile_cached(z, x, y):
+    """Check if a specific tile is already cached."""
+    try:
+        cached = is_tile_cached(z, x, y)
+        return jsonify({'cached': cached})
+    except Exception as e:
+        print(f"Error checking if tile is cached: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/recent_cached_area')

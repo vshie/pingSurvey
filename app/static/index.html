@@ -791,41 +791,61 @@
                         console.log(`Caching tiles from zoom ${currentZoom} to ${maxZoom} for bounds:`, bounds);
                         
                         let totalTiles = 0;
-                        let cachedTiles = 0;
+                        let newTilesCached = 0;
+                        let alreadyCached = 0;
                         
                         // Cache tiles for each zoom level from current to max
                         for (let z = currentZoom; z <= maxZoom; z++) {
                             const tiles = this.getTilesForBounds(bounds, z);
                             totalTiles += tiles.length;
                             
-                            console.log(`Zoom ${z}: ${tiles.length} tiles to cache`);
+                            console.log(`Zoom ${z}: ${tiles.length} tiles to check/cache`);
                             
-                            // Cache tiles in batches to avoid overwhelming the server
-                            const batchSize = 10;
+                            // Process tiles in batches to avoid overwhelming the server
+                            const batchSize = 5;
                             for (let i = 0; i < tiles.length; i += batchSize) {
                                 const batch = tiles.slice(i, i + batchSize);
                                 
-                                // Cache each tile in the batch
-                                const promises = batch.map(tile => this.cacheTile(tile.z, tile.x, tile.y));
-                                const results = await Promise.allSettled(promises);
+                                // Check which tiles are already cached
+                                const checkPromises = batch.map(tile => this.checkTileCached(tile.z, tile.x, tile.y));
+                                const checkResults = await Promise.allSettled(checkPromises);
                                 
-                                // Count successful caches
-                                cachedTiles += results.filter(r => r.status === 'fulfilled' && r.value).length;
+                                // Filter out already cached tiles
+                                const tilesToCache = [];
+                                for (let j = 0; j < batch.length; j++) {
+                                    const result = checkResults[j];
+                                    if (result.status === 'fulfilled' && !result.value) {
+                                        tilesToCache.push(batch[j]);
+                                    } else if (result.status === 'fulfilled' && result.value) {
+                                        alreadyCached++;
+                                    }
+                                }
                                 
-                                // Update progress every batch
-                                if (i % (batchSize * 5) === 0) {
+                                console.log(`Batch ${Math.floor(i/batchSize) + 1}: ${tilesToCache.length} new tiles to cache, ${batch.length - tilesToCache.length} already cached`);
+                                
+                                // Cache only new tiles
+                                if (tilesToCache.length > 0) {
+                                    const cachePromises = tilesToCache.map(tile => this.cacheTile(tile.z, tile.x, tile.y));
+                                    const cacheResults = await Promise.allSettled(cachePromises);
+                                    
+                                    // Count successful caches
+                                    newTilesCached += cacheResults.filter(r => r.status === 'fulfilled' && r.value).length;
+                                }
+                                
+                                // Update progress every few batches
+                                if (i % (batchSize * 3) === 0) {
                                     await this.getCacheStats();
                                 }
                                 
                                 // Small delay to avoid overwhelming the server
-                                await new Promise(resolve => setTimeout(resolve, 100));
+                                await new Promise(resolve => setTimeout(resolve, 200));
                             }
                         }
                         
-                        console.log(`Caching complete: ${cachedTiles}/${totalTiles} tiles cached`);
+                        console.log(`Caching complete: ${newTilesCached} new tiles cached, ${alreadyCached} already cached, ${totalTiles} total processed`);
                         await this.getCacheStats();
                         
-                        alert(`Caching complete!\n\n${cachedTiles} tiles cached from zoom ${currentZoom} to ${maxZoom}\nTotal tiles processed: ${totalTiles}`);
+                        alert(`Caching complete!\n\n${newTilesCached} new tiles cached\n${alreadyCached} tiles already cached\nTotal tiles processed: ${totalTiles}\nZoom levels: ${currentZoom} to ${maxZoom}`);
                         
                     } catch (error) {
                         console.error('Error caching visible tiles:', error);
@@ -861,6 +881,16 @@
                     const x = ((lng + 180) / 360) * n;
                     const y = (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * n;
                     return { x: x, y: y };
+                },
+                async checkTileCached(z, x, y) {
+                    try {
+                        const response = await fetch(`/tile_cached/${z}/${x}/${y}`);
+                        const data = await response.json();
+                        return data.cached;
+                    } catch (error) {
+                        console.error(`Error checking if tile ${z}/${x}/${y} is cached:`, error);
+                        return false;
+                    }
                 },
                 async cacheTile(z, x, y) {
                     try {
