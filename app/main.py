@@ -348,6 +348,8 @@ def get_data():
 def serve_tile(z, x, y):
     """Serve map tiles with offline caching support."""
     try:
+        print(f"Tile request: z={z}, x={x}, y={y}")
+        
         # First check if we have the tile cached
         cached_tile = get_cached_tile(z, x, y)
         if cached_tile:
@@ -356,10 +358,12 @@ def serve_tile(z, x, y):
         
         # If not cached, try to fetch from Google Maps
         tile_url = f'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}'
+        print(f"Fetching tile from: {tile_url}")
         response = requests.get(tile_url, timeout=10)
         
         if response.status_code == 200:
             tile_data = response.content
+            print(f"Successfully fetched tile: z={z}, x={x}, y={y}, size={len(tile_data)} bytes")
             
             # Cache the tile for future offline use
             cache_tile(z, x, y, tile_data)

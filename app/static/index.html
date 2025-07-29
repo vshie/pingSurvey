@@ -801,6 +801,12 @@
                             
                             console.log(`Zoom ${z}: ${tiles.length} tiles to check/cache`);
                             
+                            // Skip if no tiles to process
+                            if (tiles.length === 0) {
+                                console.log(`No tiles for zoom ${z}, skipping`);
+                                continue;
+                            }
+                            
                             // Process tiles in batches to avoid overwhelming the server
                             const batchSize = 5;
                             for (let i = 0; i < tiles.length; i += batchSize) {
@@ -861,19 +867,28 @@
                     const east = bounds.getEast();
                     const west = bounds.getWest();
                     
+                    console.log(`Bounds for zoom ${zoom}:`, { north, south, east, west });
+                    
                     // Convert bounds to tile coordinates
-                    const northTile = this.latLngToTile(north, west, zoom).y;
-                    const southTile = this.latLngToTile(south, east, zoom).y;
-                    const eastTile = this.latLngToTile(north, east, zoom).x;
-                    const westTile = this.latLngToTile(south, west, zoom).x;
+                    const northWestTile = this.latLngToTile(north, west, zoom);
+                    const southEastTile = this.latLngToTile(south, east, zoom);
+                    
+                    // Ensure we get the correct min/max tile coordinates
+                    const minX = Math.floor(Math.min(northWestTile.x, southEastTile.x));
+                    const maxX = Math.ceil(Math.max(northWestTile.x, southEastTile.x));
+                    const minY = Math.floor(Math.min(northWestTile.y, southEastTile.y));
+                    const maxY = Math.ceil(Math.max(northWestTile.y, southEastTile.y));
+                    
+                    console.log(`Tile bounds for zoom ${zoom}:`, { minX, maxX, minY, maxY });
                     
                     // Generate all tile coordinates in the bounds
-                    for (let y = Math.floor(southTile); y <= Math.ceil(northTile); y++) {
-                        for (let x = Math.floor(westTile); x <= Math.ceil(eastTile); x++) {
+                    for (let y = minY; y <= maxY; y++) {
+                        for (let x = minX; x <= maxX; x++) {
                             tiles.push({ z: zoom, x: x, y: y });
                         }
                     }
                     
+                    console.log(`Generated ${tiles.length} tiles for zoom ${zoom}`);
                     return tiles;
                 },
                 latLngToTile(lat, lng, zoom) {
@@ -894,8 +909,11 @@
                 },
                 async cacheTile(z, x, y) {
                     try {
+                        console.log(`Attempting to cache tile: ${z}/${x}/${y}`);
                         const response = await fetch(`/tiles/${z}/${x}/${y}.png`);
-                        return response.ok;
+                        const success = response.ok;
+                        console.log(`Tile ${z}/${x}/${y} cache result: ${success ? 'SUCCESS' : 'FAILED'} (${response.status})`);
+                        return success;
                     } catch (error) {
                         console.error(`Error caching tile ${z}/${x}/${y}:`, error);
                         return false;
