@@ -30,6 +30,7 @@ MAP_SOURCES = {
 print("hello we are in the script world")
 print(f"Offline map tiles will be stored in: {OFFLINE_MAPS_DIR}")
 print(f"Cache size limit: {TILE_CACHE_SIZE_LIMIT / (1024**3):.1f} GB")
+print(f"Log files will be stored in: /app/logs/ with timestamped names")
 app = Flask(__name__, static_url_path="/static", static_folder="static") #setup flask app
 
 logging_active = False# Global variable to control the logging 
@@ -37,13 +38,39 @@ simulation_active = False # Global variable to control simulation mode
 simulation_index = 0 # Index to track which row of simulation data we're on
 simulation_data = [] # Store simulation data from CSV
 base_url = 'http://host.docker.internal/mavlink2rest/mavlink'
-log_file = '/app/logs/sensordata.csv'
-simulation_file = '/app/logs/simulation.csv'
 log_rate = 2 #Desired rate in Hz
 simulation_speed = 5 #Playback speed multiplier for simulation
 data = []
 row_counter = 0
 feedback_interval = 5 # Define the feedback interval (in seconds)
+current_log_file = None  # Will be set when logging starts
+
+def ensure_logs_dir():
+    """Ensure the logs directory exists."""
+    logs_dir = '/app/logs'
+    if not os.path.exists(logs_dir):
+        os.makedirs(logs_dir, exist_ok=True)
+        print(f"Created logs directory: {logs_dir}")
+    else:
+        print(f"Using existing logs directory: {logs_dir}")
+    
+    # Check if we can write to the directory
+    try:
+        test_file = os.path.join(logs_dir, '.test_write')
+        with open(test_file, 'w') as f:
+            f.write('test')
+        os.remove(test_file)
+        print(f"✓ Write access confirmed for logs directory")
+    except Exception as e:
+        print(f"⚠ Warning: Cannot write to logs directory: {e}")
+        print(f"  Logs will not be saved. Check file system permissions.")
+
+def generate_log_filename():
+    """Generate a timestamped log filename."""
+    timestamp = datetime.now()
+    date_str = timestamp.strftime('%Y-%m-%d')
+    time_str = timestamp.strftime('%H-%M-%S')
+    return f'/app/logs/ping_survey_{date_str}_{time_str}.csv'
 
 def ensure_offline_maps_dir():
     """Ensure the offline maps directory exists."""
@@ -236,7 +263,15 @@ def get_urls():
 def main():
     global row_counter
     global data
+    global current_log_file
     print("main started")
+    
+    # Ensure logs directory exists
+    ensure_logs_dir()
+    
+    # Generate new log file name for this session
+    current_log_file = generate_log_filename()
+    print(f"Logging to: {current_log_file}")
     
     # Get the correct URLs based on system ID
     urls = get_urls()
@@ -300,7 +335,7 @@ def main():
             longitude = gps_data['lon'] / 1e7
             altitude = gps_data['alt'] / 1e7
             data = [unix_timestamp, date, timenow, distance, confidence, yaw, roll, pitch, latitude, longitude, altitude]
-            with open(log_file, 'a', newline='') as csvfile: # Create or append to the log file and write the data
+            with open(current_log_file, 'a', newline='') as csvfile: # Create or append to the log file and write the data
                 writer = csv.writer(csvfile)
                 if csvfile.tell() == 0: # Write the column labels as the header row (only for the first write)
                     writer.writerow(column_labels)
@@ -367,7 +402,56 @@ def servicenames():
 
 @app.route('/download')
 def download_file():
-    return send_file(log_file, as_attachment=True, cache_timeout=0)
+    """Download the current log file."""
+    global current_log_file
+    if current_log_file and os.path.exists(current_log_file):
+        return send_file(current_log_file, as_attachment=True, cache_timeout=0)
+    else:
+        return jsonify({'error': 'No log file available'}), 404
+
+@app.route('/log_files')
+def list_log_files():
+    """List all available log files."""
+    try:
+        logs_dir = '/app/logs'
+        if not os.path.exists(logs_dir):
+            return jsonify([])
+        
+        log_files = []
+        for filename in os.listdir(logs_dir):
+            if filename.startswith('ping_survey_') and filename.endswith('.csv'):
+                file_path = os.path.join(logs_dir, filename)
+                file_size = os.path.getsize(file_path)
+                file_mtime = os.path.getmtime(file_path)
+                
+                log_files.append({
+                    'filename': filename,
+                    'size_bytes': file_size,
+                    'size_mb': round(file_size / (1024 * 1024), 2),
+                    'modified': datetime.fromtimestamp(file_mtime).isoformat(),
+                    'path': file_path
+                })
+        
+        # Sort by modification time (newest first)
+        log_files.sort(key=lambda x: x['modified'], reverse=True)
+        return jsonify(log_files)
+        
+    except Exception as e:
+        print(f"Error listing log files: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/download/<filename>')
+def download_specific_file(filename):
+    """Download a specific log file by filename."""
+    try:
+        file_path = os.path.join('/app/logs', filename)
+        if os.path.exists(file_path) and filename.startswith('ping_survey_') and filename.endswith('.csv'):
+            return send_file(file_path, as_attachment=True, cache_timeout=0)
+        else:
+            return jsonify({'error': 'File not found or invalid filename'}), 404
+    except Exception as e:
+        print(f"Error downloading file {filename}: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/data')
 def get_data():
@@ -570,6 +654,7 @@ def start_simulation():
         logging_active = False
     
     # Load simulation data from CSV file
+    simulation_file = '/app/logs/simulation.csv'
     if os.path.exists(simulation_file):
         simulation_data = []
         try:

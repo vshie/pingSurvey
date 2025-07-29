@@ -468,6 +468,10 @@
                             <v-icon left>{{ simulation.active ? 'mdi-stop' : 'mdi-play-circle-outline' }}</v-icon>
                             {{ simulation.active ? 'Stop Sim' : 'Start Sim (5x)' }}
                         </v-btn>
+                        <v-btn color="teal" dark rounded elevation="2" @click="showLogFiles">
+                            <v-icon left>mdi-file-multiple</v-icon>
+                            Log Files
+                        </v-btn>
                     </div>
                 </div>
                 
@@ -551,6 +555,52 @@
                 </div>
             </div>
         </v-app>
+        
+        <!-- Log Files Dialog -->
+        <v-dialog v-model="logFilesDialog" max-width="800px">
+            <v-card dark>
+                <v-card-title>
+                    <span class="headline">Log Files</span>
+                    <v-spacer></v-spacer>
+                    <v-btn icon @click="logFilesDialog = false">
+                        <v-icon>mdi-close</v-icon>
+                    </v-btn>
+                </v-card-title>
+                <v-card-text>
+                    <div v-if="currentLogFile" class="mb-4">
+                        <h4>Current Session:</h4>
+                        <v-chip color="primary" class="ma-1">
+                            {{ currentLogFile }}
+                        </v-chip>
+                    </div>
+                    
+                    <h4>Historical Log Files:</h4>
+                    <v-data-table
+                        :headers="logFileHeaders"
+                        :items="logFiles"
+                        :items-per-page="10"
+                        class="elevation-1"
+                        dark
+                    >
+                        <template v-slot:item.filename="{ item }">
+                            <v-chip small color="info">{{ item.filename }}</v-chip>
+                        </template>
+                        <template v-slot:item.size_mb="{ item }">
+                            <span>{{ item.size_mb }} MB</span>
+                        </template>
+                        <template v-slot:item.modified="{ item }">
+                            <span>{{ formatDate(item.modified) }}</span>
+                        </template>
+                        <template v-slot:item.actions="{ item }">
+                            <v-btn small color="primary" @click="downloadLogFile(item.filename)">
+                                <v-icon left small>mdi-download</v-icon>
+                                Download
+                            </v-btn>
+                        </template>
+                    </v-data-table>
+                </v-card-text>
+            </v-card>
+        </v-dialog>
     </div>
 
     <script src="/static/js/vue.js"></script>
@@ -622,6 +672,15 @@
                         }
                     },
                     selectedMapSource: 'google',
+                    currentLogFile: '',
+                    logFiles: [],
+                    logFilesDialog: false,
+                    logFileHeaders: [
+                        { text: 'Filename', value: 'filename', align: 'left' },
+                        { text: 'Size', value: 'size_mb', align: 'center' },
+                        { text: 'Modified', value: 'modified', align: 'center' },
+                        { text: 'Actions', value: 'actions', align: 'center', sortable: false }
+                    ],
                     customIcon: L.icon({
                         iconUrl: '/static/BB.png',
                         iconSize: [32, 45],
@@ -1295,6 +1354,45 @@
                         console.error('Error loading map sources:', error);
                         // Keep using the default sources defined in data
                     }
+                },
+                async showLogFiles() {
+                    this.logFilesDialog = true;
+                    await this.loadLogFiles();
+                },
+                async loadLogFiles() {
+                    try {
+                        const response = await fetch('/log_files');
+                        const files = await response.json();
+                        this.logFiles = files;
+                        console.log('Loaded log files:', files);
+                    } catch (error) {
+                        console.error('Error loading log files:', error);
+                        this.logFiles = [];
+                    }
+                },
+                async downloadLogFile(filename) {
+                    try {
+                        const response = await fetch(`/download/${filename}`);
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! Status: ${response.status}`);
+                        }
+                        const blob = await response.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.setAttribute('download', filename);
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        this.status = `Log file downloaded: ${filename}`;
+                    } catch (error) {
+                        console.error('Error downloading log file:', error);
+                        alert('Error downloading log file: ' + error.message);
+                    }
+                },
+                formatDate(dateString) {
+                    const date = new Date(dateString);
+                    return date.toLocaleString();
                 }
             },
             mounted() {
