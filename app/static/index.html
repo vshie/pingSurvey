@@ -326,7 +326,11 @@
                         </v-btn>
                         <v-btn color="purple" dark rounded elevation="2" @click="getCacheStats" :loading="cacheLoading">
                             <v-icon left>mdi-cached</v-icon>
-                            Cache: {{ cacheStats.cachedTiles || 0 }}
+                            Cache: {{ cacheStats.cachedTiles }}
+                        </v-btn>
+                        <v-btn color="green" dark rounded elevation="2" @click="getRecentCachedArea" v-if="recentCachedArea.has_cached_tiles">
+                            <v-icon left>mdi-map-marker</v-icon>
+                            Recent Area
                         </v-btn>
                         <v-btn color="red" dark rounded elevation="2" @click="confirmClearCache">
                             <v-icon left>mdi-delete-sweep</v-icon>
@@ -401,6 +405,12 @@
                     cacheLoading: false,
                     cacheStatsRefreshTimeout: null,
                     cacheStatsInterval: null,
+                    recentCachedArea: {
+                        has_cached_tiles: false,
+                        center_lat: 9.2,
+                        center_lon: -133,
+                        zoom: 10
+                    },
                     customIcon: L.icon({
                         iconUrl: '/static/BB.png',
                         iconSize: [32, 45],
@@ -740,7 +750,14 @@
                     try {
                         const response = await fetch('/cache_stats');
                         const stats = await response.json();
-                        this.cacheStats = stats;
+                        console.log('Cache stats received:', stats);
+                        // Convert backend snake_case to frontend camelCase
+                        this.cacheStats = {
+                            cachedTiles: stats.cached_tiles || 0,
+                            cacheSizeMB: stats.cache_size_mb || 0,
+                            cacheLimitMB: stats.cache_limit_mb || 5120
+                        };
+                        console.log('Cache stats converted:', this.cacheStats);
                     } catch (error) {
                         console.error('Error fetching cache stats:', error);
                         this.cacheStats = { cachedTiles: 0, cacheSizeMB: 0, cacheLimitMB: 5120 };
@@ -757,7 +774,7 @@
                         return;
                     }
                     
-                    const message = `Are you sure you want to clear the cache?\n\nThis will remove ${this.cacheStats.cachedTiles} cached tiles (${this.cacheStats.cacheSizeMB} MB).\n\nThis action cannot be undone.`;
+                    const message = `Are you sure you want to clear the cache?\n\nThis will remove ${this.cacheStats.cachedTiles} cached tiles.\n\nThis action cannot be undone.`;
                     
                     if (confirm(message)) {
                         await this.clearCache();
@@ -806,6 +823,21 @@
                         clearInterval(this.cacheStatsInterval);
                         this.cacheStatsInterval = null;
                     }
+                },
+                async getRecentCachedArea() {
+                    try {
+                        const response = await fetch('/recent_cached_area');
+                        const data = await response.json();
+                        this.recentCachedArea = data;
+                        
+                        // If we have cached tiles, center the map on the most recent area
+                        if (data.has_cached_tiles && this.map) {
+                            this.map.setView([data.center_lat, data.center_lon], data.zoom);
+                            console.log(`Centered map on recent cached area: ${data.center_lat}, ${data.center_lon} at zoom ${data.zoom}`);
+                        }
+                    } catch (error) {
+                        console.error('Error fetching recent cached area:', error);
+                    }
                 }
             },
             mounted() {
@@ -848,6 +880,7 @@
                     
                     this.checkLoggingStatus();
                     this.getCacheStats();
+                    this.getRecentCachedArea();
                     this.startCacheStatsRefresh();
                 });
             }

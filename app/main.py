@@ -72,10 +72,66 @@ def cache_tile(z, x, y, tile_data):
         
         with open(cache_path, 'wb') as f:
             f.write(tile_data)
+        
+        # Store metadata about this tile
+        store_tile_metadata(z, x, y)
+        
         print(f"Cached tile: z={z}, x={x}, y={y}")
         
     except Exception as e:
         print(f"Error caching tile: {e}")
+
+def store_tile_metadata(z, x, y):
+    """Store metadata about cached tiles for recent area tracking."""
+    try:
+        # Convert tile coordinates to lat/lon
+        lat, lon = tile_to_lat_lon(z, x, y)
+        
+        metadata_file = os.path.join(OFFLINE_MAPS_DIR, 'recent_tiles.json')
+        metadata = []
+        
+        # Load existing metadata
+        if os.path.exists(metadata_file):
+            try:
+                with open(metadata_file, 'r') as f:
+                    metadata = json.load(f)
+            except:
+                metadata = []
+        
+        # Add new tile info
+        tile_info = {
+            'z': z,
+            'x': x,
+            'y': y,
+            'lat': lat,
+            'lon': lon,
+            'timestamp': time.time()
+        }
+        
+        # Remove duplicate entries for same tile
+        metadata = [t for t in metadata if not (t['z'] == z and t['x'] == x and t['y'] == y)]
+        
+        # Add new entry
+        metadata.append(tile_info)
+        
+        # Keep only last 100 entries to prevent file from growing too large
+        if len(metadata) > 100:
+            metadata = metadata[-100:]
+        
+        # Save metadata
+        with open(metadata_file, 'w') as f:
+            json.dump(metadata, f)
+            
+    except Exception as e:
+        print(f"Error storing tile metadata: {e}")
+
+def tile_to_lat_lon(z, x, y):
+    """Convert tile coordinates to latitude/longitude."""
+    n = 2.0 ** z
+    lon_deg = x / n * 360.0 - 180.0
+    lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * y / n)))
+    lat_deg = math.degrees(lat_rad)
+    return lat_deg, lon_deg
 
 def get_cached_tile(z, x, y):
     """Get a cached tile if it exists."""
@@ -352,14 +408,90 @@ def clear_cache():
             files = [f for f in os.listdir(OFFLINE_MAPS_DIR) if f.endswith('.png')]
             for f in files:
                 os.remove(os.path.join(OFFLINE_MAPS_DIR, f))
-            print(f"Cleared {len(files)} cached tiles")
-            return jsonify({'message': f'Cleared {len(files)} cached tiles'})
+            
+            # Also clear metadata file
+            metadata_file = os.path.join(OFFLINE_MAPS_DIR, 'recent_tiles.json')
+            if os.path.exists(metadata_file):
+                os.remove(metadata_file)
+            
+            print(f"Cleared {len(files)} cached tiles and metadata")
+            return jsonify({'message': f'Cleared {len(files)} cached tiles and metadata'})
         else:
             return jsonify({'message': 'No cache to clear'})
             
     except Exception as e:
         print(f"Error clearing cache: {e}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/recent_cached_area')
+def get_recent_cached_area():
+    """Get the most recently cached tile area to center the map on."""
+    try:
+        ensure_offline_maps_dir()
+        
+        if not os.path.exists(OFFLINE_MAPS_DIR):
+            return jsonify({
+                'has_cached_tiles': False,
+                'center_lat': 9.2,
+                'center_lon': -133,
+                'zoom': 10
+            })
+        
+        # Get all cached tile files
+        files = [f for f in os.listdir(OFFLINE_MAPS_DIR) if f.endswith('.png')]
+        
+        if not files:
+            return jsonify({
+                'has_cached_tiles': False,
+                'center_lat': 9.2,
+                'center_lon': -133,
+                'zoom': 10
+            })
+        
+        # Find the most recently modified file
+        latest_file = max(files, key=lambda f: os.path.getmtime(os.path.join(OFFLINE_MAPS_DIR, f)))
+        latest_time = os.path.getmtime(os.path.join(OFFLINE_MAPS_DIR, latest_file))
+        
+        # Extract coordinates from filename (hash format)
+        # We need to reverse-engineer the hash to get coordinates
+        # For now, we'll use a different approach - store metadata
+        
+        # Look for metadata file with recent tile info
+        metadata_file = os.path.join(OFFLINE_MAPS_DIR, 'recent_tiles.json')
+        if os.path.exists(metadata_file):
+            try:
+                with open(metadata_file, 'r') as f:
+                    metadata = json.load(f)
+                    if metadata and len(metadata) > 0:
+                        # Get the most recent tile info
+                        latest_tile = metadata[-1]  # Assuming it's stored in order
+                        return jsonify({
+                            'has_cached_tiles': True,
+                            'center_lat': latest_tile['lat'],
+                            'center_lon': latest_tile['lon'],
+                            'zoom': latest_tile['z'],
+                            'cached_tiles_count': len(files)
+                        })
+            except Exception as e:
+                print(f"Error reading metadata: {e}")
+        
+        # Fallback: return default coordinates
+        return jsonify({
+            'has_cached_tiles': True,
+            'center_lat': 9.2,
+            'center_lon': -133,
+            'zoom': 10,
+            'cached_tiles_count': len(files)
+        })
+        
+    except Exception as e:
+        print(f"Error getting recent cached area: {e}")
+        return jsonify({
+            'has_cached_tiles': False,
+            'center_lat': 9.2,
+            'center_lon': -133,
+            'zoom': 10
+        })
 
 @app.route('/status', methods=['GET'])
 def status():
