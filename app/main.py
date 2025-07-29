@@ -8,6 +8,11 @@ from datetime import datetime #used for timestamps
 import json #used for JSON decoding
 import os #used for file operations
 import hashlib #used for tile caching
+
+# Offline map tile caching - store in external file system alongside logs
+OFFLINE_MAPS_DIR = '/app/logs/offline_maps'
+TILE_CACHE_SIZE_LIMIT = 5 * 1024 * 1024 * 1024  # 5GB cache limit
+
 print("hello we are in the script world")
 print(f"Offline map tiles will be stored in: {OFFLINE_MAPS_DIR}")
 print(f"Cache size limit: {TILE_CACHE_SIZE_LIMIT / (1024**3):.1f} GB")
@@ -25,10 +30,6 @@ simulation_speed = 5 #Playback speed multiplier for simulation
 data = []
 row_counter = 0
 feedback_interval = 5 # Define the feedback interval (in seconds)
-
-# Offline map tile caching - store in external file system alongside logs
-OFFLINE_MAPS_DIR = '/app/logs/offline_maps'
-TILE_CACHE_SIZE_LIMIT = 5 * 1024 * 1024 * 1024  # 5GB cache limit
 
 def ensure_offline_maps_dir():
     """Ensure the offline maps directory exists."""
