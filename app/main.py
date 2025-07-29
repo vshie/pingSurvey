@@ -26,7 +26,7 @@ feedback_interval = 5 # Define the feedback interval (in seconds)
 
 # Offline map tile caching
 OFFLINE_MAPS_DIR = '/app/static/offlinemaps'
-TILE_CACHE_SIZE_LIMIT = 100 * 1024 * 1024  # 100MB cache limit
+TILE_CACHE_SIZE_LIMIT = 5 * 1024 * 1024 * 1024  # 5GB cache limit
 
 def ensure_offline_maps_dir():
     """Ensure the offline maps directory exists."""
