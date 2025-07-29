@@ -324,21 +324,21 @@
                             <v-icon left>mdi-{{ showLegend ? 'eye-off' : 'eye' }}</v-icon>
                             {{ showLegend ? 'Hide' : 'Show' }}
                         </v-btn>
+                        <v-btn color="purple" dark rounded elevation="2" @click="getCacheStats">
+                            <v-icon left>mdi-cached</v-icon>
+                            Cache: {{ cacheStats.cachedTiles }}
+                        </v-btn>
+                        <v-btn color="red" dark rounded elevation="2" @click="clearCache">
+                            <v-icon left>mdi-delete-sweep</v-icon>
+                            Clear Cache
+                        </v-btn>
                     </div>
                     
-                    <!-- Right side - Simulation and Cache -->
+                    <!-- Right side - Simulation -->
                     <div class="controls-section">
                         <v-btn color="amber" :disabled="isLoading || run" dark rounded elevation="2" @click="toggleSimulation">
                             <v-icon left>{{ simulation.active ? 'mdi-stop' : 'mdi-play-circle-outline' }}</v-icon>
                             {{ simulation.active ? 'Stop Sim' : 'Start Sim (5x)' }}
-                        </v-btn>
-                        <v-btn color="orange" dark rounded elevation="2" @click="clearMapCache">
-                            <v-icon left>mdi-delete-sweep</v-icon>
-                            Clear Cache
-                        </v-btn>
-                        <v-btn color="info" dark rounded elevation="2" @click="showCacheStatus">
-                            <v-icon left>mdi-information</v-icon>
-                            Cache Info
                         </v-btn>
                     </div>
                 </div>
@@ -393,9 +393,10 @@
                         dataRows: 0,
                         currentIndex: 0
                     },
-                    cacheInfo: {
-                        tiles: 0,
-                        size: 0
+                    cacheStats: {
+                        cachedTiles: 0,
+                        cacheSizeMB: 0,
+                        cacheLimitMB: 100
                     },
                     customIcon: L.icon({
                         iconUrl: '/static/BB.png',
@@ -720,11 +721,8 @@
                             }, 500);
                         }
                         
-                        // Add base layer with offline caching support
-                        L.tileLayer('/tile/{z}/{x}/{y}?url=https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
-                            maxZoom: 21,
-                            attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
-                        }).addTo(this.map);
+                        // Add base layer with offline caching
+                        this.createOfflineTileLayer().addTo(this.map);
                         
                         // Add fresh scale control
                         L.control.scale({imperial: false}).addTo(this.map);
@@ -734,37 +732,33 @@
                 toggleLegend() {
                     this.showLegend = !this.showLegend;
                 },
-                async clearMapCache() {
+                async getCacheStats() {
+                    try {
+                        const response = await fetch('/cache_stats');
+                        const stats = await response.json();
+                        this.cacheStats = stats;
+                    } catch (error) {
+                        console.error('Error fetching cache stats:', error);
+                    }
+                },
+                async clearCache() {
                     try {
                         const response = await fetch('/clear_cache');
                         const result = await response.json();
-                        if (result.success) {
-                            this.status = 'Map cache cleared successfully';
-                            // Refresh the map to show the effect
-                            this.resetMap(9.2, -133, 10);
-                        } else {
-                            this.status = `Error clearing cache: ${result.message}`;
-                        }
+                        alert(result.message);
+                        this.getCacheStats();
                     } catch (error) {
                         console.error('Error clearing cache:', error);
-                        this.status = 'Error clearing cache: ' + error.message;
+                        alert('Error clearing cache');
                     }
                 },
-                async showCacheStatus() {
-                    try {
-                        const response = await fetch('/cache_status');
-                        const result = await response.json();
-                        if (result.success) {
-                            this.cacheInfo.tiles = result.cached_tiles;
-                            this.cacheInfo.size = result.cache_size_mb;
-                            this.status = `Cache: ${result.cached_tiles} tiles (${result.cache_size_mb} MB)`;
-                        } else {
-                            this.status = `Error getting cache status: ${result.message}`;
-                        }
-                    } catch (error) {
-                        console.error('Error getting cache status:', error);
-                        this.status = 'Error getting cache status: ' + error.message;
-                    }
+                createOfflineTileLayer() {
+                    // Create a custom tile layer that uses our offline-capable backend
+                    return L.tileLayer('/tiles/{z}/{x}/{y}.png', {
+                        maxZoom: 21,
+                        attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a> (Offline Cached)',
+                        errorTileUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7' // Transparent tile for missing tiles
+                    });
                 }
             },
             mounted() {
@@ -786,10 +780,7 @@
                         }, 1000);
                     }
                     
-                    L.tileLayer('/tile/{z}/{x}/{y}?url=https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
-                        maxZoom: 21,
-                        attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
-                    }).addTo(this.map);
+                    this.createOfflineTileLayer().addTo(this.map);
                     
                     // Add scale control
                     L.control.scale({imperial: false}).addTo(this.map);
@@ -809,7 +800,7 @@
                     document.head.appendChild(style);
                     
                     this.checkLoggingStatus();
-                    this.showCacheStatus(); // Get initial cache status
+                    this.getCacheStats();
                 });
             }
         })
