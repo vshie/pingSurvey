@@ -634,6 +634,24 @@
                     </div>
                 </div>
                 
+                <!-- Status Console - Directly beneath the map -->
+                <div class="status-panel">
+                    <h4>Status Console</h4>
+                    <v-data-table
+                        :headers="tableHeaders"
+                        :items="tableItems"
+                        :hide-default-footer="true"
+                        dense
+                        class="elevation-1"
+                    >
+                    <template v-slot:item.confidence="{ item }">
+                        <td :class="getConfidenceClass(item.confidence)">
+                            {{ item.confidence }}
+                        </td>
+                    </template>
+                    </v-data-table>
+                </div>
+                
                 <!-- Cache Progress Bar -->
                 <div v-if="cacheProgress.active" class="cache-progress-panel">
                     <div class="progress-header">
@@ -727,23 +745,6 @@
                             </v-chip>
                         </div>
                     </div>
-                </div>
-                
-                <div class="status-panel">
-                    <h4>Status Console</h4>
-                    <v-data-table
-                        :headers="tableHeaders"
-                        :items="tableItems"
-                        :hide-default-footer="true"
-                        dense
-                        class="elevation-1"
-                    >
-                    <template v-slot:item.confidence="{ item }">
-                        <td :class="getConfidenceClass(item.confidence)">
-                            {{ item.confidence }}
-                        </td>
-                    </template>
-                    </v-data-table>
                 </div>
             </div>
         </v-app>
@@ -1106,8 +1107,8 @@
                     });
                     this.marker.addTo(this.map);
                     
-                    // Only show depth circles if we have valid ping data (confidence > 0)
-                    if (confidence > 0) {   
+                    // Only show depth circles if we have high confidence ping data (confidence >= 90)
+                    if (confidence >= 90) {   
                         const radiusInMeters = (depth/100) * Math.tan(12.5 * Math.PI / 180);
                         const radius = radiusInMeters * this.map.getZoomScale(this.map.getZoom());
                         const fillColor = this.getColor(depth);

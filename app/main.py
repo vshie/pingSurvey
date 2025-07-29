@@ -851,4 +851,4 @@ if __name__ == '__main__':
     print(f"Offline maps directory: {OFFLINE_MAPS_DIR}")
     print(f"Cache size limit: {TILE_CACHE_SIZE_LIMIT / (1024**3):.1f} GB")
     
-    app.run(host='0.0.0.0', port=5420)
+    app.run(host='0.0.0.0', port=5420)tw
