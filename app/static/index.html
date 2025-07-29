@@ -128,6 +128,16 @@
             box-shadow: 0 3px 5px rgba(0, 0, 0, 0.3);
         }
         
+        /* Caching indicator overlay */
+        .caching-indicator {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            pointer-events: none; /* Allow clicking through to the map */
+        }
+        
         .controls {
             display: flex;
             flex-wrap: wrap; /* Allow buttons to wrap on small screens */
@@ -169,6 +179,12 @@
         .progress-header h4 {
             margin: 0;
             color: #9C27B0;
+        }
+        
+        .progress-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
         
         .progress-content {
@@ -216,6 +232,12 @@
                 flex-direction: column;
                 gap: 8px;
                 align-items: flex-start;
+            }
+            
+            .progress-controls {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 6px;
             }
             
             .cache-progress-panel {
@@ -352,6 +374,14 @@
                     <div class="map-center-button" @click="onCenterMapButtonClick">
                         <v-icon color="white">mdi-crosshairs-gps</v-icon>
                     </div>
+                    
+                    <!-- Caching indicator overlay -->
+                    <div v-if="cacheProgress.active" class="caching-indicator">
+                        <v-chip color="purple" dark>
+                            <v-icon left small>mdi-cached</v-icon>
+                            Caching in progress...
+                        </v-chip>
+                    </div>
                     <!-- Depth legend -->
                     <div class="legend" v-if="showLegend">
                         <h4>Depth (m)</h4>
@@ -426,10 +456,16 @@
                 <div v-if="cacheProgress.active" class="cache-progress-panel">
                     <div class="progress-header">
                         <h4>Cache Progress</h4>
-                        <v-btn small color="error" @click="cancelCaching" :disabled="!cacheProgress.active">
-                            <v-icon left>mdi-close</v-icon>
-                            Cancel
-                        </v-btn>
+                        <div class="progress-controls">
+                            <v-chip small color="info" class="mr-2">
+                                <v-icon left small>mdi-information</v-icon>
+                                Map can be moved freely
+                            </v-chip>
+                            <v-btn small color="error" @click="cancelCaching" :disabled="!cacheProgress.active">
+                                <v-icon left>mdi-close</v-icon>
+                                Cancel
+                            </v-btn>
+                        </div>
                     </div>
                     <div class="progress-content">
                         <div class="progress-bar-container">
@@ -927,32 +963,33 @@
                     this.cacheLoading = true;
                     
                     try {
-                        const bounds = this.map.getBounds();
-                        const currentZoom = this.map.getZoom();
+                        // Capture the bounds and zoom at the start of caching - these won't change during the process
+                        const initialBounds = this.map.getBounds();
+                        const initialZoom = this.map.getZoom();
                         const maxZoom = 21; // Maximum zoom level
                         
-                        console.log(`Caching tiles from zoom ${currentZoom} to ${maxZoom} for bounds:`, bounds);
+                        console.log(`Caching tiles from zoom ${initialZoom} to ${maxZoom} for initial bounds:`, initialBounds);
                         
                         let totalTiles = 0;
                         let newTilesCached = 0;
                         let alreadyCached = 0;
                         
-                        // Calculate total tiles first
+                        // Calculate total tiles first using initial bounds
                         this.cacheProgress.status = 'Calculating total tiles...';
-                        for (let z = currentZoom; z <= maxZoom; z++) {
-                            const tiles = this.getTilesForBounds(bounds, z);
+                        for (let z = initialZoom; z <= maxZoom; z++) {
+                            const tiles = this.getTilesForBounds(initialBounds, z);
                             totalTiles += tiles.length;
                         }
                         
                         this.cacheProgress.totalTiles = totalTiles;
                         this.cacheProgress.status = `Starting cache process for ${totalTiles} tiles...`;
                         
-                        // Cache tiles for each zoom level from current to max
-                        for (let z = currentZoom; z <= maxZoom; z++) {
+                        // Cache tiles for each zoom level from initial to max
+                        for (let z = initialZoom; z <= maxZoom; z++) {
                             this.cacheProgress.currentZoom = z;
                             this.cacheProgress.status = `Processing zoom level ${z}...`;
                             
-                            const tiles = this.getTilesForBounds(bounds, z);
+                            const tiles = this.getTilesForBounds(initialBounds, z);
                             console.log(`Zoom ${z}: ${tiles.length} tiles to check/cache`);
                             
                             // Skip if no tiles to process
@@ -1024,7 +1061,7 @@
                         
                         // Show completion message
                         setTimeout(() => {
-                            alert(`Caching complete!\n\n${newTilesCached} new tiles cached\n${alreadyCached} tiles already cached\nTotal tiles processed: ${totalTiles}\nZoom levels: ${currentZoom} to ${maxZoom}`);
+                            alert(`Caching complete!\n\n${newTilesCached} new tiles cached\n${alreadyCached} tiles already cached\nTotal tiles processed: ${totalTiles}\nZoom levels: ${initialZoom} to ${maxZoom}`);
                             
                             // Hide progress panel after a delay
                             setTimeout(() => {
