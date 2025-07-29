@@ -324,13 +324,17 @@
                             <v-icon left>mdi-{{ showLegend ? 'eye-off' : 'eye' }}</v-icon>
                             {{ showLegend ? 'Hide' : 'Show' }}
                         </v-btn>
-                        <v-btn color="purple" dark rounded elevation="2" @click="getCacheStats" :loading="cacheLoading">
+                        <v-btn color="purple" dark rounded elevation="2" @click="cacheVisibleTiles" :loading="cacheLoading">
                             <v-icon left>mdi-cached</v-icon>
                             Cache: {{ cacheStats.cachedTiles }}
                         </v-btn>
                         <v-btn color="green" dark rounded elevation="2" @click="getRecentCachedArea" v-if="cacheStats.cachedTiles > 0">
                             <v-icon left>mdi-map-marker</v-icon>
                             Recent Area
+                        </v-btn>
+                        <v-btn color="blue" dark rounded elevation="2" @click="getCacheStats">
+                            <v-icon left>mdi-refresh</v-icon>
+                            Refresh
                         </v-btn>
                         <v-btn color="red" dark rounded elevation="2" @click="confirmClearCache">
                             <v-icon left>mdi-delete-sweep</v-icon>
@@ -769,6 +773,102 @@
                         this.cacheStats = { cachedTiles: 0, cacheSizeMB: 0, cacheLimitMB: 5120 };
                     } finally {
                         this.cacheLoading = false;
+                    }
+                },
+                async cacheVisibleTiles() {
+                    if (!this.map) {
+                        alert('Map not initialized');
+                        return;
+                    }
+                    
+                    this.cacheLoading = true;
+                    
+                    try {
+                        const bounds = this.map.getBounds();
+                        const currentZoom = this.map.getZoom();
+                        const maxZoom = 21; // Maximum zoom level
+                        
+                        console.log(`Caching tiles from zoom ${currentZoom} to ${maxZoom} for bounds:`, bounds);
+                        
+                        let totalTiles = 0;
+                        let cachedTiles = 0;
+                        
+                        // Cache tiles for each zoom level from current to max
+                        for (let z = currentZoom; z <= maxZoom; z++) {
+                            const tiles = this.getTilesForBounds(bounds, z);
+                            totalTiles += tiles.length;
+                            
+                            console.log(`Zoom ${z}: ${tiles.length} tiles to cache`);
+                            
+                            // Cache tiles in batches to avoid overwhelming the server
+                            const batchSize = 10;
+                            for (let i = 0; i < tiles.length; i += batchSize) {
+                                const batch = tiles.slice(i, i + batchSize);
+                                
+                                // Cache each tile in the batch
+                                const promises = batch.map(tile => this.cacheTile(tile.z, tile.x, tile.y));
+                                const results = await Promise.allSettled(promises);
+                                
+                                // Count successful caches
+                                cachedTiles += results.filter(r => r.status === 'fulfilled' && r.value).length;
+                                
+                                // Update progress every batch
+                                if (i % (batchSize * 5) === 0) {
+                                    await this.getCacheStats();
+                                }
+                                
+                                // Small delay to avoid overwhelming the server
+                                await new Promise(resolve => setTimeout(resolve, 100));
+                            }
+                        }
+                        
+                        console.log(`Caching complete: ${cachedTiles}/${totalTiles} tiles cached`);
+                        await this.getCacheStats();
+                        
+                        alert(`Caching complete!\n\n${cachedTiles} tiles cached from zoom ${currentZoom} to ${maxZoom}\nTotal tiles processed: ${totalTiles}`);
+                        
+                    } catch (error) {
+                        console.error('Error caching visible tiles:', error);
+                        alert('Error caching tiles: ' + error.message);
+                    } finally {
+                        this.cacheLoading = false;
+                    }
+                },
+                getTilesForBounds(bounds, zoom) {
+                    const tiles = [];
+                    const north = bounds.getNorth();
+                    const south = bounds.getSouth();
+                    const east = bounds.getEast();
+                    const west = bounds.getWest();
+                    
+                    // Convert bounds to tile coordinates
+                    const northTile = this.latLngToTile(north, west, zoom).y;
+                    const southTile = this.latLngToTile(south, east, zoom).y;
+                    const eastTile = this.latLngToTile(north, east, zoom).x;
+                    const westTile = this.latLngToTile(south, west, zoom).x;
+                    
+                    // Generate all tile coordinates in the bounds
+                    for (let y = Math.floor(southTile); y <= Math.ceil(northTile); y++) {
+                        for (let x = Math.floor(westTile); x <= Math.ceil(eastTile); x++) {
+                            tiles.push({ z: zoom, x: x, y: y });
+                        }
+                    }
+                    
+                    return tiles;
+                },
+                latLngToTile(lat, lng, zoom) {
+                    const n = Math.pow(2, zoom);
+                    const x = ((lng + 180) / 360) * n;
+                    const y = (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * n;
+                    return { x: x, y: y };
+                },
+                async cacheTile(z, x, y) {
+                    try {
+                        const response = await fetch(`/tiles/${z}/${x}/${y}.png`);
+                        return response.ok;
+                    } catch (error) {
+                        console.error(`Error caching tile ${z}/${x}/${y}:`, error);
+                        return false;
                     }
                 },
                 async confirmClearCache() {
