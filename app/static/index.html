@@ -112,6 +112,16 @@
             font-size: 11px;
         }
         
+        .legend-labels span {
+            font-size: 10px;
+            color: #888;
+        }
+        
+        .zoom-level-display {
+            margin-bottom: 8px;
+            text-align: center;
+        }
+        
         /* Floating center map button for mobile */
         .map-center-button {
             position: absolute;
@@ -434,6 +444,67 @@
             stroke-width: 2;
             z-index: 999;
         }
+
+        /* New styles for collapsible panels */
+        .simulation-controls-panel {
+            padding: 16px;
+            background-color: #1E1E1E;
+            margin-top: 1px;
+            border-top: 2px solid #9C27B0;
+            transition: all 0.3s ease;
+        }
+
+        .simulation-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .simulation-header h4 {
+            margin: 0;
+            color: #9C27B0;
+        }
+
+        .simulation-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .simulation-content {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            transition: all 0.3s ease;
+            overflow: hidden;
+        }
+
+        .simulation-buttons {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .simulation-status {
+            margin-top: 8px;
+        }
+        
+        /* Enhanced collapsible functionality */
+        .progress-content, .simulation-content {
+            transition: all 0.3s ease;
+            overflow: hidden;
+        }
+        
+        /* Collapse button styling */
+        .collapse-btn {
+            background-color: rgba(156, 39, 176, 0.1) !important;
+            border: 1px solid rgba(156, 39, 176, 0.3) !important;
+        }
+        
+        .collapse-btn:hover {
+            background-color: rgba(156, 39, 176, 0.2) !important;
+        }
     </style>
     <link href="/static/css/materialdesignicons.min.css" rel="stylesheet">
     <link href="/static/css/vuetify.min.css" rel="stylesheet">
@@ -484,6 +555,12 @@
                     </div>
                     <!-- Depth legend -->
                     <div class="legend" v-if="showLegend">
+                        <div class="zoom-level-display">
+                            <v-chip color="info" dark small>
+                                <v-icon left small>mdi-magnify</v-icon>
+                                Zoom: {{ map ? map.getZoom() : 10 }}
+                            </v-chip>
+                        </div>
                         <h4>Depth (m)</h4>
                         <div class="legend-gradient"></div>
                         <div class="legend-labels">
@@ -555,18 +632,6 @@
                             Clear Cache
                         </v-btn>
                     </div>
-                    
-                    <!-- Right side - Simulation -->
-                    <div class="controls-section">
-                        <v-btn color="amber" :disabled="isLoading || run" dark rounded elevation="2" @click="showSimulationDialog">
-                            <v-icon left>{{ simulation.active ? 'mdi-stop' : 'mdi-play-circle-outline' }}</v-icon>
-                            {{ simulation.active ? 'Stop Sim' : 'Start Sim (5x)' }}
-                        </v-btn>
-                        <v-btn color="teal" dark rounded elevation="2" @click="showLogFiles">
-                            <v-icon left>mdi-file-multiple</v-icon>
-                            Log Files
-                        </v-btn>
-                    </div>
                 </div>
                 
                 <!-- Cache Progress Bar -->
@@ -586,9 +651,12 @@
                                 <v-icon left>mdi-close</v-icon>
                                 Cancel
                             </v-btn>
+                            <v-btn small icon @click="cacheProgressCollapsed = !cacheProgressCollapsed" class="ml-2 collapse-btn">
+                                <v-icon>{{ cacheProgressCollapsed ? 'mdi-chevron-down' : 'mdi-chevron-up' }}</v-icon>
+                            </v-btn>
                         </div>
                     </div>
-                    <div class="progress-content">
+                    <div v-show="!cacheProgressCollapsed" class="progress-content">
                         <div class="progress-bar-container">
                             <v-progress-linear
                                 :value="cacheProgress.percentage"
@@ -627,6 +695,36 @@
                                 <span class="progress-label">Storage:</span>
                                 <span class="progress-value">{{ cacheStats.cacheLocation }}</span>
                             </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Simulation and Log Controls Panel -->
+                <div class="simulation-controls-panel">
+                    <div class="simulation-header">
+                        <h4>Simulation & Logs</h4>
+                        <div class="simulation-controls">
+                            <v-btn small icon @click="simulationControlsCollapsed = !simulationControlsCollapsed" class="collapse-btn">
+                                <v-icon>{{ simulationControlsCollapsed ? 'mdi-chevron-down' : 'mdi-chevron-up' }}</v-icon>
+                            </v-btn>
+                        </div>
+                    </div>
+                    <div v-show="!simulationControlsCollapsed" class="simulation-content">
+                        <div class="simulation-buttons">
+                            <v-btn color="amber" :disabled="isLoading || run" dark rounded elevation="2" @click="showSimulationDialog">
+                                <v-icon left>{{ simulation.active ? 'mdi-stop' : 'mdi-play-circle-outline' }}</v-icon>
+                                {{ simulation.active ? 'Stop Sim' : 'Start Sim (5x)' }}
+                            </v-btn>
+                            <v-btn color="teal" dark rounded elevation="2" @click="showLogFiles">
+                                <v-icon left>mdi-file-multiple</v-icon>
+                                Log Files
+                            </v-btn>
+                        </div>
+                        <div v-if="simulation.active" class="simulation-status">
+                            <v-chip color="amber" dark>
+                                <v-icon left small>mdi-play-circle</v-icon>
+                                Simulation Active - {{ simulation.dataRows }} data points
+                            </v-chip>
                         </div>
                     </div>
                 </div>
@@ -877,7 +975,9 @@
                     polygonVertices: [],
                     polygonActive: false,
                     polygonLayers: [],
-                    isDrawingPolygon: false
+                    isDrawingPolygon: false,
+                    cacheProgressCollapsed: false,
+                    simulationControlsCollapsed: false
                 }
             },
             methods: {
@@ -1208,7 +1308,7 @@
                         active: true,
                         percentage: 0,
                         currentZoom: this.map.getZoom(),
-                        maxZoom: 21,
+                        maxZoom: 19,
                         tilesProcessed: 0,
                         totalTiles: 0,
                         newTilesCached: 0,
@@ -1222,7 +1322,7 @@
                         // Capture the bounds and zoom at the start of caching - these won't change during the process
                         const initialBounds = this.map.getBounds();
                         const initialZoom = this.map.getZoom();
-                        const maxZoom = 21; // Maximum zoom level
+                        const maxZoom = 19; // Maximum zoom level
                         
                         console.log(`Caching tiles from zoom ${initialZoom} to ${maxZoom} for initial bounds:`, initialBounds);
                         
@@ -1428,7 +1528,7 @@
                     // Create a custom tile layer that uses our offline-capable backend
                     const sourceConfig = this.mapSources[this.selectedMapSource];
                     const tileLayer = L.tileLayer(`/tiles/{z}/{x}/{y}.png?source=${this.selectedMapSource}`, {
-                        maxZoom: 21,
+                        maxZoom: 19,
                         attribution: sourceConfig.attribution + ' (Offline Cached)',
                         errorTileUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7' // Transparent tile for missing tiles
                     });
@@ -1763,7 +1863,7 @@
                     // Start progress tracking
                     this.cacheProgress.active = true;
                     this.cacheProgress.currentZoom = 17;
-                    this.cacheProgress.maxZoom = 21;
+                    this.cacheProgress.maxZoom = 19;
                     this.cacheProgress.tilesProcessed = 0;
                     this.cacheProgress.newTilesCached = 0;
                     this.cacheProgress.alreadyCached = 0;
@@ -1771,7 +1871,7 @@
                     
                     // Calculate total tiles to process
                     let totalTiles = 0;
-                    for (let z = 17; z <= 21; z++) {
+                    for (let z = 17; z <= 19; z++) {
                         const tiles = this.getTilesForBounds(bounds, z);
                         totalTiles += tiles.length;
                     }
@@ -1779,8 +1879,8 @@
                     this.cacheProgress.totalTiles = totalTiles;
                     this.cacheProgress.status = `Found ${totalTiles} tiles to check in polygon region`;
                     
-                    // Cache tiles for zoom levels 17-21 within the polygon bounds
-                    await this.cacheTilesInBoundsWithProgress(bounds, 17, 21);
+                    // Cache tiles for zoom levels 17-19 within the polygon bounds
+                    await this.cacheTilesInBoundsWithProgress(bounds, 17, 19);
                     
                     // Clean up
                     this.cacheProgress.active = false;
@@ -1899,7 +1999,11 @@
                     L.control.scale({imperial: false}).addTo(this.map);
                     this.scaleAdded = true;
                     
-
+                    // Add zoom change listener to update zoom display
+                    this.map.on('zoomend', () => {
+                        // Force Vue to update the zoom display
+                        this.$forceUpdate();
+                    });
                     
                     this.checkLoggingStatus();
                     this.getCacheStats();
