@@ -13,6 +13,12 @@ import hashlib #used for tile caching
 OFFLINE_MAPS_DIR = '/app/logs/offline_maps'
 TILE_CACHE_SIZE_LIMIT = 5 * 1024 * 1024 * 1024  # 5GB cache limit
 
+# Performance optimization: Global state to avoid redundant operations
+_offline_maps_dir_verified = False
+_system_id_cache = None
+_distance_component_cache = None
+_urls_cache = None
+
 # Map tile sources
 MAP_SOURCES = {
     'google': {
@@ -84,6 +90,12 @@ def generate_log_filename():
 
 def ensure_offline_maps_dir():
     """Ensure the offline maps directory exists."""
+    global _offline_maps_dir_verified
+    
+    # Skip if already verified
+    if _offline_maps_dir_verified:
+        return True
+    
     if not os.path.exists(OFFLINE_MAPS_DIR):
         os.makedirs(OFFLINE_MAPS_DIR, exist_ok=True)
         print(f"Created offline maps directory: {OFFLINE_MAPS_DIR}")
@@ -97,9 +109,12 @@ def ensure_offline_maps_dir():
             f.write('test')
         os.remove(test_file)
         print(f"✓ Write access confirmed for offline maps directory")
+        _offline_maps_dir_verified = True
+        return True
     except Exception as e:
         print(f"⚠ Warning: Cannot write to offline maps directory: {e}")
         print(f"  Tiles will not be cached. Check file system permissions.")
+        return False
 
 def get_tile_cache_path(z, x, y):
     """Get the cache file path for a specific tile."""
@@ -117,10 +132,17 @@ def cache_tile(z, x, y, tile_data):
         return
     
     try:
-        ensure_offline_maps_dir()
+        # Only verify directory once
+        if not ensure_offline_maps_dir():
+            return
+            
         cache_path = get_tile_cache_path(z, x, y)
         
-        # Check cache size limit
+        # Check if already cached to avoid redundant operations
+        if os.path.exists(cache_path):
+            return
+        
+        # Check cache size limit (only periodically)
         if os.path.exists(OFFLINE_MAPS_DIR):
             total_size = sum(os.path.getsize(os.path.join(OFFLINE_MAPS_DIR, f)) 
                            for f in os.listdir(OFFLINE_MAPS_DIR) 
@@ -140,10 +162,8 @@ def cache_tile(z, x, y, tile_data):
         with open(cache_path, 'wb') as f:
             f.write(tile_data)
         
-        # Store metadata about this tile
+        # Store metadata about this tile (silently)
         store_tile_metadata(z, x, y)
-        
-        print(f"Cached tile: z={z}, x={x}, y={y}")
         
     except Exception as e:
         print(f"Error caching tile: {e}")
@@ -215,14 +235,20 @@ def get_cached_tile(z, x, y):
 
 def get_system_id():
     """Detect the correct system ID by checking available vehicles and their autopilot types."""
+    global _system_id_cache
+    
+    # Return cached value if available
+    if _system_id_cache is not None:
+        return _system_id_cache
+    
     try:
-        response = requests.get(f"{base_url}/vehicles")
+        response = requests.get(f"{base_url}/vehicles", timeout=5)
         if response.status_code == 200:
             vehicles = response.json()
             if vehicles and len(vehicles) > 0:
                 # Get vehicle info for each ID
                 for vehicle_id in vehicles:
-                    vehicle_info = requests.get(f"{base_url}/vehicles/{vehicle_id}/info")
+                    vehicle_info = requests.get(f"{base_url}/vehicles/{vehicle_id}/info", timeout=5)
                     if vehicle_info.status_code == 200:
                         info = vehicle_info.json()
                         # Check if this is a valid autopilot
@@ -234,41 +260,61 @@ def get_system_id():
                         ]
                         if autopilot_type in valid_autopilots:
                             print(f"Found valid autopilot: {autopilot_type} with system ID: {vehicle_id}")
+                            _system_id_cache = vehicle_id
                             return vehicle_id
                 print("Warning: No valid autopilot found, using default value of 1")
+                _system_id_cache = 1
                 return 1
         print("Warning: Could not detect system ID, using default value of 1")
+        _system_id_cache = 1
         return 1
     except Exception as e:
         print(f"Warning: Error detecting system ID: {e}, using default value of 1")
+        _system_id_cache = 1
         return 1
 
 def get_distance_sensor_component():
     """Detect the correct component ID for the distance sensor."""
+    global _distance_component_cache
+    
+    # Return cached value if available
+    if _distance_component_cache is not None:
+        return _distance_component_cache
+    
     system_id = get_system_id()
     try:
         # Try common component IDs for distance sensors
         common_ids = [194, 195, 196, 197, 198, 199, 200]
         for component_id in common_ids:
-            response = requests.get(f"{base_url}/vehicles/{system_id}/components/{component_id}/messages/DISTANCE_SENSOR")
+            response = requests.get(f"{base_url}/vehicles/{system_id}/components/{component_id}/messages/DISTANCE_SENSOR", timeout=3)
             if response.status_code == 200:
                 print(f"Found distance sensor at component ID: {component_id}")
+                _distance_component_cache = component_id
                 return component_id
         print("Warning: No distance sensor found, using default component ID 194")
+        _distance_component_cache = 194
         return 194
     except Exception as e:
         print(f"Warning: Error detecting distance sensor component ID: {e}, using default value of 194")
+        _distance_component_cache = 194
         return 194
 
 def get_urls():
     """Get the correct URLs based on the detected system ID."""
+    global _urls_cache
+    
+    # Return cached URLs if available
+    if _urls_cache is not None:
+        return _urls_cache
+    
     system_id = get_system_id()
     distance_component = get_distance_sensor_component()
-    return {
+    _urls_cache = {
         'distance': f"{base_url}/vehicles/{system_id}/components/{distance_component}/messages/DISTANCE_SENSOR",
         'gps': f"{base_url}/vehicles/{system_id}/components/1/messages/GLOBAL_POSITION_INT",
         'yaw': f"{base_url}/vehicles/{system_id}/components/1/messages/ATTITUDE"
     }
+    return _urls_cache
 
 def main():
     global row_counter
@@ -435,31 +481,24 @@ def serve_tile(z, x, y):
         if map_source not in MAP_SOURCES:
             map_source = 'google'  # Fallback to Google if invalid source
         
-        print(f"Tile request: z={z}, x={x}, y={y}, source={map_source}")
-        
-        # First check if we have the tile cached
+        # First check if we have the tile cached (fast path)
         cached_tile = get_cached_tile(z, x, y)
         if cached_tile:
-            print(f"Serving cached tile: z={z}, x={x}, y={y}")
             return Response(cached_tile, mimetype='image/png')
         
         # If not cached, try to fetch from the selected map source
         source_config = MAP_SOURCES[map_source]
         tile_url = source_config['url'].format(x=x, y=y, z=z)
-        print(f"Fetching tile from: {tile_url}")
         response = requests.get(tile_url, timeout=10)
         
         if response.status_code == 200:
             tile_data = response.content
-            print(f"Successfully fetched tile: z={z}, x={x}, y={y}, size={len(tile_data)} bytes, source={map_source}")
             
-            # Cache the tile for future offline use
+            # Cache the tile for future offline use (async)
             cache_tile(z, x, y, tile_data)
             
-            print(f"Serving fresh tile: z={z}, x={x}, y={y}")
             return Response(tile_data, mimetype='image/png')
         else:
-            print(f"Failed to fetch tile: z={z}, x={x}, y={y}, status={response.status_code}, source={map_source}")
             return Response(status=404)
             
     except Exception as e:
@@ -612,10 +651,6 @@ def get_recent_cached_area():
 @app.route('/status', methods=['GET'])
 def status():
     return {"logging_active": logging_active}
-
-
-
-
 
 if __name__ == '__main__':
     # Ensure logs directory exists at startup

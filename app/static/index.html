@@ -776,6 +776,7 @@
                     },
                     cacheStatsRefreshTimeout: null,
                     cacheStatsInterval: null,
+
                     recentCachedArea: {
                         has_cached_tiles: false,
                         center_lat: 9.2,
@@ -895,7 +896,6 @@
                 async fetchData() {
                     try {
                         const response = await axios.get('/data');
-                        this.status = JSON.stringify(response.data);
                         
                         // Make sure we have valid data to work with (should always be 11 points)
                         if (!response.data || !Array.isArray(response.data) || response.data.length < 11) {
@@ -937,6 +937,11 @@
                         // Toggle animation only if still logging
                         if (this.run) {
                             this.receivingData = !this.receivingData;
+                        }
+                        
+                        // Update status less frequently to reduce UI updates
+                        if (this.tableItems.length % 5 === 0) {
+                            this.status = `Data received: ${this.tableItems.length} points`;
                         }
                     } catch (error) {
                         console.error('Error fetching data:', error);
