@@ -122,6 +122,45 @@
             text-align: center;
         }
         
+        /* Legend clickable and minimized styles */
+        .legend {
+            cursor: pointer;
+            transition: all 0.3s ease;
+            user-select: none;
+        }
+        
+        .legend:hover {
+            background-color: rgba(0, 0, 0, 0.8);
+            transform: scale(1.02);
+        }
+        
+        .legend-minimized {
+            width: 80px !important;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+        
+        .legend-minimized-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            color: #ccc;
+        }
+        
+        .legend-minimized-content .v-icon {
+            font-size: 16px;
+            color: #9C27B0;
+        }
+        
+        .legend-minimized-content span {
+            font-size: 10px;
+            font-weight: bold;
+        }
+        
         /* Floating center map button for mobile */
         .map-center-button {
             position: absolute;
@@ -343,6 +382,12 @@
                 padding: 5px;
             }
             
+            .legend-minimized {
+                width: 60px !important;
+                height: 50px;
+                padding: 3px;
+            }
+            
             .legend h4 {
                 font-size: 12px;
             }
@@ -554,22 +599,28 @@
                         </v-chip>
                     </div>
                     <!-- Depth legend -->
-                    <div class="legend" v-if="showLegend">
+                    <div class="legend" @click="toggleLegend" :class="{ 'legend-minimized': !showLegend }">
                         <div class="zoom-level-display">
                             <v-chip color="info" dark small>
                                 <v-icon left small>mdi-magnify</v-icon>
                                 Zoom: {{ map ? map.getZoom() : 10 }}
                             </v-chip>
                         </div>
-                        <h4>Depth (m)</h4>
-                        <div class="legend-gradient"></div>
-                        <div class="legend-labels">
-                            <span>0</span>
-                            <span>20</span>
-                            <span>40</span>
-                            <span>60</span>
-                            <span>80</span>
-                            <span>100</span>
+                        <div v-show="showLegend" class="legend-content">
+                            <h4>Depth (m)</h4>
+                            <div class="legend-gradient"></div>
+                            <div class="legend-labels">
+                                <span>0</span>
+                                <span>20</span>
+                                <span>40</span>
+                                <span>60</span>
+                                <span>80</span>
+                                <span>100</span>
+                            </div>
+                        </div>
+                        <div v-show="!showLegend" class="legend-minimized-content">
+                            <v-icon>mdi-chevron-right</v-icon>
+                            <span>Depth</span>
                         </div>
                     </div>
                 </div>
@@ -597,10 +648,6 @@
                         <v-btn color="warning" dark rounded elevation="2" @click="clearHeatmap">
                             <v-icon left>mdi-delete</v-icon>
                             Clear
-                        </v-btn>
-                        <v-btn color="info" dark rounded elevation="2" @click="toggleLegend">
-                            <v-icon left>mdi-{{ showLegend ? 'eye-off' : 'eye' }}</v-icon>
-                            {{ showLegend ? 'Hide' : 'Show' }}
                         </v-btn>
                         <v-select
                             v-model="selectedMapSource"
