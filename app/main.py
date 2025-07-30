@@ -34,13 +34,10 @@ print(f"Log files will be stored in: /app/logs/ with timestamped names")
 app = Flask(__name__, static_url_path="/static", static_folder="static") #setup flask app
 
 logging_active = False# Global variable to control the logging 
-simulation_active = False # Global variable to control simulation mode
-simulation_index = 0 # Index to track which row of simulation data we're on
-simulation_data = [] # Store simulation data from CSV
-simulation_filename = None # Track the current simulation file being played
+
 base_url = 'http://host.docker.internal/mavlink2rest/mavlink'
 log_rate = 2 #Desired rate in Hz
-simulation_speed = 5 #Playback speed multiplier for simulation
+
 data = []
 row_counter = 0
 feedback_interval = 5 # Define the feedback interval (in seconds)
@@ -422,87 +419,7 @@ def download_file():
     else:
         return jsonify({'error': 'No log file available'}), 404
 
-@app.route('/log_files')
-def list_log_files():
-    """List all available log files."""
-    try:
-        logs_dir = '/app/logs'
-        print(f"Checking logs directory: {logs_dir}")
-        
-        if not os.path.exists(logs_dir):
-            print(f"Logs directory does not exist: {logs_dir}")
-            print("This may indicate a BlueOS volume mount issue")
-            return jsonify({
-                'error': 'Logs directory not found. Check BlueOS volume configuration.',
-                'logs_dir': logs_dir,
-                'expected_mount': '/usr/blueos/extensions/ping-survey:/app/logs'
-            }), 404
-        
-        print(f"Logs directory exists, checking contents...")
-        try:
-            all_files = os.listdir(logs_dir)
-            print(f"All files in logs directory: {all_files}")
-        except PermissionError:
-            print(f"Permission denied accessing logs directory: {logs_dir}")
-            return jsonify({
-                'error': 'Permission denied accessing logs directory',
-                'logs_dir': logs_dir
-            }), 403
-        
-        log_files = []
-        for filename in all_files:
-            print(f"Checking file: {filename}")
-            if filename.startswith('ping_survey_') and filename.endswith('.csv'):
-                try:
-                    file_path = os.path.join(logs_dir, filename)
-                    file_size = os.path.getsize(file_path)
-                    file_mtime = os.path.getmtime(file_path)
-                    
-                    log_file_info = {
-                        'filename': filename,
-                        'size_bytes': file_size,
-                        'size_mb': round(file_size / (1024 * 1024), 2),
-                        'modified': datetime.fromtimestamp(file_mtime).isoformat(),
-                        'path': file_path
-                    }
-                    log_files.append(log_file_info)
-                    print(f"Added log file: {log_file_info}")
-                except OSError as e:
-                    print(f"Error accessing file {filename}: {e}")
-                    continue
-        
-        # Sort by modification time (newest first)
-        log_files.sort(key=lambda x: x['modified'], reverse=True)
-        print(f"Returning {len(log_files)} log files: {log_files}")
-        
-        if not log_files:
-            print("No ping survey log files found")
-            return jsonify({
-                'message': 'No ping survey log files found. Start a survey session to create log files.',
-                'logs_dir': logs_dir,
-                'all_files': all_files
-            })
-        
-        return jsonify(log_files)
-        
-    except Exception as e:
-        print(f"Error listing log files: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
 
-@app.route('/download/<filename>')
-def download_specific_file(filename):
-    """Download a specific log file by filename."""
-    try:
-        file_path = os.path.join('/app/logs', filename)
-        if os.path.exists(file_path) and filename.startswith('ping_survey_') and filename.endswith('.csv'):
-            return send_file(file_path, as_attachment=True, cache_timeout=0)
-        else:
-            return jsonify({'error': 'File not found or invalid filename'}), 404
-    except Exception as e:
-        print(f"Error downloading file {filename}: {e}")
-        return jsonify({'error': str(e)}), 500
 
 @app.route('/data')
 def get_data():
@@ -694,152 +611,11 @@ def get_recent_cached_area():
 
 @app.route('/status', methods=['GET'])
 def status():
-    return {"logging_active": logging_active, "simulation_active": simulation_active}
+    return {"logging_active": logging_active}
 
-@app.route('/start_simulation')
-def start_simulation():
-    global simulation_active, simulation_data, simulation_index, logging_active, data, simulation_filename
-    
-    # Stop normal logging if it's running
-    if logging_active:
-        logging_active = False
-    
-    # Get the filename from query parameter, default to simulation.csv
-    filename = request.args.get('filename', 'simulation.csv')
-    simulation_filename = filename # Store the filename
-    
-    # Validate filename to prevent directory traversal
-    if not filename.startswith('ping_survey_') or not filename.endswith('.csv'):
-        return jsonify({"success": False, "message": "Invalid filename. Must be a ping survey log file."})
-    
-    # Load simulation data from the selected CSV file
-    simulation_file = f'/app/logs/{filename}'
-    if os.path.exists(simulation_file):
-        simulation_data = []
-        try:
-            with open(simulation_file, 'r') as csvfile:
-                reader = csv.reader(csvfile)
-                # Skip header row
-                next(reader, None)
-                for row in reader:
-                    # Handle both old format (8 columns) and new format (11 columns)
-                    if len(row) >= 8:
-                        # If using old format (without roll, pitch, altitude), add default values
-                        if len(row) < 11:
-                            # Original format: [timestamp, date, time, depth, confidence, yaw, lat, lon]
-                            # Add default values for roll(0), pitch(0), and altitude(0) at the correct positions
-                            # New format: [timestamp, date, time, depth, confidence, yaw, roll, pitch, lat, lon, alt]
-                            lat = row[6]
-                            lon = row[7]
-                            # Insert roll and pitch after yaw, and before lat/lon
-                            row.insert(6, "0")  # Roll
-                            row.insert(7, "0")  # Pitch
-                            # Add altitude at the end
-                            row.append("0")     # Altitude
-                        simulation_data.append(row)
-            
-            if simulation_data:
-                simulation_active = True
-                simulation_index = 0
-                
-                # Initialize data with first row
-                if simulation_index < len(simulation_data):
-                    data = simulation_data[simulation_index]
-                    simulation_index = (simulation_index + 1) % len(simulation_data)
-                
-                # Start simulation thread
-                thread = threading.Thread(target=simulation_loop)
-                thread.start()
-                return jsonify({
-                    "success": True, 
-                    "data_rows": len(simulation_data), 
-                    "filename": filename,
-                    "message": f"Loaded {len(simulation_data)} rows from {filename}"
-                })
-            else:
-                return jsonify({"success": False, "message": f"File {filename} is empty or contains invalid data format. The file needs at least 8 columns of data."})
-        except Exception as e:
-            print(f"Simulation error: {str(e)}")
-            return jsonify({"success": False, "message": f"Error loading file {filename}: {str(e)}. Check if your CSV has at least 8 columns of data."})
-    else:
-        return jsonify({"success": False, "message": f"File not found: {simulation_file}"})
 
-def simulation_loop():
-    global simulation_active, simulation_data, simulation_index, data, simulation_filename
-    
-    while simulation_active:
-        if simulation_index < len(simulation_data):
-            try:
-                current_row = simulation_data[simulation_index]
-                
-                # Ensure data has the required format
-                if len(current_row) >= 11:
-                    # Good to go, use as is
-                    data = current_row
-                elif len(current_row) >= 8:
-                    # Old format - need to add roll, pitch, altitude
-                    # This should have been handled during loading, but just in case
-                    padded_row = list(current_row)
-                    lat = padded_row[6]
-                    lon = padded_row[7]
-                    # Insert roll and pitch after yaw, before lat/lon
-                    padded_row.insert(6, "0")  # Roll
-                    padded_row.insert(7, "0")  # Pitch
-                    # Add altitude at the end
-                    padded_row.append("0")     # Altitude
-                    data = padded_row
-                else:
-                    # Invalid format, skip this row
-                    print(f"Warning: Skipping invalid data row at index {simulation_index}")
-                    
-                simulation_index = (simulation_index + 1) % len(simulation_data)
-            except Exception as e:
-                print(f"Error in simulation loop: {str(e)}")
-                # Move to next row
-                simulation_index = (simulation_index + 1) % len(simulation_data)
-        
-        # Use adjusted sleep time for faster playback
-        time.sleep((1 / log_rate) / simulation_speed)
 
-@app.route('/stop_simulation')
-def stop_simulation():
-    global simulation_active
-    simulation_active = False
-    return jsonify({"success": True, "message": "Simulation stopped"})
 
-@app.route('/simulation_status')
-def simulation_status():
-    return jsonify({
-        "simulation_active": simulation_active, 
-        "data_rows": len(simulation_data) if simulation_data else 0,
-        "current_index": simulation_index,
-        "data_format": "enhanced" if simulation_data and len(simulation_data[0]) >= 11 else "legacy",
-        "current_file": simulation_filename if simulation_filename else None
-    })
-
-@app.route('/test_logs')
-def test_logs():
-    """Test route to check logs directory status."""
-    try:
-        logs_dir = '/app/logs'
-        status = {
-            'logs_dir': logs_dir,
-            'exists': os.path.exists(logs_dir),
-            'is_dir': os.path.isdir(logs_dir) if os.path.exists(logs_dir) else False,
-            'readable': os.access(logs_dir, os.R_OK) if os.path.exists(logs_dir) else False,
-            'writable': os.access(logs_dir, os.W_OK) if os.path.exists(logs_dir) else False,
-            'contents': []
-        }
-        
-        if status['exists'] and status['is_dir']:
-            try:
-                status['contents'] = os.listdir(logs_dir)
-            except Exception as e:
-                status['list_error'] = str(e)
-        
-        return jsonify(status)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     # Ensure logs directory exists at startup

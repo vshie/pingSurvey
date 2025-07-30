@@ -1,0 +1,9 @@
+# Minimal requirements for Raspberry Pi - only essential packages
+# Install system packages first:
+# sudo apt install -y python3-pandas python3-numpy python3-matplotlib python3-pil
+ 
+# Only install these via pip (most likely to have ARM wheels)
+folium==0.12.1
+branca==0.4.2
+geojson==2.5.0
+requests==2.28.2 

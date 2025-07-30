@@ -1,0 +1,828 @@
+#!/usr/bin/env python3
+"""
+Interactive Bathymetry Map Generator
+Creates an interactive web map with bathymetry contours overlaid on satellite imagery.
+Uses Folium for zooming, panning, and interactive features.
+"""
+
+import pandas as pd
+import numpy as np
+import folium
+from folium import plugins
+import branca.colormap as cm
+from scipy.interpolate import griddata
+import warnings
+warnings.filterwarnings('ignore')
+import shapely.geometry
+import geojson
+import json
+
+def load_and_process_data(csv_file):
+    """Load CSV data and convert depth from cm to meters."""
+    print("Loading bathymetry data...")
+    df = pd.read_csv(csv_file)
+    
+    # Convert depth from cm to meters
+    df['Depth_m'] = df['Depth (cm)'] / 100.0
+    
+    # Filter out any invalid coordinates
+    df = df.dropna(subset=['Latitude', 'Longitude', 'Depth_m'])
+    df = df[(df['Latitude'] != 0) & (df['Longitude'] != 0)]
+    
+    # Filter out shallow outliers (shallower than 5m)
+    df = df[df['Depth_m'] >= 5.0]
+    
+    # Filter out low confidence measurements (less than 95%)
+    if 'Confidence' in df.columns:
+        original_count = len(df)
+        df = df[df['Confidence'] >= 95.0]
+        confidence_filtered = original_count - len(df)
+        print(f"Low confidence points (<95%) removed: {confidence_filtered}")
+    else:
+        print("No 'Confidence' column found in CSV - skipping confidence filter")
+    
+    # Calculate average location
+    avg_lat = df['Latitude'].mean()
+    avg_lon = df['Longitude'].mean()
+    print(f"Average location: {avg_lat:.6f}, {avg_lon:.6f}")
+    
+    # Calculate distance from average location (approximate, using degrees)
+    # 1 degree of latitude ≈ 111 km, 1 degree of longitude ≈ 111*cos(latitude) km
+    lat_km_per_degree = 111.0
+    lon_km_per_degree = 111.0 * np.cos(np.radians(avg_lat))
+    
+    # Filter points within 1km of average location
+    df['lat_distance_km'] = np.abs(df['Latitude'] - avg_lat) * lat_km_per_degree
+    df['lon_distance_km'] = np.abs(df['Longitude'] - avg_lon) * lon_km_per_degree
+    df['total_distance_km'] = np.sqrt(df['lat_distance_km']**2 + df['lon_distance_km']**2)
+    
+    # Keep only points within 2.5km (since data is spread over ~2.3km)
+    df_filtered = df[df['total_distance_km'] <= 2.5]
+    
+    print(f"Original data points: {len(df)}")
+    print(f"Points within 2.5km: {len(df_filtered)}")
+    print(f"Filtered out: {len(df) - len(df_filtered)} points")
+    print(f"Shallow points (<1m) removed: {len(df[df['Depth_m'] < 1.0]) if 'Depth_m' in df.columns else 'N/A'}")
+    
+    # Extract coordinates and depth
+    lats = df_filtered['Latitude'].values
+    lons = df_filtered['Longitude'].values
+    depths = df_filtered['Depth_m'].values
+    
+    print(f"Depth range: {depths.min():.2f}m to {depths.max():.2f}m")
+    print(f"Latitude range: {lats.min():.6f} to {lats.max():.6f}")
+    print(f"Longitude range: {lons.min():.6f} to {lons.max():.6f}")
+    
+    return lats, lons, depths, df_filtered
+
+def calculate_survey_area_mask(lats, lons, grid_size=400):
+    """Calculate a mask for the surveyed area using point density analysis."""
+    from scipy.spatial.distance import cdist
+    from shapely.geometry import Point
+    import numpy as np
+    
+    # Create grid for analysis
+    lat_padding = (lats.max() - lats.min()) * 0.05
+    lon_padding = (lons.max() - lons.min()) * 0.05
+    
+    bounds = [
+        lons.min() - lon_padding,
+        lons.max() + lon_padding,
+        lats.min() - lat_padding,
+        lats.max() + lat_padding
+    ]
+    
+    lon_grid = np.linspace(bounds[0], bounds[1], grid_size)
+    lat_grid = np.linspace(bounds[2], bounds[3], grid_size)
+    lon_mesh, lat_mesh = np.meshgrid(lon_grid, lat_grid)
+    
+    # Calculate average distance between points to determine search radius
+    points = np.column_stack((lons, lats))
+    distances = cdist(points, points)
+    distances = distances[distances > 0]  # Remove self-distances
+    avg_distance = np.mean(distances)
+    
+    # Use a very restrictive search radius (0.2x average distance)
+    search_radius = avg_distance * 0.2
+    
+    print(f"Survey area analysis:")
+    print(f"  Total survey points: {len(lats)}")
+    print(f"  Average point distance: {avg_distance:.6f} degrees")
+    print(f"  Search radius: {search_radius:.6f} degrees")
+    
+    # Create mask for grid points with sufficient nearby data
+    survey_mask = np.zeros((grid_size, grid_size), dtype=bool)
+    
+    for i in range(grid_size):
+        for j in range(grid_size):
+            grid_lat = lat_mesh[i, j]
+            grid_lon = lon_mesh[i, j]
+            
+            # Calculate distances from this grid point to all data points
+            distances_to_points = np.sqrt((lats - grid_lat)**2 + (lons - grid_lon)**2)
+            
+            # Count points within search radius
+            nearby_points = np.sum(distances_to_points <= search_radius)
+            
+            # Mark as valid if there are at least 8 nearby points (very restrictive)
+            survey_mask[i, j] = nearby_points >= 8
+    
+    valid_pixels = np.sum(survey_mask)
+    total_pixels = grid_size * grid_size
+    coverage_percent = (valid_pixels / total_pixels) * 100
+    
+    print(f"  Valid grid cells: {valid_pixels}/{total_pixels} ({coverage_percent:.1f}%)")
+    
+    return survey_mask, lon_mesh, lat_mesh, bounds, None
+
+def extract_contour_data_from_python_map(lats, lons, depths, primary_interval=5.0, secondary_interval=1.0):
+    """Extract exact contour data from Python matplotlib version"""
+    import matplotlib.pyplot as plt
+    from scipy.interpolate import griddata
+    
+    # Calculate survey area mask
+    survey_mask, lon_mesh, lat_mesh, bounds, _ = calculate_survey_area_mask(lats, lons)
+    
+    # Interpolate depth data to regular grid (same as Python version)
+    points = np.column_stack((lons, lats))
+    depth_grid = griddata(points, depths, (lon_mesh, lat_mesh), method='linear', fill_value=np.nan)
+    
+    # Apply survey area mask - set areas outside the surveyed area to NaN
+    depth_grid[~survey_mask] = np.nan
+    
+    # Create contour levels (same as Python version)
+    min_depth = np.nanmin(depth_grid)
+    max_depth = np.nanmax(depth_grid)
+    
+    # Create primary interval contours (yellow)
+    levels_primary = np.arange(np.floor(min_depth / primary_interval) * primary_interval, 
+                              np.ceil(max_depth / primary_interval) * primary_interval + primary_interval, 
+                              primary_interval)
+    
+    # Create secondary interval contours (red)
+    levels_secondary = np.arange(np.floor(min_depth / secondary_interval) * secondary_interval, 
+                                np.ceil(max_depth / secondary_interval) * secondary_interval + secondary_interval, 
+                                secondary_interval)
+    
+    # Create figure and axis exactly like PNG version
+    fig, ax = plt.subplots(1, 1, figsize=(15, 12))
+    ax.set_xlim(bounds[0], bounds[1])
+    ax.set_ylim(bounds[2], bounds[3])
+    
+    # Generate contours exactly like PNG version
+    contours_primary = ax.contour(lon_mesh, lat_mesh, depth_grid, levels=levels_primary, 
+                                 colors='yellow', linewidths=1, alpha=0.8)
+    contours_secondary = ax.contour(lon_mesh, lat_mesh, depth_grid, levels=levels_secondary, 
+                                   colors='red', linewidths=2, alpha=0.9)
+    
+    # Extract contour data and labels exactly like PNG version
+    contour_data_primary = []
+    contour_data_secondary = []
+    label_data_primary = []
+    label_data_secondary = []
+    
+    closed_count_primary = 0
+    open_count_primary = 0
+    closed_count_secondary = 0
+    open_count_secondary = 0
+    
+    # Extract primary interval contours and their labels
+    for i, collection in enumerate(contours_primary.collections):
+        level = levels_primary[i] if i < len(levels_primary) else levels_primary[-1]
+        
+        for path_obj in collection.get_paths():
+            # Get vertices and codes to properly separate subpaths
+            vertices = path_obj.vertices
+            codes = path_obj.codes
+            
+            if len(vertices) < 2:
+                continue
+            
+            # Split the path into separate subpaths based on move-to commands
+            subpaths = []
+            current_subpath = []
+            
+            for j, (vertex, code) in enumerate(zip(vertices, codes)):
+                if code == 1:  # MOVETO - start of new subpath
+                    if current_subpath:  # Save previous subpath
+                        subpaths.append(current_subpath)
+                    current_subpath = [vertex]
+                else:  # LINETO or other commands
+                    current_subpath.append(vertex)
+            
+            # Add the last subpath
+            if current_subpath:
+                subpaths.append(current_subpath)
+            
+            # Process each subpath as a separate contour
+            for subpath in subpaths:
+                if len(subpath) < 2:
+                    continue
+                
+                # Convert to lat,lon format
+                contour_coords = [[lat, lon] for lon, lat in subpath]
+                
+                # Check if this is a closed contour (first and last points are the same)
+                is_closed = (abs(contour_coords[0][0] - contour_coords[-1][0]) < 1e-10 and 
+                           abs(contour_coords[0][1] - contour_coords[-1][1]) < 1e-10)
+                
+                # Count closed vs open contours
+                if is_closed:
+                    closed_count_primary += 1
+                else:
+                    open_count_primary += 1
+                
+                # Get the correct level for this contour
+                contour_data_primary.append({
+                    'coordinates': contour_coords,
+                    'level': level,
+                    'color': 'yellow',
+                    'weight': 2,
+                    'opacity': 0.8,
+                    'is_closed': is_closed
+                })
+                
+                # Labels removed - no longer adding contour labels
+    
+    # Extract secondary interval contours and their labels
+    for i, collection in enumerate(contours_secondary.collections):
+        level = levels_secondary[i] if i < len(levels_secondary) else levels_secondary[-1]
+        
+        for path_obj in collection.get_paths():
+            # Get vertices and codes to properly separate subpaths
+            vertices = path_obj.vertices
+            codes = path_obj.codes
+            
+            if len(vertices) < 2:
+                continue
+            
+            # Split the path into separate subpaths based on move-to commands
+            subpaths = []
+            current_subpath = []
+            
+            for j, (vertex, code) in enumerate(zip(vertices, codes)):
+                if code == 1:  # MOVETO - start of new subpath
+                    if current_subpath:  # Save previous subpath
+                        subpaths.append(current_subpath)
+                    current_subpath = [vertex]
+                else:  # LINETO or other commands
+                    current_subpath.append(vertex)
+            
+            # Add the last subpath
+            if current_subpath:
+                subpaths.append(current_subpath)
+            
+            # Process each subpath as a separate contour
+            for subpath in subpaths:
+                if len(subpath) < 2:
+                    continue
+                
+                # Convert to lat,lon format
+                contour_coords = [[lat, lon] for lon, lat in subpath]
+                
+                # Check if this is a closed contour (first and last points are the same)
+                is_closed = (abs(contour_coords[0][0] - contour_coords[-1][0]) < 1e-10 and 
+                           abs(contour_coords[0][1] - contour_coords[-1][1]) < 1e-10)
+                
+                # Count closed vs open contours
+                if is_closed:
+                    closed_count_secondary += 1
+                else:
+                    open_count_secondary += 1
+                
+                # Get the correct level for this contour
+                contour_data_secondary.append({
+                    'coordinates': contour_coords,
+                    'level': level,
+                    'color': 'red',
+                    'weight': 3,
+                    'opacity': 0.9,
+                    'is_closed': is_closed
+                })
+                
+                # Labels removed - no longer adding contour labels
+    
+    plt.close(fig)  # Close to free memory
+    
+    print(f"{primary_interval}m contours: {len(contour_data_primary)} total ({closed_count_primary} closed, {open_count_primary} open)")
+    print(f"{secondary_interval}m contours: {len(contour_data_secondary)} total ({closed_count_secondary} closed, {open_count_secondary} open)")
+    
+    # Debug: show first few contours
+    if contour_data_primary:
+        print(f"First {primary_interval}m contour: {len(contour_data_primary[0]['coordinates'])} points")
+        print(f"  Start: {contour_data_primary[0]['coordinates'][0]}")
+        print(f"  End: {contour_data_primary[0]['coordinates'][-1]}")
+        print(f"  Distance: {abs(contour_data_primary[0]['coordinates'][0][0] - contour_data_primary[0]['coordinates'][-1][0]) + abs(contour_data_primary[0]['coordinates'][0][1] - contour_data_primary[0]['coordinates'][-1][1])}")
+    
+    return contour_data_primary, contour_data_secondary, [], []
+
+def calculate_optimal_zoom(lats, lons, max_zoom=20):
+    """Calculate the optimal zoom level to fit the data bounds in the view."""
+    # Calculate the bounds of the data
+    lat_min, lat_max = np.min(lats), np.max(lats)
+    lon_min, lon_max = np.min(lons), np.max(lons)
+    
+    # Add some padding (10% of the range)
+    lat_padding = (lat_max - lat_min) * 0.1
+    lon_padding = (lon_max - lon_min) * 0.1
+    
+    lat_min -= lat_padding
+    lat_max += lat_padding
+    lon_min -= lon_padding
+    lon_max += lon_padding
+    
+    # Calculate the span of the data
+    lat_span = lat_max - lat_min
+    lon_span = lon_max - lon_min
+    
+    # Use the larger span to determine zoom level
+    max_span = max(lat_span, lon_span)
+    
+    # Calculate zoom level based on span
+    # Adjusted to be more aggressive (closer zoom)
+    if max_span > 1.0:
+        zoom = 11
+    elif max_span > 0.5:
+        zoom = 12
+    elif max_span > 0.25:
+        zoom = 13
+    elif max_span > 0.1:
+        zoom = 14
+    elif max_span > 0.05:
+        zoom = 15
+    elif max_span > 0.025:
+        zoom = 16
+    elif max_span > 0.01:
+        zoom = 17
+    elif max_span > 0.005:
+        zoom = 18
+    elif max_span > 0.0025:
+        zoom = 19
+    elif max_span > 0.001:
+        zoom = 20
+    elif max_span > 0.0005:
+        zoom = 20
+    elif max_span > 0.00025:
+        zoom = 20
+    else:
+        zoom = 20
+    
+    # Ensure zoom doesn't exceed max_zoom
+    zoom = min(zoom, max_zoom)
+    
+    print(f"Data span: {max_span:.6f} degrees")
+    print(f"Calculated optimal zoom level: {zoom}")
+    
+    return zoom
+
+
+
+def create_interactive_map(lats, lons, depths, df_filtered, output_file='interactive_bathymetry_map.html', primary_interval=5.0, secondary_interval=1.0):
+    """Create an interactive web map with bathymetry contours."""
+    
+    # Generate histogram if it doesn't exist
+    import os
+    if not os.path.exists('depth_histogram.png'):
+        print("Generating depth histogram...")
+        import matplotlib.pyplot as plt
+        plt.figure(figsize=(10, 6))
+        plt.hist(depths, bins=50, alpha=0.7, color='blue', edgecolor='black')
+        plt.xlabel('Depth (meters)')
+        plt.ylabel('Number of measurements')
+        plt.title('Depth Distribution - Bathymetry Data')
+        plt.grid(True, alpha=0.3)
+        plt.savefig('depth_histogram.png', dpi=300, bbox_inches='tight')
+        plt.close()  # Close the figure to free memory
+        print("Depth histogram saved as: depth_histogram.png")
+    
+    # Calculate center and bounds
+    center_lat = np.mean(lats)
+    center_lon = np.mean(lons)
+    
+    # Calculate optimal zoom level to fit the data
+    optimal_zoom = calculate_optimal_zoom(lats, lons)
+    
+    # Create the base map with Google satellite imagery as default
+    m = folium.Map(
+        location=[center_lat, center_lon],
+        zoom_start=optimal_zoom,
+        max_zoom=20,
+        tiles='https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+        attr='Google Satellite'
+    )
+    
+    # Google Satellite is the only base layer option
+    
+
+    
+
+    
+
+    
+    # Extract exact contour data from Python matplotlib version
+    print("Extracting contour data from Python matplotlib version...")
+    contour_data_primary, contour_data_secondary, _, _ = extract_contour_data_from_python_map(lats, lons, depths, primary_interval, secondary_interval)
+    
+    print(f"Extracted {len(contour_data_primary)} {primary_interval}m contours and {len(contour_data_secondary)} {secondary_interval}m contours")
+    
+    # Convert contour data to GeoJSON and embed directly in HTML
+    print(f"Embedding {secondary_interval}m interval contours...")
+    contours_secondary_layer = folium.FeatureGroup(name=f'{secondary_interval}m Contours', show=True)
+    
+    # Create GeoJSON data for secondary contours
+    secondary_features = []
+    for contour in contour_data_secondary:
+        coords = contour['coordinates']
+        if len(coords) < 2:
+            continue
+        # GeoJSON expects [lon, lat]
+        geojson_coords = [tuple(reversed(pt)) for pt in coords]
+        geom = shapely.geometry.LineString(geojson_coords)
+        feature = geojson.Feature(
+            geometry=geom,
+            properties={
+                'level': str(contour['level']),
+                'color': 'red'
+            }
+        )
+        secondary_features.append(feature)
+    
+    secondary_fc = geojson.FeatureCollection(secondary_features)
+    
+    # Add secondary contours using embedded GeoJSON
+    folium.GeoJson(
+        secondary_fc,
+        name=f'{secondary_interval}m Contours',
+        style_function=lambda feature: {
+            'color': 'red',
+            'weight': 3,
+            'opacity': 0.9
+        },
+        tooltip=folium.GeoJsonTooltip(fields=['level'], aliases=['Depth (m):'])
+    ).add_to(contours_secondary_layer)
+    contours_secondary_layer.add_to(m)
+    
+    # Create GeoJSON data for primary contours
+    print(f"Embedding {primary_interval}m interval contours...")
+    contours_primary_layer = folium.FeatureGroup(name=f'{primary_interval}m Contours', show=True)
+    
+    primary_features = []
+    for contour in contour_data_primary:
+        coords = contour['coordinates']
+        if len(coords) < 2:
+            continue
+        # GeoJSON expects [lon, lat]
+        geojson_coords = [tuple(reversed(pt)) for pt in coords]
+        geom = shapely.geometry.LineString(geojson_coords)
+        feature = geojson.Feature(
+            geometry=geom,
+            properties={
+                'level': str(contour['level']),
+                'color': 'yellow'
+            }
+        )
+        primary_features.append(feature)
+    
+    primary_fc = geojson.FeatureCollection(primary_features)
+    
+    # Add primary contours using embedded GeoJSON
+    folium.GeoJson(
+        primary_fc,
+        name=f'{primary_interval}m Contours',
+        style_function=lambda feature: {
+            'color': 'yellow',
+            'weight': 2,
+            'opacity': 0.8
+        },
+        tooltip=folium.GeoJsonTooltip(fields=['level'], aliases=['Depth (m):'])
+    ).add_to(contours_primary_layer)
+    contours_primary_layer.add_to(m)
+    
+    # Add JavaScript to prevent zoom reset, fix contour rendering, and add click-to-mark functionality
+    # Use a global event-based approach that doesn't need the map object
+    global_js = '''
+    <script>
+    console.log('Global event script loaded');
+    
+    var clickToMarkMode = false;
+    var tempMarkers = [];
+    var currentMarker = null; // Track the current persistent marker
+    
+    function copyToClipboard(text) {
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).then(function() {
+                console.log('Coordinates copied to clipboard');
+            }).catch(function(err) {
+                console.error('Failed to copy: ', err);
+                fallbackCopyTextToClipboard(text);
+            });
+        } else {
+            fallbackCopyTextToClipboard(text);
+        }
+    }
+    function fallbackCopyTextToClipboard(text) {
+        var textArea = document.createElement("textarea");
+        textArea.value = text;
+        textArea.style.top = "0";
+        textArea.style.left = "0";
+        textArea.style.position = "fixed";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        try {
+            document.execCommand('copy');
+            console.log('Coordinates copied to clipboard (fallback)');
+        } catch (err) {
+            console.error('Fallback copy failed: ', err);
+        }
+        document.body.removeChild(textArea);
+    }
+    function updateLegendButton() {
+        var legendButton = document.getElementById('click-to-mark-button');
+        if (legendButton) {
+            if (clickToMarkMode) {
+                legendButton.style.backgroundColor = '#ff4444';
+                legendButton.style.color = 'white';
+                legendButton.innerHTML = '<i class="fa fa-mouse-pointer"></i> Click to Mark (ACTIVE)';
+            } else {
+                legendButton.style.backgroundColor = '#0066cc';
+                legendButton.style.color = 'white';
+                legendButton.innerHTML = '<i class="fa fa-mouse-pointer"></i> Click to Mark';
+            }
+        }
+    }
+    function setupLegendButton() {
+        var legendButton = document.getElementById('click-to-mark-button');
+        if (legendButton) {
+            console.log('Legend button found, setting up click handler');
+            legendButton.removeEventListener('click', legendButtonClickHandler);
+            legendButton.addEventListener('click', legendButtonClickHandler);
+            updateLegendButton();
+        } else {
+            console.log('Legend button not found, retrying...');
+            setTimeout(setupLegendButton, 500);
+        }
+    }
+    function legendButtonClickHandler() {
+        clickToMarkMode = !clickToMarkMode;
+        updateLegendButton();
+        var mapContainer = document.querySelector('.leaflet-container');
+        if (mapContainer) {
+            mapContainer.style.cursor = clickToMarkMode ? 'crosshair' : '';
+        }
+        
+        // Clear marker when exiting mark mode
+        if (!clickToMarkMode && currentMarker) {
+            var map = findLeafletMapInstance();
+            if (map) {
+                map.removeLayer(currentMarker);
+            }
+            currentMarker = null;
+            hideCopyFeedback(); // Hide feedback when exiting mark mode
+        }
+    }
+    // Helper to find a Leaflet map instance from window
+    function findLeafletMapInstance() {
+        for (var key in window) {
+            if (window.hasOwnProperty(key)) {
+                var obj = window[key];
+                if (obj && typeof obj === 'object' && obj._container && obj.setView && obj.on && obj.containerPointToLatLng) {
+                    // Looks like a Leaflet map
+                    return obj;
+                }
+            }
+        }
+        return null;
+    }
+    // Add a direct click listener to the map container as a fallback
+    function setupContainerClickHandler() {
+        var mapContainers = document.querySelectorAll('.leaflet-container');
+        for (var i = 0; i < mapContainers.length; i++) {
+            mapContainers[i].addEventListener('click', function(e) {
+                console.log('Direct container click detected');
+                if (!clickToMarkMode) return;
+                var map = findLeafletMapInstance();
+                if (!map) {
+                    console.log('No Leaflet map instance found on window!');
+                    return;
+                }
+                var rect = this.getBoundingClientRect();
+                var x = e.clientX - rect.left;
+                var y = e.clientY - rect.top;
+                var containerPoint = L.point(x, y);
+                var latlng = map.containerPointToLatLng(containerPoint);
+                if (!latlng) {
+                    console.log('Could not convert point to latlng');
+                    return;
+                }
+                var lat = latlng.lat;
+                var lng = latlng.lng;
+                
+                // Format coordinates for clipboard
+                var coordText = lat.toFixed(6) + ', ' + lng.toFixed(6);
+                copyToClipboard(coordText);
+                
+                // Remove previous marker if it exists
+                if (currentMarker) {
+                    map.removeLayer(currentMarker);
+                }
+                
+                // Create a persistent purple marker (no border, no label)
+                currentMarker = L.marker([lat, lng], {
+                    icon: L.divIcon({
+                        className: 'persistent-marker',
+                        html: '<div style="background-color: #800080; border-radius: 50%; width: 16px; height: 16px; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>',
+                        iconSize: [16, 16],
+                        iconAnchor: [8, 8]
+                    })
+                });
+                
+                // Add popup with coordinates and copy confirmation
+                currentMarker.bindPopup(
+                    '<b>Coordinates Copied!</b><br>' +
+                    'Latitude: ' + lat.toFixed(6) + '<br>' +
+                    'Longitude: ' + lng.toFixed(6) + '<br>' +
+                    '<small>✓ Coordinates copied to clipboard</small>'
+                );
+                
+                currentMarker.addTo(map);
+                
+                // Show feedback message in the legend area
+                showCopyFeedback(coordText);
+            });
+        }
+    }
+    
+    // Function to show copy feedback
+    function showCopyFeedback(coordText) {
+        // Create or update feedback element
+        var feedbackEl = document.getElementById('copy-feedback');
+        if (!feedbackEl) {
+            feedbackEl = document.createElement('div');
+            feedbackEl.id = 'copy-feedback';
+            feedbackEl.style.cssText = 'position: fixed; bottom: 280px; left: 50px; background-color: #4CAF50; color: white; padding: 10px; border-radius: 5px; font-size: 12px; z-index: 10000; box-shadow: 0 2px 8px rgba(0,0,0,0.3); pointer-events: none;';
+            document.body.appendChild(feedbackEl);
+        }
+        
+        feedbackEl.innerHTML = '<b>✓ Coordinates Copied!</b><br>' + coordText;
+        feedbackEl.style.display = 'block';
+        
+        // Don't auto-hide - let it stay until next marker or mode clear
+    }
+    
+    // Function to hide copy feedback
+    function hideCopyFeedback() {
+        var feedbackEl = document.getElementById('copy-feedback');
+        if (feedbackEl) {
+            feedbackEl.style.display = 'none';
+        }
+    }
+    function initializeGlobalFeatures() {
+        console.log('Initializing global features...');
+        setupLegendButton();
+        setupContainerClickHandler();
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeGlobalFeatures);
+    } else {
+        initializeGlobalFeatures();
+    }
+    </script>
+    '''
+    m.get_root().html.add_child(folium.Element(global_js))
+    
+    # Add individual data points with popups (as a separate layer)
+    print("Adding data points...")
+    data_points_layer = folium.FeatureGroup(name='Data Points', show=False)
+    
+    for lat, lon, depth in zip(lats, lons, depths):
+        folium.CircleMarker(
+            location=[lat, lon],
+            radius=2,
+            popup=f'Depth: {depth:.1f}m<br>Lat: {lat:.6f}<br>Lon: {lon:.6f}',
+            color='white',
+            fill=True,
+            fillColor='blue',
+            fillOpacity=0.7
+        ).add_to(data_points_layer)
+    
+    data_points_layer.add_to(m)
+    
+    # Add layer control with specific position to avoid conflicts
+    folium.LayerControl(
+        position='topright',
+        collapsed=False
+    ).add_to(m)
+    
+    # Add fullscreen option
+    folium.plugins.Fullscreen().add_to(m)
+    
+    # Add measure tool
+    folium.plugins.MeasureControl(
+        position='topleft',
+        primary_length_unit='meters',
+        secondary_length_unit='kilometers',
+        primary_area_unit='sqmeters',
+        secondary_area_unit='acres'
+    ).add_to(m)
+    
+    # Add legend with histogram link and clickable click-to-mark button
+    legend_html = f'''
+    <div style="position: fixed; 
+                bottom: 50px; left: 50px; width: 220px; height: 220px; 
+                background-color: white; border:2px solid grey; z-index:9999; 
+                font-size:14px; padding: 10px">
+    <p><b>Bathymetry Map Layers</b></p>
+    <p><i class="fa fa-circle" style="color:yellow"></i> {primary_interval}m contours</p>
+    <p><i class="fa fa-circle" style="color:red"></i> {secondary_interval}m contours</p>
+    <p><i class="fa fa-circle" style="color:blue"></i> Data points</p>
+    <p><a href="depth_histogram.png" target="_blank" style="color: #0066cc; text-decoration: none;">
+       <i class="fa fa-bar-chart"></i> View Depth Histogram</a></p>
+    <hr style="margin: 8px 0; border: 1px solid #ccc;">
+    <p><b>Coordinate Tool</b></p>
+    <button id="click-to-mark-button" style="background-color: #0066cc; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">
+        <i class="fa fa-mouse-pointer"></i> Click to Mark
+    </button>
+    <p style="font-size: 11px; margin: 4px 0 0 0; color: #666;">Click button, then click map to get coordinates</p>
+    </div>
+    '''
+    
+    # Add layer control instructions near the layer selector
+    layer_instructions_html = '''
+    <div style="position: fixed; 
+                top: 180px; right: 10px; width: 200px; 
+                background-color: white; border:2px solid grey; z-index:9999; 
+                font-size:12px; padding: 8px; border-radius: 5px;">
+    <p><b><i class="fa fa-info-circle"></i> Layer Controls</b></p>
+    <p>Use the layer selector to toggle data points and contours on/off</p>
+    </div>
+    '''
+    m.get_root().html.add_child(folium.Element(legend_html))
+    m.get_root().html.add_child(folium.Element(layer_instructions_html))
+    
+    # Save the map
+    m.save(output_file)
+    print(f"Interactive map saved as: {output_file}")
+    
+    return m
+
+def main():
+    """Main function to run the interactive bathymetry map generator."""
+    import sys
+    import argparse
+    import os
+    
+    # Set up command line argument parsing
+    parser = argparse.ArgumentParser(description='Generate an interactive bathymetry map from CSV data.')
+    parser.add_argument('csv_file', 
+                       help='Path to the CSV file containing bathymetry data')
+    parser.add_argument('-o', '--output', default='interactive_bathymetry_map.html',
+                       help='Output HTML file name (default: interactive_bathymetry_map.html)')
+    parser.add_argument('-p', '--primary', type=float, default=5.0,
+                       help='Primary contour interval in meters (default: 5.0)')
+    parser.add_argument('-s', '--secondary', type=float, default=1.0,
+                       help='Secondary contour interval in meters (default: 1.0)')
+
+    
+    args = parser.parse_args()
+    
+    print("Interactive bathymetry map generation started...")
+    print(f"Input CSV file: {args.csv_file}")
+    print(f"Output HTML file: {args.output}")
+    print(f"Primary contour interval: {args.primary}m")
+    print(f"Secondary contour interval: {args.secondary}m")
+
+    
+    # Check if CSV file exists
+    if not os.path.exists(args.csv_file):
+        print(f"Error: CSV file '{args.csv_file}' not found!")
+        print("Please make sure the file exists and the path is correct.")
+        sys.exit(1)
+    
+    try:
+        # Load and process data
+        lats, lons, depths, df_filtered = load_and_process_data(args.csv_file)
+        
+        # Create interactive map
+        m = create_interactive_map(lats, lons, depths, df_filtered, args.output, args.primary, args.secondary)
+        
+        print("\nInteractive bathymetry map generation completed successfully!")
+        print("Features:")
+        print("- Interactive web map with zoom and pan")
+        print("- Google satellite imagery background")
+        print(f"- Yellow lines: {args.primary}m depth intervals")
+        print(f"- Red lines: {args.secondary}m depth intervals")
+        print("- Data points as toggleable layer")
+        print("- Layer controls for different map types")
+        print("- Measurement tools")
+        print("- Fullscreen option")
+        print("- Clickable depth histogram link")
+        print(f"\nOpen '{args.output}' in your web browser to view the map!")
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        print("Please check your data and try again.")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main() 
