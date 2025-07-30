@@ -23,7 +23,7 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the contour map generator files (handle space in directory name)
-COPY contour\ map\ generator /app/contour_map_generator
+COPY "contour map generator" /app/contour_map_generator
 
 # Copy app files
 COPY app /app
