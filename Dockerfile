@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+doFROM python:3.11-slim
 
 # Install system dependencies for bathymetry map generation (ARM-optimized)
 RUN apt-get update && \
@@ -22,8 +22,8 @@ RUN apt-get update && \
     gdal-bin \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the contour map generator files
-COPY "contour map generator" /app/contour_map_generator
+# Copy the contour map generator files (handle space in directory name)
+COPY contour\ map\ generator /app/contour_map_generator
 
 # Copy app files
 COPY app /app
