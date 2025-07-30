@@ -652,6 +652,191 @@ def get_recent_cached_area():
 def status():
     return {"logging_active": logging_active}
 
+@app.route('/log_files')
+def list_log_files():
+    """List available log files for contour map generation."""
+    try:
+        logs_dir = '/app/logs'
+        if not os.path.exists(logs_dir):
+            return jsonify({'error': 'Logs directory not found'}), 404
+        
+        files = []
+        for filename in os.listdir(logs_dir):
+            if filename.endswith('.csv') and filename.startswith('ping_survey_'):
+                file_path = os.path.join(logs_dir, filename)
+                try:
+                    file_size = os.path.getsize(file_path)
+                    file_mtime = os.path.getmtime(file_path)
+                    files.append({
+                        'filename': filename,
+                        'size_mb': round(file_size / (1024 * 1024), 2),
+                        'modified': datetime.fromtimestamp(file_mtime).isoformat(),
+                        'date': datetime.fromtimestamp(file_mtime).strftime('%Y-%m-%d %H:%M:%S')
+                    })
+                except (OSError, PermissionError) as e:
+                    print(f"Error accessing file {filename}: {e}")
+                    continue
+        
+        # Sort by modification time (newest first)
+        files.sort(key=lambda x: x['modified'], reverse=True)
+        
+        return jsonify({'files': files})
+        
+    except Exception as e:
+        print(f"Error listing log files: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/combine_logs', methods=['POST'])
+def combine_log_files():
+    """Combine selected log files into a single CSV for contour map generation."""
+    try:
+        data = request.get_json()
+        selected_files = data.get('files', [])
+        primary_interval = data.get('primary_interval', 5.0)
+        secondary_interval = data.get('secondary_interval', 1.0)
+        
+        if not selected_files:
+            return jsonify({'error': 'No files selected'}), 400
+        
+        logs_dir = '/app/logs'
+        combined_data = []
+        header_written = False
+        
+        # Combine all selected files
+        for filename in selected_files:
+            file_path = os.path.join(logs_dir, filename)
+            if not os.path.exists(file_path):
+                continue
+                
+            try:
+                with open(file_path, 'r') as f:
+                    lines = f.readlines()
+                    
+                if not lines:
+                    continue
+                    
+                # Skip header if we've already written one
+                start_line = 0 if not header_written else 1
+                header_written = True
+                
+                for line in lines[start_line:]:
+                    combined_data.append(line.strip())
+                    
+            except Exception as e:
+                print(f"Error reading file {filename}: {e}")
+                continue
+        
+        if not combined_data:
+            return jsonify({'error': 'No valid data found in selected files'}), 400
+        
+        # Create temporary combined file
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        combined_filename = f'combined_bathymetry_{timestamp}.csv'
+        combined_path = os.path.join(logs_dir, combined_filename)
+        
+        with open(combined_path, 'w') as f:
+            f.write('\n'.join(combined_data))
+        
+        # Generate the bathymetry map
+        result = generate_bathymetry_map(combined_path, primary_interval, secondary_interval)
+        
+        if result['success']:
+            return jsonify({
+                'success': True,
+                'html_file': result['html_file'],
+                'message': f'Bathymetry map generated successfully! {len(combined_data)-1} data points processed.'
+            })
+        else:
+            return jsonify({'error': result['error']}), 500
+            
+    except Exception as e:
+        print(f"Error combining log files: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/download_map/<filename>')
+def download_map(filename):
+    """Download a generated bathymetry map HTML file."""
+    try:
+        logs_dir = '/app/logs'
+        file_path = os.path.join(logs_dir, filename)
+        
+        if not os.path.exists(file_path):
+            return jsonify({'error': 'Map file not found'}), 404
+        
+        return send_file(file_path, as_attachment=True, cache_timeout=0)
+        
+    except Exception as e:
+        print(f"Error downloading map: {e}")
+        return jsonify({'error': str(e)}), 500
+
+def generate_bathymetry_map(csv_file, primary_interval=5.0, secondary_interval=1.0):
+    """Generate an interactive bathymetry map using the contour map generator."""
+    try:
+        # Import the bathymetry map generator
+        import sys
+        import os
+        
+        # Try multiple possible paths for the contour map generator
+        possible_paths = [
+            os.path.join(os.path.dirname(__file__), '..', 'contour map generator'),
+            os.path.join(os.path.dirname(__file__), '..', 'contour_map_generator'),
+            '/app/contour_map_generator'
+        ]
+        
+        contour_dir = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                contour_dir = path
+                break
+        
+        if contour_dir is None:
+            return {'success': False, 'error': 'Contour map generator not found. Please ensure the contour map generator files are available.'}
+        
+        sys.path.insert(0, contour_dir)
+        
+        # Import the interactive bathymetry map generator
+        from interactive_bathymetry_map import create_interactive_map, load_and_process_data
+        
+        print(f"Generating bathymetry map for {csv_file}")
+        print(f"Primary interval: {primary_interval}m, Secondary interval: {secondary_interval}m")
+        
+        # Load and process the data
+        lats, lons, depths, df_filtered = load_and_process_data(csv_file)
+        
+        if len(lats) == 0:
+            return {'success': False, 'error': 'No valid data points found after filtering'}
+        
+        # Generate output filename
+        base_name = os.path.splitext(os.path.basename(csv_file))[0]
+        output_filename = f"{base_name}_bathymetry_map.html"
+        output_path = os.path.join(os.path.dirname(csv_file), output_filename)
+        
+        # Create the interactive map
+        create_interactive_map(
+            lats, lons, depths, df_filtered,
+            output_file=output_path,
+            primary_interval=primary_interval,
+            secondary_interval=secondary_interval
+        )
+        
+        print(f"Bathymetry map generated: {output_path}")
+        
+        return {
+            'success': True,
+            'html_file': output_filename,
+            'data_points': len(lats),
+            'depth_range': f"{depths.min():.1f}m - {depths.max():.1f}m"
+        }
+        
+    except ImportError as e:
+        print(f"Import error: {e}")
+        return {'success': False, 'error': f'Required packages not installed: {str(e)}. Please check the Dockerfile includes all necessary dependencies.'}
+    except Exception as e:
+        print(f"Error generating bathymetry map: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'success': False, 'error': str(e)}
+
 if __name__ == '__main__':
     # Ensure logs directory exists at startup
     ensure_logs_dir()
