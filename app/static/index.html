@@ -939,10 +939,8 @@
                             this.receivingData = !this.receivingData;
                         }
                         
-                        // Update status less frequently to reduce UI updates
-                        if (this.tableItems.length % 5 === 0) {
-                            this.status = `Data received: ${this.tableItems.length} points`;
-                        }
+                        // Update status with every data point
+                        this.status = `Data received: ${this.tableItems.length} points`;
                     } catch (error) {
                         console.error('Error fetching data:', error);
                         this.status = 'Error: ' + error.message;
