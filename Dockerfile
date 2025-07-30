@@ -54,8 +54,7 @@ RUN pip install --no-cache-dir --prefer-binary contextily==1.2.0 || \
      pip install --no-deps contextily==1.2.0 || \
      echo "Contextily not available - maps will work without satellite background")
 
-# Install the main app
-RUN python -m pip install /app --extra-index-url https://www.piwheels.org/simple
+# No need to install /app as a package since we're copying files directly
 
 EXPOSE 5420/tcp
 
