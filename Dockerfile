@@ -40,20 +40,19 @@ RUN pip install --no-cache-dir --prefer-binary \
     geojson==2.5.0 \
     requests==2.28.2 \
     mercantile==1.2.1 \
-    Pillow==9.0.1
-
-# Method 2: Install core scientific packages with specific versions known to have ARM wheels
-RUN pip install --no-cache-dir --prefer-binary \
+    Pillow==9.0.1 \
     numpy==1.24.3 \
     pandas==2.0.3 \
-    scipy==1.11.1 \
-    shapely==2.0.1 || \
-    (echo "Some packages need compilation, installing with build tools" && \
-     pip install --no-cache-dir \
-     numpy==1.24.3 \
-     pandas==2.0.3 \
-     scipy==1.11.1 \
-     shapely==2.0.1)
+    shapely==2.0.1
+
+# Method 2: Install scipy with multiple fallback strategies (most problematic package)
+RUN pip install --no-cache-dir --prefer-binary scipy==1.11.1 || \
+    (echo "scipy 1.11.1 wheel not available, trying 1.10.1" && \
+     pip install --no-cache-dir --prefer-binary scipy==1.10.1) || \
+    (echo "scipy 1.10.1 wheel not available, trying 1.9.3" && \
+     pip install --no-cache-dir --prefer-binary scipy==1.9.3) || \
+    (echo "No scipy wheels available, using system package" && \
+     echo "System scipy will be used from apt-get installation")
 
 # Method 3: Try to install contextily (satellite background) with fallback
 RUN pip install --no-cache-dir --prefer-binary contextily==1.2.0 || \
