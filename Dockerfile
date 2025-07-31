@@ -4,6 +4,7 @@ FROM python:3.11-slim
 RUN apt-get update && \
     apt-get install -y \
     gcc \
+    gfortran \
     python3-dev \
     python3-pip \
     python3-venv \
@@ -41,12 +42,18 @@ RUN pip install --no-cache-dir --prefer-binary \
     mercantile==1.2.1 \
     Pillow==9.0.1
 
-# Method 2: Install core scientific packages with ARM flags
+# Method 2: Install core scientific packages with specific versions known to have ARM wheels
 RUN pip install --no-cache-dir --prefer-binary \
-    numpy>=1.21.0 \
-    pandas>=1.3.0 \
-    scipy>=1.7.0 \
-    shapely>=1.8.0
+    numpy==1.24.3 \
+    pandas==2.0.3 \
+    scipy==1.11.1 \
+    shapely==2.0.1 || \
+    (echo "Some packages need compilation, installing with build tools" && \
+     pip install --no-cache-dir \
+     numpy==1.24.3 \
+     pandas==2.0.3 \
+     scipy==1.11.1 \
+     shapely==2.0.1)
 
 # Method 3: Try to install contextily (satellite background) with fallback
 RUN pip install --no-cache-dir --prefer-binary contextily==1.2.0 || \
