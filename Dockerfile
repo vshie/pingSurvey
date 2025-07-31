@@ -29,10 +29,11 @@ RUN pip install --upgrade pip setuptools wheel
 # Install Python dependencies using ARM-optimized methods from the Pi script
 # Method 1: Try pre-compiled wheels first (ARM-optimized)
 RUN pip install --no-cache-dir --prefer-binary \
+    flask==2.3.3 \
+    requests==2.28.2 \
     folium==0.12.1 \
     branca==0.4.2 \
     geojson==2.5.0 \
-    requests==2.28.2 \
     mercantile==1.2.1 \
     Pillow==9.0.1 \
     numpy==1.24.3 \
