@@ -23,12 +23,6 @@ RUN apt-get update && \
     gdal-bin \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the contour map generator files
-COPY contour_map_generator/ /app/contour_map_generator/
-
-# Copy app files
-COPY app /app
-
 # Upgrade pip and install build tools
 RUN pip install --upgrade pip setuptools wheel
 
@@ -59,6 +53,10 @@ RUN pip install --no-cache-dir --prefer-binary contextily==1.2.0 || \
     (echo "Contextily installation failed, using fallback method" && \
      pip install --no-deps contextily==1.2.0 || \
      echo "Contextily not available - maps will work without satellite background")
+
+# Copy application files last (these change most frequently)
+COPY contour_map_generator/ /app/contour_map_generator/
+COPY app /app
 
 # No need to install /app as a package since we're copying files directly
 
