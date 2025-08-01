@@ -481,28 +481,35 @@ def serve_tile(z, x, y):
         if map_source not in MAP_SOURCES:
             map_source = 'google'  # Fallback to Google if invalid source
         
+        print(f"Serving tile: z={z}, x={x}, y={y}, source={map_source}")
+        
         # First check if we have the tile cached (fast path)
         cached_tile = get_cached_tile(z, x, y)
         if cached_tile:
+            print(f"Tile {z}/{x}/{y} served from cache")
             return Response(cached_tile, mimetype='image/png')
         
         # If not cached, try to fetch from the selected map source
         source_config = MAP_SOURCES[map_source]
         tile_url = source_config['url'].format(x=x, y=y, z=z)
+        print(f"Fetching tile from: {tile_url}")
+        
         response = requests.get(tile_url, timeout=10)
         
         if response.status_code == 200:
             tile_data = response.content
+            print(f"Tile {z}/{x}/{y} fetched successfully, size: {len(tile_data)} bytes")
             
             # Cache the tile for future offline use (async)
             cache_tile(z, x, y, tile_data)
             
             return Response(tile_data, mimetype='image/png')
         else:
+            print(f"Failed to fetch tile {z}/{x}/{y}, status: {response.status_code}")
             return Response(status=404)
             
     except Exception as e:
-        print(f"Error serving tile: {e}")
+        print(f"Error serving tile {z}/{x}/{y}: {e}")
         return Response(status=500)
 
 @app.route('/cache_stats')
@@ -652,16 +659,57 @@ def get_recent_cached_area():
 def status():
     return {"logging_active": logging_active}
 
+@app.route('/debug/logs')
+def debug_logs():
+    """Debug endpoint to check logs directory status."""
+    try:
+        logs_dir = '/app/logs'
+        exists = os.path.exists(logs_dir)
+        readable = os.access(logs_dir, os.R_OK) if exists else False
+        writable = os.access(logs_dir, os.W_OK) if exists else False
+        
+        files = []
+        if exists and readable:
+            try:
+                files = os.listdir(logs_dir)
+            except Exception as e:
+                files = [f"Error listing files: {e}"]
+        
+        return jsonify({
+            'logs_dir': logs_dir,
+            'exists': exists,
+            'readable': readable,
+            'writable': writable,
+            'files': files,
+            'current_working_dir': os.getcwd(),
+            'env_vars': {k: v for k, v in os.environ.items() if 'LOG' in k.upper() or 'PATH' in k.upper()}
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/log_files')
 def list_log_files():
     """List available log files for contour map generation."""
     try:
         logs_dir = '/app/logs'
+        print(f"Looking for log files in: {logs_dir}")
+        
         if not os.path.exists(logs_dir):
-            return jsonify({'error': 'Logs directory not found'}), 404
+            print(f"Logs directory does not exist: {logs_dir}")
+            # Try to create it
+            try:
+                os.makedirs(logs_dir, exist_ok=True)
+                print(f"Created logs directory: {logs_dir}")
+            except Exception as e:
+                print(f"Failed to create logs directory: {e}")
+                return jsonify({'error': f'Logs directory not found and could not be created: {e}'}), 404
+        
+        # List all files in directory for debugging
+        all_files = os.listdir(logs_dir)
+        print(f"All files in {logs_dir}: {all_files}")
         
         files = []
-        for filename in os.listdir(logs_dir):
+        for filename in all_files:
             if filename.endswith('.csv') and filename.startswith('ping_survey_'):
                 file_path = os.path.join(logs_dir, filename)
                 try:
@@ -673,6 +721,7 @@ def list_log_files():
                         'modified': datetime.fromtimestamp(file_mtime).isoformat(),
                         'date': datetime.fromtimestamp(file_mtime).strftime('%Y-%m-%d %H:%M:%S')
                     })
+                    print(f"Found log file: {filename}, size: {file_size} bytes")
                 except (OSError, PermissionError) as e:
                     print(f"Error accessing file {filename}: {e}")
                     continue
@@ -680,10 +729,13 @@ def list_log_files():
         # Sort by modification time (newest first)
         files.sort(key=lambda x: x['modified'], reverse=True)
         
+        print(f"Returning {len(files)} log files")
         return jsonify({'files': files})
         
     except Exception as e:
         print(f"Error listing log files: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 @app.route('/combine_logs', methods=['POST'])
