@@ -1666,6 +1666,11 @@
                         console.error('Tile load error:', event.url, event);
                     });
                     
+                    // Add debugging for tile requests
+                    tileLayer.on('tileloadstart', (event) => {
+                        console.log('Tile load started:', event.url);
+                    });
+                    
                     return tileLayer;
                 },
                 startCacheStatsRefresh() {
@@ -2082,6 +2087,18 @@
             watch: {
                 selectedLogFiles() {
                     this.updateSelectAllStatus();
+                },
+                activeTab(newTab) {
+                    // Reinitialize map when switching to survey tab
+                    if (newTab === 'survey' && this.map) {
+                        console.log('Switching to survey tab, reinitializing map...');
+                        setTimeout(() => {
+                            if (this.map) {
+                                this.map.invalidateSize();
+                                console.log('Map size invalidated after tab switch');
+                            }
+                        }, 100);
+                    }
                 }
             },
             mounted() {
@@ -2091,14 +2108,30 @@
                     // Ensure the survey tab is active and map container is visible
                     this.activeTab = 'survey';
                     
-                    // Wait a bit for the DOM to update with the visible map container
+                    // Force a re-render to ensure the map container is visible
+                    this.$forceUpdate();
+                    
+                    // Wait longer for the DOM to update and ensure the map container is visible
                     setTimeout(() => {
+                        // Check if map container exists and is visible
+                        const mapContainer = document.getElementById('map');
+                        if (!mapContainer) {
+                            console.error('Map container not found!');
+                            return;
+                        }
+                        
+                        // Force the map container to be visible
+                        mapContainer.style.display = 'block';
+                        mapContainer.style.width = '100%';
+                        mapContainer.style.height = '100%';
+                        
+                        console.log('Map container found, dimensions:', mapContainer.offsetWidth, 'x', mapContainer.offsetHeight);
+                        
                         // Initialize map after DOM is fully rendered and visible
                         this.map = L.map('map', {
                             // These options improve mobile handling
                             tap: true, // Enable tap handler for touch devices
                             dragging: !L.Browser.mobile, // Disable drag by default on mobile
-                            tap: L.Browser.safari && L.Browser.mobile, // Use tap instead of click for Safari on iOS
                             bounceAtZoomLimits: false, // Don't bounce at zoom limits
                             touchZoom: 'center' // Center zoom on mobile touch
                         }).setView([9.2,-133], 10);
@@ -2130,6 +2163,14 @@
                             console.log('Map clicked at:', event.latlng);
                         });
                         
+                        // Force map to invalidate size after a short delay
+                        setTimeout(() => {
+                            if (this.map) {
+                                this.map.invalidateSize();
+                                console.log('Map size invalidated');
+                            }
+                        }, 500);
+                        
                         this.checkLoggingStatus();
                         this.getCacheStats();
                         this.getRecentCachedArea();
@@ -2140,7 +2181,7 @@
                         this.loadLogFiles();
                         
                         console.log('Map initialization complete');
-                    }, 100); // Small delay to ensure DOM is updated
+                    }, 200); // Increased delay to ensure DOM is updated
                 });
             }
         })
