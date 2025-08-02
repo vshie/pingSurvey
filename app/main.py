@@ -498,7 +498,17 @@ def serve_tile(z, x, y):
         tile_url = source_config['url'].format(x=x, y=y, z=z)
         print(f"Fetching tile from: {tile_url}")
         
-        response = requests.get(tile_url, timeout=10)
+        # Add headers to mimic a browser request
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'image/png,image/*,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
+        }
+        
+        response = requests.get(tile_url, timeout=10, headers=headers)
         
         if response.status_code == 200:
             tile_data = response.content
@@ -510,10 +520,14 @@ def serve_tile(z, x, y):
             return Response(tile_data, mimetype='image/png')
         else:
             print(f"Failed to fetch tile {z}/{x}/{y}, status: {response.status_code}")
+            print(f"Response headers: {dict(response.headers)}")
+            print(f"Response content: {response.text[:200]}...")
             return Response(status=404)
             
     except Exception as e:
         print(f"Error serving tile {z}/{x}/{y}: {e}")
+        import traceback
+        traceback.print_exc()
         return Response(status=500)
 
 @app.route('/cache_stats')
@@ -702,17 +716,60 @@ def debug_test_tile():
         tile_url = source_config['url'].format(x=x, y=y, z=z)
         
         print(f"Testing tile fetch from: {tile_url}")
-        response = requests.get(tile_url, timeout=10)
+        
+        # Add headers to mimic a browser request
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'image/png,image/*,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
+        }
+        
+        response = requests.get(tile_url, timeout=10, headers=headers)
         
         return jsonify({
             'tile_url': tile_url,
             'response_status': response.status_code,
             'response_size': len(response.content) if response.status_code == 200 else 0,
+            'response_headers': dict(response.headers),
             'map_sources': MAP_SOURCES,
-            'test_tile_cached': is_tile_cached(z, x, y)
+            'test_tile_cached': is_tile_cached(z, x, y),
+            'error_details': response.text[:500] if response.status_code != 200 else None
         })
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+
+@app.route('/debug/test_image')
+def debug_test_image():
+    """Test endpoint that returns a simple test image to verify image serving works."""
+    try:
+        # Create a simple 256x256 test image (red square)
+        from PIL import Image, ImageDraw
+        
+        # Create a simple test image
+        img = Image.new('RGB', (256, 256), color='red')
+        draw = ImageDraw.Draw(img)
+        draw.rectangle([50, 50, 206, 206], fill='white')
+        draw.text((128, 128), "TEST", fill='black', anchor='mm')
+        
+        # Convert to bytes
+        import io
+        img_byte_arr = io.BytesIO()
+        img.save(img_byte_arr, format='PNG')
+        img_byte_arr = img_byte_arr.getvalue()
+        
+        print(f"Generated test image, size: {len(img_byte_arr)} bytes")
+        
+        return Response(img_byte_arr, mimetype='image/png')
+    except Exception as e:
+        print(f"Error generating test image: {e}")
+        import traceback
+        traceback.print_exc()
+        return Response(status=500)
 
 @app.route('/log_files')
 def list_log_files():
