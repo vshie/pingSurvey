@@ -470,6 +470,10 @@ def download_file():
 @app.route('/data')
 def get_data():
     global data
+    # Return empty array if no data has been collected yet
+    # The frontend expects an array with at least 11 elements when data is available
+    if not data or len(data) == 0:
+        return jsonify([])
     return jsonify(data)
 
 @app.route('/tiles/<int:z>/<int:x>/<int:y>.png')
@@ -683,6 +687,29 @@ def debug_logs():
             'files': files,
             'current_working_dir': os.getcwd(),
             'env_vars': {k: v for k, v in os.environ.items() if 'LOG' in k.upper() or 'PATH' in k.upper()}
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/debug/test_tile')
+def debug_test_tile():
+    """Test endpoint to check if tile serving works."""
+    try:
+        # Test with a simple tile request
+        z, x, y = 10, 512, 512  # A simple tile
+        map_source = 'google'
+        source_config = MAP_SOURCES[map_source]
+        tile_url = source_config['url'].format(x=x, y=y, z=z)
+        
+        print(f"Testing tile fetch from: {tile_url}")
+        response = requests.get(tile_url, timeout=10)
+        
+        return jsonify({
+            'tile_url': tile_url,
+            'response_status': response.status_code,
+            'response_size': len(response.content) if response.status_code == 200 else 0,
+            'map_sources': MAP_SOURCES,
+            'test_tile_cached': is_tile_cached(z, x, y)
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
