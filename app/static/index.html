@@ -653,345 +653,310 @@
             </div>
             
             <div class="content">
-                <!-- Tab Navigation -->
-                <div class="tab-navigation">
-                    <v-btn 
-                        :color="activeTab === 'survey' ? 'primary' : 'grey'" 
-                        @click="activeTab = 'survey'"
-                        class="tab-btn"
-                    >
-                        <v-icon left>mdi-map-marker</v-icon>
-                        Survey
-                    </v-btn>
-                    <v-btn 
-                        :color="activeTab === 'bathymetry' ? 'primary' : 'grey'" 
-                        @click="activeTab = 'bathymetry'"
-                        class="tab-btn"
-                    >
-                        <v-icon left>mdi-chart-line</v-icon>
-                        Bathymetry Maps
-                    </v-btn>
-                </div>
-                
-                <!-- Survey Tab -->
-                <div v-show="activeTab === 'survey'">
+                <!-- Remove Tab Navigation -->
+                <!-- Remove Bathymetry Tab -->
+                <!-- Survey Page Content Only -->
+                <div>
                     <div class="map-container">
-                    <div id="map"></div>
-                    <!-- Floating center map button for mobile -->
-                    <div class="map-center-button" @click="onCenterMapButtonClick">
-                        <v-icon color="white">mdi-crosshairs-gps</v-icon>
-                    </div>
-                    
-                    <!-- Polygon Drawing Controls -->
-                    <div class="polygon-drawing-controls" v-if="isDrawingPolygon">
-                        <h4>Draw Cache Region</h4>
-                        <div class="polygon-controls-buttons">
-                            <v-btn color="green" dark rounded elevation="2" @click="confirmCacheRegions">
-                                <v-icon left>mdi-check</v-icon>
-                                Cache This Region
-                            </v-btn>
-                            <v-btn color="red" dark rounded elevation="2" @click="cancelPolygonDrawing">
-                                <v-icon left>mdi-close</v-icon>
-                                Cancel
-                            </v-btn>
+                        <div id="map"></div>
+                        <!-- Floating center map button for mobile -->
+                        <div class="map-center-button" @click="onCenterMapButtonClick">
+                            <v-icon color="white">mdi-crosshairs-gps</v-icon>
                         </div>
-                        <div class="polygon-instructions">
-                            Click on the map to add vertices to your cache region. You need at least 3 points to form a polygon. The region inside the polygon will be cached at high zoom levels.
-                        </div>
-                    </div>
-                    
-                    <!-- Caching indicator overlay -->
-                    <div v-if="cacheProgress.active" class="caching-indicator">
-                        <v-chip color="purple" dark>
-                            <v-icon left small>mdi-cached</v-icon>
-                            Caching in progress...
-                        </v-chip>
-                    </div>
-                    <!-- Depth legend -->
-                    <div class="legend" @click="toggleLegend" :class="{ 'legend-minimized': !showLegend }">
-                        <div class="zoom-level-display">
-                            <v-chip color="info" dark small>
-                                <v-icon left small>mdi-magnify</v-icon>
-                                Zoom: {{ map ? map.getZoom() : 10 }}
-                            </v-chip>
-                        </div>
-                        <div v-show="showLegend" class="legend-content">
-                            <h4>Depth (m)</h4>
-                            <div class="legend-gradient"></div>
-                            <div class="legend-labels">
-                                <span>0</span>
-                                <span>20</span>
-                                <span>40</span>
-                                <span>60</span>
-                                <span>80</span>
-                                <span>100</span>
+                        <!-- Polygon Drawing Controls -->
+                        <div class="polygon-drawing-controls" v-if="isDrawingPolygon">
+                            <h4>Draw Cache Region</h4>
+                            <div class="polygon-controls-buttons">
+                                <v-btn color="green" dark rounded elevation="2" @click="confirmCacheRegions">
+                                    <v-icon left>mdi-check</v-icon>
+                                    Cache This Region
+                                </v-btn>
+                                <v-btn color="red" dark rounded elevation="2" @click="cancelPolygonDrawing">
+                                    <v-icon left>mdi-close</v-icon>
+                                    Cancel
+                                </v-btn>
+                            </div>
+                            <div class="polygon-instructions">
+                                Click on the map to add vertices to your cache region. You need at least 3 points to form a polygon. The region inside the polygon will be cached at high zoom levels.
                             </div>
                         </div>
-                        <div v-show="!showLegend" class="legend-minimized-content">
-                            <v-icon>mdi-chevron-right</v-icon>
-                            <span>Depth</span>
+                        <!-- Caching indicator overlay -->
+                        <div v-if="cacheProgress.active" class="caching-indicator">
+                            <v-chip color="purple" dark>
+                                <v-icon left small>mdi-cached</v-icon>
+                                Caching in progress...
+                            </v-chip>
+                        </div>
+                        <!-- Depth legend -->
+                        <div class="legend" @click="toggleLegend" :class="{ 'legend-minimized': !showLegend }">
+                            <div class="zoom-level-display">
+                                <v-chip color="info" dark small>
+                                    <v-icon left small>mdi-magnify</v-icon>
+                                    Zoom: {{ map ? map.getZoom() : 10 }}
+                                </v-chip>
+                            </div>
+                            <div v-show="showLegend" class="legend-content">
+                                <h4>Depth (m)</h4>
+                                <div class="legend-gradient"></div>
+                                <div class="legend-labels">
+                                    <span>0</span>
+                                    <span>20</span>
+                                    <span>40</span>
+                                    <span>60</span>
+                                    <span>80</span>
+                                    <span>100</span>
+                                </div>
+                            </div>
+                            <div v-show="!showLegend" class="legend-minimized-content">
+                                <v-icon>mdi-chevron-right</v-icon>
+                                <span>Depth</span>
+                            </div>
                         </div>
                     </div>
-                </div>
-                
-                <div class="controls">
-                    <!-- Left side - Start/Stop and Download -->
-                    <div class="controls-section">
-                        <v-btn :color="run ? 'error' : 'success'" :disabled="isLoading" 
-                               dark rounded elevation="2" @click="toggleRun">
-                            <v-icon left>{{ run ? 'mdi-stop' : 'mdi-play' }}</v-icon>
-                            {{ run ? 'Stop' : 'Start' }}
-                        </v-btn>
-                        <v-btn color="primary" dark rounded elevation="2" @click="download">
-                            <v-icon left>mdi-download</v-icon>
-                            Download
-                        </v-btn>
+                    <div class="controls">
+                        <!-- Left side - Start/Stop and Download -->
+                        <div class="controls-section">
+                            <v-btn :color="run ? 'error' : 'success'" :disabled="isLoading" 
+                                   dark rounded elevation="2" @click="toggleRun">
+                                <v-icon left>{{ run ? 'mdi-stop' : 'mdi-play' }}</v-icon>
+                                {{ run ? 'Stop' : 'Start' }}
+                            </v-btn>
+                            <v-btn color="primary" dark rounded elevation="2" @click="download">
+                                <v-icon left>mdi-download</v-icon>
+                                Download
+                            </v-btn>
+                        </div>
+                        <!-- Center section - Map Controls -->
+                        <div class="controls-section">
+                            <v-btn color="info" dark rounded elevation="2" @click="onCenterMapButtonClick">
+                                <v-icon left>mdi-crosshairs-gps</v-icon>
+                                Center
+                            </v-btn>
+                            <v-btn color="warning" dark rounded elevation="2" @click="clearHeatmap">
+                                <v-icon left>mdi-delete</v-icon>
+                                Clear
+                            </v-btn>
+                            <v-select
+                                v-model="selectedMapSource"
+                                :items="Object.keys(mapSources)"
+                                :item-text="key => mapSources[key].name"
+                                :item-value="key => key"
+                                label="Map Source"
+                                dark
+                                dense
+                                outlined
+                                hide-details
+                                style="min-width: 150px;"
+                                @change="changeMapSource"
+                            ></v-select>
+                            <v-btn color="purple" dark rounded elevation="2" @click="togglePolygonDrawing" :loading="cacheLoading" :disabled="cacheProgress.active">
+                                <v-icon left>mdi-cached</v-icon>
+                                {{ isDrawingPolygon ? 'Cancel Drawing' : 'Cache Region' }}
+                            </v-btn>
+                            <v-btn color="green" dark rounded elevation="2" @click="getRecentCachedArea" v-if="cacheStats.cachedTiles > 0">
+                                <v-icon left>mdi-map-marker</v-icon>
+                                Recent Area
+                            </v-btn>
+                            <v-btn color="blue" dark rounded elevation="2" @click="getCacheStats">
+                                <v-icon left>mdi-refresh</v-icon>
+                                Refresh
+                            </v-btn>
+                            <v-btn color="red" dark rounded elevation="2" @click="confirmClearCache">
+                                <v-icon left>mdi-delete-sweep</v-icon>
+                                Clear Cache
+                            </v-btn>
+                        </div>
                     </div>
-                    
-                    <!-- Center section - Map Controls -->
-                    <div class="controls-section">
-                        <v-btn color="info" dark rounded elevation="2" @click="onCenterMapButtonClick">
-                            <v-icon left>mdi-crosshairs-gps</v-icon>
-                            Center
-                        </v-btn>
-                        <v-btn color="warning" dark rounded elevation="2" @click="clearHeatmap">
-                            <v-icon left>mdi-delete</v-icon>
-                            Clear
-                        </v-btn>
-                        <v-select
-                            v-model="selectedMapSource"
-                            :items="Object.keys(mapSources)"
-                            :item-text="key => mapSources[key].name"
-                            :item-value="key => key"
-                            label="Map Source"
-                            dark
+                    <!-- Status Console - Directly beneath the map -->
+                    <div class="status-panel">
+                        <h4>Status Console</h4>
+                        <v-data-table
+                            :headers="tableHeaders"
+                            :items="tableItems"
+                            :hide-default-footer="true"
                             dense
-                            outlined
-                            hide-details
-                            style="min-width: 150px;"
-                            @change="changeMapSource"
-                        ></v-select>
-                        <v-btn color="purple" dark rounded elevation="2" @click="togglePolygonDrawing" :loading="cacheLoading" :disabled="cacheProgress.active">
-                            <v-icon left>mdi-cached</v-icon>
-                            {{ isDrawingPolygon ? 'Cancel Drawing' : 'Cache Region' }}
-                        </v-btn>
-                        <v-btn color="green" dark rounded elevation="2" @click="getRecentCachedArea" v-if="cacheStats.cachedTiles > 0">
-                            <v-icon left>mdi-map-marker</v-icon>
-                            Recent Area
-                        </v-btn>
-                        <v-btn color="blue" dark rounded elevation="2" @click="getCacheStats">
-                            <v-icon left>mdi-refresh</v-icon>
-                            Refresh
-                        </v-btn>
-                        <v-btn color="red" dark rounded elevation="2" @click="confirmClearCache">
-                            <v-icon left>mdi-delete-sweep</v-icon>
-                            Clear Cache
-                        </v-btn>
+                            class="elevation-1"
+                        >
+                        <template v-slot:item.confidence="{ item }">
+                            <td :class="getConfidenceClass(item.confidence)">
+                                {{ item.confidence }}
+                            </td>
+                        </template>
+                        </v-data-table>
                     </div>
-                </div>
-                
-                <!-- Status Console - Directly beneath the map -->
-                <div class="status-panel">
-                    <h4>Status Console</h4>
-                    <v-data-table
-                        :headers="tableHeaders"
-                        :items="tableItems"
-                        :hide-default-footer="true"
-                        dense
-                        class="elevation-1"
-                    >
-                    <template v-slot:item.confidence="{ item }">
-                        <td :class="getConfidenceClass(item.confidence)">
-                            {{ item.confidence }}
-                        </td>
-                    </template>
-                    </v-data-table>
-                </div>
-                
-                <!-- Cache Progress Bar -->
-                <div v-if="cacheProgress.active" class="cache-progress-panel">
-                    <div class="progress-header">
-                        <h4>Cache Progress</h4>
-                        <div class="progress-controls">
-                            <v-chip small color="info" class="mr-2">
-                                <v-icon left small>mdi-information</v-icon>
-                                Map can be moved freely
-                            </v-chip>
-                            <v-chip small color="success" class="mr-2">
-                                <v-icon left small>mdi-content-save</v-icon>
-                                Persistent storage
-                            </v-chip>
-                            <v-btn small color="error" @click="cancelCaching" :disabled="!cacheProgress.active">
-                                <v-icon left>mdi-close</v-icon>
-                                Cancel
-                            </v-btn>
-                            <v-btn small icon @click="cacheProgressCollapsed = !cacheProgressCollapsed" class="ml-2 collapse-btn">
-                                <v-icon>{{ cacheProgressCollapsed ? 'mdi-chevron-down' : 'mdi-chevron-up' }}</v-icon>
-                            </v-btn>
-                        </div>
-                    </div>
-                    <div v-show="!cacheProgressCollapsed" class="progress-content">
-                        <div class="progress-bar-container">
-                            <v-progress-linear
-                                :value="cacheProgress.percentage"
-                                color="purple"
-                                height="25"
-                                striped
-                                stream
-                            >
-                                <template v-slot:default="{ value }">
-                                    <strong>{{ Math.ceil(value) }}%</strong>
-                                </template>
-                            </v-progress-linear>
-                        </div>
-                        <div class="progress-details">
-                            <div class="progress-row">
-                                <span class="progress-label">Zoom Level:</span>
-                                <span class="progress-value">{{ cacheProgress.currentZoom }} → {{ cacheProgress.maxZoom }}</span>
-                            </div>
-                            <div class="progress-row">
-                                <span class="progress-label">Tiles Processed:</span>
-                                <span class="progress-value">{{ cacheProgress.tilesProcessed }} / {{ cacheProgress.totalTiles }}</span>
-                            </div>
-                            <div class="progress-row">
-                                <span class="progress-label">New Tiles Cached:</span>
-                                <span class="progress-value">{{ cacheProgress.newTilesCached }}</span>
-                            </div>
-                            <div class="progress-row">
-                                <span class="progress-label">Already Cached:</span>
-                                <span class="progress-value">{{ cacheProgress.alreadyCached }}</span>
-                            </div>
-                            <div class="progress-row">
-                                <span class="progress-label">Status:</span>
-                                <span class="progress-value">{{ cacheProgress.status }}</span>
-                            </div>
-                            <div class="progress-row">
-                                <span class="progress-label">Storage:</span>
-                                <span class="progress-value">{{ cacheStats.cacheLocation }}</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Bathymetry Maps Tab -->
-                <div v-show="activeTab === 'bathymetry'" class="bathymetry-tab">
-                    <div class="bathymetry-container">
-                        <h3>Generate Bathymetry Contour Maps</h3>
-                        <p class="bathymetry-description">
-                            Select one or more log files to combine and generate an interactive bathymetry map with contour lines.
-                        </p>
-                        
-                        <!-- Log File Selection -->
-                        <div class="log-selection-panel">
-                            <div class="panel-header">
-                                <h4>Select Log Files</h4>
-                                <v-btn small color="info" @click="loadLogFiles">
-                                    <v-icon left>mdi-refresh</v-icon>
-                                    Refresh
+                    <!-- Cache Progress Bar -->
+                    <div v-if="cacheProgress.active" class="cache-progress-panel">
+                        <div class="progress-header">
+                            <h4>Cache Progress</h4>
+                            <div class="progress-controls">
+                                <v-chip small color="info" class="mr-2">
+                                    <v-icon left small>mdi-information</v-icon>
+                                    Map can be moved freely
+                                </v-chip>
+                                <v-chip small color="success" class="mr-2">
+                                    <v-icon left small>mdi-content-save</v-icon>
+                                    Persistent storage
+                                </v-chip>
+                                <v-btn small color="error" @click="cancelCaching" :disabled="!cacheProgress.active">
+                                    <v-icon left>mdi-close</v-icon>
+                                    Cancel
+                                </v-btn>
+                                <v-btn small icon @click="cacheProgressCollapsed = !cacheProgressCollapsed" class="ml-2 collapse-btn">
+                                    <v-icon>{{ cacheProgressCollapsed ? 'mdi-chevron-down' : 'mdi-chevron-up' }}</v-icon>
                                 </v-btn>
                             </div>
-                            
-                            <div v-if="logFilesLoading" class="loading-state">
-                                <v-progress-circular indeterminate color="primary"></v-progress-circular>
-                                <span>Loading log files...</span>
-                            </div>
-                            
-                            <div v-else-if="logFiles.length === 0" class="no-files">
-                                <v-icon large color="grey">mdi-file-document-outline</v-icon>
-                                <p>No log files found. Start a survey to create log files.</p>
-                            </div>
-                            
-                            <div v-else class="log-files-list">
-                                <v-checkbox
-                                    v-model="selectAllLogs"
-                                    label="Select All"
-                                    @change="toggleSelectAllLogs"
-                                ></v-checkbox>
-                                
-                                <v-data-table
-                                    :headers="logFileHeaders"
-                                    :items="logFiles"
-                                    :items-per-page="10"
-                                    dense
-                                    class="elevation-1"
+                        </div>
+                        <div v-show="!cacheProgressCollapsed" class="progress-content">
+                            <div class="progress-bar-container">
+                                <v-progress-linear
+                                    :value="cacheProgress.percentage"
+                                    color="purple"
+                                    height="25"
+                                    striped
+                                    stream
                                 >
-                                    <template v-slot:item.select="{ item }">
-                                        <v-checkbox
-                                            v-model="selectedLogFiles"
-                                            :value="item.filename"
-                                            hide-details
-                                        ></v-checkbox>
+                                    <template v-slot:default="{ value }">
+                                        <strong>{{ Math.ceil(value) }}%</strong>
                                     </template>
-                                    <template v-slot:item.size_mb="{ item }">
-                                        {{ item.size_mb }} MB
-                                    </template>
-                                    <template v-slot:item.modified="{ item }">
-                                        {{ item.date }}
-                                    </template>
-                                </v-data-table>
+                                </v-progress-linear>
+                            </div>
+                            <div class="progress-details">
+                                <div class="progress-row">
+                                    <span class="progress-label">Zoom Level:</span>
+                                    <span class="progress-value">{{ cacheProgress.currentZoom }} → {{ cacheProgress.maxZoom }}</span>
+                                </div>
+                                <div class="progress-row">
+                                    <span class="progress-label">Tiles Processed:</span>
+                                    <span class="progress-value">{{ cacheProgress.tilesProcessed }} / {{ cacheProgress.totalTiles }}</span>
+                                </div>
+                                <div class="progress-row">
+                                    <span class="progress-label">New Tiles Cached:</span>
+                                    <span class="progress-value">{{ cacheProgress.newTilesCached }}</span>
+                                </div>
+                                <div class="progress-row">
+                                    <span class="progress-label">Already Cached:</span>
+                                    <span class="progress-value">{{ cacheProgress.alreadyCached }}</span>
+                                </div>
+                                <div class="progress-row">
+                                    <span class="progress-label">Status:</span>
+                                    <span class="progress-value">{{ cacheProgress.status }}</span>
+                                </div>
+                                <div class="progress-row">
+                                    <span class="progress-label">Storage:</span>
+                                    <span class="progress-value">{{ cacheStats.cacheLocation }}</span>
+                                </div>
                             </div>
                         </div>
-                        
-                        <!-- Contour Settings -->
-                        <div class="contour-settings-panel">
-                            <h4>Contour Settings</h4>
-                            <div class="settings-grid">
-                                <v-text-field
-                                    v-model.number="primaryInterval"
-                                    label="Primary Contour Interval (m)"
-                                    type="number"
-                                    min="1"
-                                    max="50"
-                                    step="0.5"
-                                    outlined
-                                    dense
-                                    hint="Major contour lines (e.g., 5m, 10m)"
-                                    persistent-hint
-                                ></v-text-field>
-                                
-                                <v-text-field
-                                    v-model.number="secondaryInterval"
-                                    label="Secondary Contour Interval (m)"
-                                    type="number"
-                                    min="0.5"
-                                    max="10"
-                                    step="0.1"
-                                    outlined
-                                    dense
-                                    hint="Minor contour lines (e.g., 1m, 2m)"
-                                    persistent-hint
-                                ></v-text-field>
+                    </div>
+                    <!-- Bathymetry Controls (moved from tab) -->
+                    <div class="bathymetry-tab" style="margin-top: 32px;">
+                        <div class="bathymetry-container">
+                            <h3>Generate Bathymetry Contour Maps</h3>
+                            <p class="bathymetry-description">
+                                Select one or more log files to combine and generate an interactive bathymetry map with contour lines.
+                            </p>
+                            <!-- Log File Selection -->
+                            <div class="log-selection-panel">
+                                <div class="panel-header">
+                                    <h4>Select Log Files</h4>
+                                    <v-btn small color="info" @click="loadLogFiles">
+                                        <v-icon left>mdi-refresh</v-icon>
+                                        Refresh
+                                    </v-btn>
+                                </div>
+                                <div v-if="logFilesLoading" class="loading-state">
+                                    <v-progress-circular indeterminate color="primary"></v-progress-circular>
+                                    <span>Loading log files...</span>
+                                </div>
+                                <div v-else-if="logFiles.length === 0" class="no-files">
+                                    <v-icon large color="grey">mdi-file-document-outline</v-icon>
+                                    <p>No log files found. Start a survey to create log files.</p>
+                                </div>
+                                <div v-else class="log-files-list">
+                                    <v-checkbox
+                                        v-model="selectAllLogs"
+                                        label="Select All"
+                                        @change="toggleSelectAllLogs"
+                                    ></v-checkbox>
+                                    <v-data-table
+                                        :headers="logFileHeaders"
+                                        :items="logFiles"
+                                        :items-per-page="10"
+                                        dense
+                                        class="elevation-1"
+                                    >
+                                        <template v-slot:item.select="{ item }">
+                                            <v-checkbox
+                                                v-model="selectedLogFiles"
+                                                :value="item.filename"
+                                                hide-details
+                                            ></v-checkbox>
+                                        </template>
+                                        <template v-slot:item.size_mb="{ item }">
+                                            {{ item.size_mb }} MB
+                                        </template>
+                                        <template v-slot:item.modified="{ item }">
+                                            {{ item.date }}
+                                        </template>
+                                    </v-data-table>
+                                </div>
                             </div>
-                        </div>
-                        
-                        <!-- Generate Button -->
-                        <div class="generate-panel">
-                            <v-btn 
-                                color="success" 
-                                large 
-                                :disabled="selectedLogFiles.length === 0 || generatingMap"
-                                :loading="generatingMap"
-                                @click="generateBathymetryMap"
-                            >
-                                <v-icon left>mdi-map-plus</v-icon>
-                                {{ generatingMap ? 'Generating Map...' : 'Generate Bathymetry Map' }}
-                            </v-btn>
-                            
-                            <div v-if="generatedMap" class="generated-map-info">
-                                <v-alert type="success" dense>
-                                    <strong>Map Generated Successfully!</strong><br>
-                                    {{ generatedMap.message }}
-                                </v-alert>
-                                
-                                <v-btn color="primary" @click="downloadGeneratedMap">
-                                    <v-icon left>mdi-download</v-icon>
-                                    Download {{ generatedMap.html_file }}
+                            <!-- Contour Settings -->
+                            <div class="contour-settings-panel">
+                                <h4>Contour Settings</h4>
+                                <div class="settings-grid">
+                                    <v-text-field
+                                        v-model.number="primaryInterval"
+                                        label="Primary Contour Interval (m)"
+                                        type="number"
+                                        min="1"
+                                        max="50"
+                                        step="0.5"
+                                        outlined
+                                        dense
+                                        hint="Major contour lines (e.g., 5m, 10m)"
+                                        persistent-hint
+                                    ></v-text-field>
+                                    <v-text-field
+                                        v-model.number="secondaryInterval"
+                                        label="Secondary Contour Interval (m)"
+                                        type="number"
+                                        min="0.5"
+                                        max="10"
+                                        step="0.1"
+                                        outlined
+                                        dense
+                                        hint="Minor contour lines (e.g., 1m, 2m)"
+                                        persistent-hint
+                                    ></v-text-field>
+                                </div>
+                            </div>
+                            <!-- Generate Button -->
+                            <div class="generate-panel">
+                                <v-btn 
+                                    color="success" 
+                                    large 
+                                    :disabled="selectedLogFiles.length === 0 || generatingMap"
+                                    :loading="generatingMap"
+                                    @click="generateBathymetryMap"
+                                >
+                                    <v-icon left>mdi-map-plus</v-icon>
+                                    {{ generatingMap ? 'Generating Map...' : 'Generate Bathymetry Map' }}
                                 </v-btn>
+                                <div v-if="generatedMap" class="generated-map-info">
+                                    <v-alert type="success" dense>
+                                        <strong>Map Generated Successfully!</strong><br>
+                                        {{ generatedMap.message }}
+                                    </v-alert>
+                                    <v-btn color="primary" @click="downloadGeneratedMap">
+                                        <v-icon left>mdi-download</v-icon>
+                                        Download {{ generatedMap.html_file }}
+                                    </v-btn>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
-
             </div>
         </v-app>
         
