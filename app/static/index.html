@@ -2087,53 +2087,60 @@
             mounted() {
                 this.$nextTick(() => {
                     console.log('Initializing map...');
-                    // Initialize map after DOM is fully rendered
-                    this.map = L.map('map', {
-                        // These options improve mobile handling
-                        tap: true, // Enable tap handler for touch devices
-                        dragging: !L.Browser.mobile, // Disable drag by default on mobile
-                        tap: L.Browser.safari && L.Browser.mobile, // Use tap instead of click for Safari on iOS
-                        bounceAtZoomLimits: false, // Don't bounce at zoom limits
-                        touchZoom: 'center' // Center zoom on mobile touch
-                    }).setView([9.2,-133], 10);
                     
-                    console.log('Map created, adding tile layer...');
+                    // Ensure the survey tab is active and map container is visible
+                    this.activeTab = 'survey';
                     
-                    // Enable dragging after a short delay (prevents scrolling issues)
-                    if (L.Browser.mobile) {
-                        setTimeout(() => {
-                            this.map.dragging.enable();
-                        }, 1000);
-                    }
-                    
-                    this.createOfflineTileLayer().addTo(this.map);
-                    console.log('Tile layer added to map');
-                    
-                    // Add scale control
-                    L.control.scale({imperial: false}).addTo(this.map);
-                    this.scaleAdded = true;
-                    
-                    // Add zoom change listener to update zoom display
-                    this.map.on('zoomend', () => {
-                        // Force Vue to update the zoom display
-                        this.$forceUpdate();
-                    });
-                    
-                    // Add click listener for debugging
-                    this.map.on('click', (event) => {
-                        console.log('Map clicked at:', event.latlng);
-                    });
-                    
-                    this.checkLoggingStatus();
-                    this.getCacheStats();
-                    this.getRecentCachedArea();
-                    this.startCacheStatsRefresh();
-                    this.loadMapSources();
-                    
-                    // Load log files for bathymetry tab
-                    this.loadLogFiles();
-                    
-                    console.log('Map initialization complete');
+                    // Wait a bit for the DOM to update with the visible map container
+                    setTimeout(() => {
+                        // Initialize map after DOM is fully rendered and visible
+                        this.map = L.map('map', {
+                            // These options improve mobile handling
+                            tap: true, // Enable tap handler for touch devices
+                            dragging: !L.Browser.mobile, // Disable drag by default on mobile
+                            tap: L.Browser.safari && L.Browser.mobile, // Use tap instead of click for Safari on iOS
+                            bounceAtZoomLimits: false, // Don't bounce at zoom limits
+                            touchZoom: 'center' // Center zoom on mobile touch
+                        }).setView([9.2,-133], 10);
+                        
+                        console.log('Map created, adding tile layer...');
+                        
+                        // Enable dragging after a short delay (prevents scrolling issues)
+                        if (L.Browser.mobile) {
+                            setTimeout(() => {
+                                this.map.dragging.enable();
+                            }, 1000);
+                        }
+                        
+                        this.createOfflineTileLayer().addTo(this.map);
+                        console.log('Tile layer added to map');
+                        
+                        // Add scale control
+                        L.control.scale({imperial: false}).addTo(this.map);
+                        this.scaleAdded = true;
+                        
+                        // Add zoom change listener to update zoom display
+                        this.map.on('zoomend', () => {
+                            // Force Vue to update the zoom display
+                            this.$forceUpdate();
+                        });
+                        
+                        // Add click listener for debugging
+                        this.map.on('click', (event) => {
+                            console.log('Map clicked at:', event.latlng);
+                        });
+                        
+                        this.checkLoggingStatus();
+                        this.getCacheStats();
+                        this.getRecentCachedArea();
+                        this.startCacheStatsRefresh();
+                        this.loadMapSources();
+                        
+                        // Load log files for bathymetry tab
+                        this.loadLogFiles();
+                        
+                        console.log('Map initialization complete');
+                    }, 100); // Small delay to ensure DOM is updated
                 });
             }
         })
