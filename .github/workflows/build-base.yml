@@ -1,0 +1,41 @@
+name: Build Base Image
+
+on:
+  push:
+    paths:
+      - 'Dockerfile.base'
+  pull_request:
+    paths:
+      - 'Dockerfile.base'
+  # Run manually
+  workflow_dispatch:
+  # Build base image weekly to keep it fresh
+  schedule:
+    - cron: '0 2 * * 0'  # Every Sunday at 2 AM UTC
+
+jobs:
+  build-base-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push base image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.base
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/simplepingsurvey-base:latest
+          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/simplepingsurvey-base:latest
+          cache-to: type=inline 

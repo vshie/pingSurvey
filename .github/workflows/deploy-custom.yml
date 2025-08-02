@@ -1,0 +1,61 @@
+name: Deploy BlueOS Extension Image (Custom)
+
+on:
+  push:
+    paths-ignore:
+      - 'Dockerfile.base'
+  pull_request:
+    paths-ignore:
+      - 'Dockerfile.base'
+  # Run manually
+  workflow_dispatch:
+
+jobs:
+  deploy-docker-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push main image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/simplepingsurvey:latest
+          cache-from: |
+            type=registry,ref=${{ secrets.DOCKER_USERNAME }}/simplepingsurvey-base:latest
+            type=registry,ref=${{ secrets.DOCKER_USERNAME }}/simplepingsurvey:latest
+          cache-to: type=inline
+
+      - name: Create BlueOS Extension Manifest
+        run: |
+          cat > extension.json << EOF
+          {
+            "name": "Simple Ping Survey",
+            "description": "This extension makes it easy to record data from the Ping sonar and gps onboard the vehicle, keeping a poor communications link from interfering with the quality of collected survey data. When connected, the extension displays a data preview that is intended to aide in survey grid spacing determination while logging at 2Hz. Happy motoring!",
+            "icon": "mdi-map-plus",
+            "company": "Blue Robotics",
+            "version": "0.5",
+            "webpage": "https://github.com/vshie/pingSurvey",
+            "api": "https://github.com/bluerobotics/BlueOS-docker",
+            "docker": "${{ secrets.DOCKER_USERNAME }}/simplepingsurvey:latest"
+          }
+          EOF
+
+      - name: Upload Extension Manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-manifest
+          path: extension.json 
