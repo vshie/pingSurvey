@@ -1641,14 +1641,18 @@
                 createOfflineTileLayer() {
                     // Create a custom tile layer that uses our offline-capable backend
                     const sourceConfig = this.mapSources[this.selectedMapSource];
-                    const tileLayer = L.tileLayer(`/tiles/{z}/{x}/{y}.png?source=${this.selectedMapSource}`, {
+                    const tileUrl = `/tiles/{z}/{x}/{y}.png?source=${this.selectedMapSource}`;
+                    console.log('Creating tile layer with URL:', tileUrl);
+                    
+                    const tileLayer = L.tileLayer(tileUrl, {
                         maxZoom: 19,
                         attribution: sourceConfig.attribution + ' (Offline Cached)',
                         errorTileUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7' // Transparent tile for missing tiles
                     });
                     
-                    // Refresh cache stats when tiles are loaded
-                    tileLayer.on('tileload', () => {
+                    // Add debugging for tile loading
+                    tileLayer.on('tileload', (event) => {
+                        console.log('Tile loaded successfully:', event.url);
                         // Debounce cache stats refresh to avoid too many requests
                         if (this.cacheStatsRefreshTimeout) {
                             clearTimeout(this.cacheStatsRefreshTimeout);
@@ -1656,6 +1660,10 @@
                         this.cacheStatsRefreshTimeout = setTimeout(() => {
                             this.getCacheStats();
                         }, 2000); // Refresh after 2 seconds of inactivity
+                    });
+                    
+                    tileLayer.on('tileerror', (event) => {
+                        console.error('Tile load error:', event.url, event);
                     });
                     
                     return tileLayer;
@@ -1727,6 +1735,7 @@
 
                 // Toggle polygon drawing mode
                 togglePolygonDrawing() {
+                    console.log('Toggle polygon drawing called, current state:', this.isDrawingPolygon);
                     if (this.isDrawingPolygon) {
                         // If already drawing, cancel it
                         this.cancelPolygonDrawing();
@@ -1737,6 +1746,7 @@
                 },
                 // Polygon drawing methods
                 startPolygonDrawing() {
+                    console.log('Starting polygon drawing');
                     this.isDrawingPolygon = true;
                     this.polygonVertices = [];
                     this.clearPolygonLayers();
@@ -1745,13 +1755,19 @@
                     this.map.on('click', this.addPolygonVertex);
                     
                     this.status = 'Click on the map to add vertices to your cache region polygon.';
+                    console.log('Polygon drawing started, click handler added');
                 },
                 
                 addPolygonVertex(event) {
-                    if (!this.isDrawingPolygon) return;
+                    console.log('Polygon vertex click detected:', event.latlng);
+                    if (!this.isDrawingPolygon) {
+                        console.log('Not in polygon drawing mode, ignoring click');
+                        return;
+                    }
                     
                     const latlng = event.latlng;
                     this.polygonVertices.push([latlng.lat, latlng.lng]);
+                    console.log('Added vertex:', [latlng.lat, latlng.lng], 'Total vertices:', this.polygonVertices.length);
                     
                     // Add vertex marker
                     const vertex = L.circleMarker(latlng, {
@@ -2070,6 +2086,7 @@
             },
             mounted() {
                 this.$nextTick(() => {
+                    console.log('Initializing map...');
                     // Initialize map after DOM is fully rendered
                     this.map = L.map('map', {
                         // These options improve mobile handling
@@ -2080,6 +2097,8 @@
                         touchZoom: 'center' // Center zoom on mobile touch
                     }).setView([9.2,-133], 10);
                     
+                    console.log('Map created, adding tile layer...');
+                    
                     // Enable dragging after a short delay (prevents scrolling issues)
                     if (L.Browser.mobile) {
                         setTimeout(() => {
@@ -2088,6 +2107,7 @@
                     }
                     
                     this.createOfflineTileLayer().addTo(this.map);
+                    console.log('Tile layer added to map');
                     
                     // Add scale control
                     L.control.scale({imperial: false}).addTo(this.map);
@@ -2099,6 +2119,11 @@
                         this.$forceUpdate();
                     });
                     
+                    // Add click listener for debugging
+                    this.map.on('click', (event) => {
+                        console.log('Map clicked at:', event.latlng);
+                    });
+                    
                     this.checkLoggingStatus();
                     this.getCacheStats();
                     this.getRecentCachedArea();
@@ -2107,6 +2132,8 @@
                     
                     // Load log files for bathymetry tab
                     this.loadLogFiles();
+                    
+                    console.log('Map initialization complete');
                 });
             }
         })
