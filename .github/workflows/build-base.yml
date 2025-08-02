@@ -4,9 +4,11 @@ on:
   push:
     paths:
       - 'Dockerfile.base'
+      - 'Dockerfile'
   pull_request:
     paths:
       - 'Dockerfile.base'
+      - 'Dockerfile'
   # Run manually
   workflow_dispatch:
   # Build base image weekly to keep it fresh
