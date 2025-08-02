@@ -1,4 +1,4 @@
-FROM simplepingsurvey-base:latest
+FROM vshie/simplepingsurvey-base:latest
 
 # Copy application files (these change most frequently)
 COPY contour_map_generator/ /app/contour_map_generator/
