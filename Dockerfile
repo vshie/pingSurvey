@@ -1,16 +1,30 @@
 FROM vshie/simplepingsurvey-base:latest
 
 # Install additional Python dependencies that might be missing from base image
+# Use system packages where possible and fallback strategies for ARM compatibility
 RUN pip install --no-cache-dir --prefer-binary \
-    scipy==1.11.1 \
-    numpy==1.24.3 \
-    pandas==2.0.3 \
-    shapely==2.0.1 \
     folium==0.12.1 \
     branca==0.4.2 \
     geojson==2.5.0 \
     mercantile==1.2.1 \
     Pillow==9.0.1
+
+# Install numpy and pandas (usually have ARM wheels)
+RUN pip install --no-cache-dir --prefer-binary \
+    numpy==1.24.3 \
+    pandas==2.0.3
+
+# Install shapely (has good ARM support)
+RUN pip install --no-cache-dir --prefer-binary shapely==2.0.1
+
+# Install scipy with fallback strategies for ARM
+RUN pip install --no-cache-dir --prefer-binary scipy==1.11.1 || \
+    (echo "scipy 1.11.1 wheel not available, trying 1.10.1" && \
+     pip install --no-cache-dir --prefer-binary scipy==1.10.1) || \
+    (echo "scipy 1.10.1 wheel not available, trying 1.9.3" && \
+     pip install --no-cache-dir --prefer-binary scipy==1.9.3) || \
+    (echo "No scipy wheels available, using system package" && \
+     echo "System scipy will be used from apt-get installation")
 
 # Copy application files (these change most frequently)
 COPY contour_map_generator/ /app/contour_map_generator/
