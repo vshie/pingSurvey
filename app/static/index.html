@@ -662,6 +662,54 @@
         
         .bathymetry-content {
             padding: 12px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        
+        .log-files-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .log-selection-panel {
+            margin-bottom: 16px;
+        }
+        
+        .contour-settings-panel {
+            margin-bottom: 16px;
+        }
+        
+        .generate-panel {
+            margin-top: 16px;
+        }
+        
+        /* Mobile responsiveness for bathymetry section */
+        @media (max-width: 768px) {
+            .bathymetry-content {
+                max-height: 500px;
+                padding: 8px;
+            }
+            
+            .log-files-list {
+                max-height: 200px;
+            }
+            
+            .bathymetry-header h3 {
+                font-size: 1.1rem;
+            }
+            
+            .settings-grid {
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+        }
+        
+        /* Map source selector on mobile */
+        @media (max-width: 600px) {
+            .v-select {
+                min-width: 120px !important;
+                font-size: 12px;
+            }
         }
     </style>
     <link href="/static/css/materialdesignicons.min.css" rel="stylesheet">
