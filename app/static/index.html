@@ -49,11 +49,11 @@
         }
         
         .content {
-            flex: 1;
+            padding: 16px;
             display: flex;
             flex-direction: column;
+            height: calc(100vh - 120px); /* Account for header */
             overflow: hidden;
-            position: relative; /* For floating buttons */
         }
         
         .map-container {
@@ -64,6 +64,7 @@
             border-radius: 8px;
             overflow: hidden;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+            flex-shrink: 0; /* Don't shrink the map */
         }
         
         #map {
@@ -197,11 +198,12 @@
         
         .controls {
             display: flex;
-            flex-wrap: wrap; /* Allow buttons to wrap on small screens */
-            gap: 8px;
-            padding: 12px;
-            background-color: #1E1E1E;
-            justify-content: space-between; /* Distribute sections evenly */
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-bottom: 16px;
+            flex-shrink: 0; /* Don't shrink the controls */
         }
         
         .controls-section {
@@ -213,17 +215,19 @@
         }
         
         .status-panel {
-            padding: 16px;
             background-color: #1E1E1E;
-            margin-top: 1px;
-            overflow-x: auto; /* Allow horizontal scrolling for the table */
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            flex-shrink: 0; /* Don't shrink the status panel */
         }
         
         .cache-progress-panel {
             padding: 12px;
             background-color: #1E1E1E;
             margin-top: 1px;
-            border-top: 2px solid #9C27B0;
+            margin-bottom: 16px;
+            flex-shrink: 0; /* Don't shrink the cache progress */
         }
         
         .progress-header {
@@ -529,14 +533,17 @@
         /* Bathymetry Tab Styles */
         .bathymetry-tab {
             flex: 1;
-            overflow-y: auto;
-            padding: 20px;
-            background-color: #121212;
+            display: flex;
+            flex-direction: column;
+            min-height: 0; /* Allow flex item to shrink */
+            overflow: hidden;
         }
         
         .bathymetry-container {
-            max-width: 1200px;
-            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            overflow: hidden;
         }
         
         .bathymetry-container h3 {
@@ -653,6 +660,7 @@
             background-color: rgba(0, 0, 0, 0.1);
             border-radius: 4px;
             margin-bottom: 8px;
+            flex-shrink: 0; /* Don't shrink the header */
         }
         
         .bathymetry-header h3 {
@@ -662,8 +670,9 @@
         
         .bathymetry-content {
             padding: 12px;
-            max-height: 600px;
+            flex: 1;
             overflow-y: auto;
+            min-height: 0; /* Allow flex item to shrink */
         }
         
         .log-files-list {
@@ -685,8 +694,11 @@
         
         /* Mobile responsiveness for bathymetry section */
         @media (max-width: 768px) {
+            .content {
+                height: calc(100vh - 100px); /* Smaller header on mobile */
+            }
+            
             .bathymetry-content {
-                max-height: 500px;
                 padding: 8px;
             }
             
