@@ -1,13 +1,14 @@
 name: Deploy BlueOS Extension Image (Custom)
 
 on:
-  push:
-    paths-ignore:
-      - 'Dockerfile.base'
-  pull_request:
-    paths-ignore:
-      - 'Dockerfile.base'
-  # Run manually
+  # Disabled - using main deploy.yml instead
+  # push:
+  #   paths-ignore:
+  #     - 'Dockerfile.base'
+  # pull_request:
+  #   paths-ignore:
+  #     - 'Dockerfile.base'
+  # Run manually only
   workflow_dispatch:
 
 jobs:
