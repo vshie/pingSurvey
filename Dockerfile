@@ -17,14 +17,11 @@ RUN pip install --no-cache-dir --prefer-binary \
 # Install shapely (has good ARM support)
 RUN pip install --no-cache-dir --prefer-binary shapely==2.0.1
 
-# Install scipy with fallback strategies for ARM
-RUN pip install --no-cache-dir --prefer-binary scipy==1.11.1 || \
-    (echo "scipy 1.11.1 wheel not available, trying 1.10.1" && \
-     pip install --no-cache-dir --prefer-binary scipy==1.10.1) || \
-    (echo "scipy 1.10.1 wheel not available, trying 1.9.3" && \
-     pip install --no-cache-dir --prefer-binary scipy==1.9.3) || \
-    (echo "No scipy wheels available, using system package" && \
-     echo "System scipy will be used from apt-get installation")
+# Note: scipy is already installed in the base image, no need to reinstall
+
+# Verify scipy is available from base image
+RUN python -c "import scipy; print(f'scipy version: {scipy.__version__}')" || \
+    (echo "ERROR: scipy not found in base image!" && exit 1)
 
 # Copy application files (these change most frequently)
 COPY contour_map_generator/ /app/contour_map_generator/

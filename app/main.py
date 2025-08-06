@@ -931,20 +931,7 @@ def generate_bathymetry_map(csv_file, primary_interval=5.0, secondary_interval=1
         sys.path.insert(0, contour_dir)
         
         # Import the interactive bathymetry map generator
-        try:
-            from interactive_bathymetry_map import create_interactive_map, load_and_process_data
-        except ImportError as e:
-            if "scipy" in str(e):
-                print(f"Scipy import error: {e}")
-                print("Attempting to install scipy...")
-                import subprocess
-                try:
-                    subprocess.check_call(["pip", "install", "scipy"])
-                    from interactive_bathymetry_map import create_interactive_map, load_and_process_data
-                except Exception as install_error:
-                    return {'success': False, 'error': f'Scipy installation failed: {install_error}. Please rebuild the base image.'}
-            else:
-                raise e
+        from interactive_bathymetry_map import create_interactive_map, load_and_process_data
         
         print(f"Generating bathymetry map for {csv_file}")
         print(f"Primary interval: {primary_interval}m, Secondary interval: {secondary_interval}m")
