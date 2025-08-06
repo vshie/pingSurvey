@@ -41,24 +41,29 @@ RUN pip install --no-cache-dir --prefer-binary \
     shapely==2.0.1
 
 # Method 2: Install scipy with multiple fallback strategies (most problematic package)
-RUN pip install --no-cache-dir --prefer-binary scipy==1.11.1 || \
-    (echo "scipy 1.11.1 wheel not available, trying 1.10.1" && \
-     pip install --no-cache-dir --prefer-binary scipy==1.10.1) || \
-    (echo "scipy 1.10.1 wheel not available, trying 1.9.3" && \
-     pip install --no-cache-dir --prefer-binary scipy==1.9.3) || \
-    (echo "No scipy wheels available, trying to compile from source" && \
-     pip install --no-cache-dir scipy) || \
-    (echo "All scipy installation methods failed, using system package" && \
-     echo "System scipy will be used from apt-get installation")
+# First, try to use the system scipy that was installed via apt-get
+RUN python3 -c "import scipy; print(f'System scipy version: {scipy.__version__}')" || \
+    (echo "System scipy not available, trying pip installation" && \
+     pip install --no-cache-dir --prefer-binary scipy==1.11.1 || \
+     (echo "scipy 1.11.1 wheel not available, trying 1.10.1" && \
+      pip install --no-cache-dir --prefer-binary scipy==1.10.1) || \
+     (echo "scipy 1.10.1 wheel not available, trying 1.9.3" && \
+      pip install --no-cache-dir --prefer-binary scipy==1.9.3) || \
+     (echo "No scipy wheels available, trying to compile from source" && \
+      pip install --no-cache-dir scipy) || \
+     (echo "All scipy installation methods failed" && exit 1))
 
-# Verify scipy installation
-RUN python -c "import scipy; print(f'scipy version: {scipy.__version__}')" || \
-    (echo "scipy import failed, checking system installation" && \
-     python3 -c "import scipy; print(f'scipy version: {scipy.__version__}')" || \
-     echo "scipy not available in Python environment")
+# Verify scipy installation with detailed error reporting
+RUN python3 -c "import scipy; print(f'scipy version: {scipy.__version__}')" || \
+    (echo "scipy import failed, checking what's installed:" && \
+     pip list | grep -i scipy || echo "No scipy found in pip list" && \
+     echo "Checking system packages:" && \
+     dpkg -l | grep -i scipy || echo "No scipy found in system packages" && \
+     exit 1)
 
-# Additional verification to ensure scipy is properly installed
-RUN python -c "from scipy.interpolate import griddata; print('scipy.interpolate import successful')"
+# Test specific scipy functionality that we need
+RUN python3 -c "from scipy.interpolate import griddata; print('scipy.interpolate import successful')" || \
+    (echo "scipy.interpolate import failed" && exit 1)
 
 # Method 3: Try to install contextily (satellite background) with fallback
 RUN pip install --no-cache-dir --prefer-binary contextily==1.2.0 || \
