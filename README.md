@@ -75,3 +75,4 @@ To create a simulation file from a previous survey, simply rename a downloaded d
 
 ## Discussion
 For more information and updates, visit the [Blue Robotics discussion thread](https://discuss.bluerobotics.com/t/alpha-release-simple-ping2-survey-extension/15794)
+# Trigger dev deployment with updated base image
