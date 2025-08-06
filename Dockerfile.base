@@ -57,6 +57,9 @@ RUN python -c "import scipy; print(f'scipy version: {scipy.__version__}')" || \
      python3 -c "import scipy; print(f'scipy version: {scipy.__version__}')" || \
      echo "scipy not available in Python environment")
 
+# Additional verification to ensure scipy is properly installed
+RUN python -c "from scipy.interpolate import griddata; print('scipy.interpolate import successful')"
+
 # Method 3: Try to install contextily (satellite background) with fallback
 RUN pip install --no-cache-dir --prefer-binary contextily==1.2.0 || \
     (echo "Contextily installation failed, using fallback method" && \
