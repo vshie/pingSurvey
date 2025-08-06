@@ -44,9 +44,14 @@ RUN pip install --no-cache-dir --prefer-binary \
     pandas==2.0.3 \
     shapely==2.0.1
 
-# Method 2: Use system scipy (installed via apt-get) - much more reliable than pip installation
-RUN python3 -c "import scipy; print(f'System scipy version: {scipy.__version__}')" || \
-    (echo "System scipy not available, this should not happen" && exit 1)
+# Method 2: Install scipy via pip with pre-built wheels (more reliable than compilation)
+RUN pip install --no-cache-dir --prefer-binary scipy==1.10.1 || \
+    (echo "scipy 1.10.1 wheel not available, trying 1.9.3" && \
+     pip install --no-cache-dir --prefer-binary scipy==1.9.3) || \
+    (echo "scipy 1.9.3 wheel not available, trying 1.8.1" && \
+     pip install --no-cache-dir --prefer-binary scipy==1.8.1) || \
+    (echo "No scipy wheels available, using system package" && \
+     echo "System scipy will be used from apt-get installation")
 
 # Verify scipy installation with detailed error reporting
 RUN python3 -c "import scipy; print(f'scipy version: {scipy.__version__}')" || \
@@ -54,11 +59,15 @@ RUN python3 -c "import scipy; print(f'scipy version: {scipy.__version__}')" || \
      pip list | grep -i scipy || echo "No scipy found in pip list" && \
      echo "Checking system packages:" && \
      dpkg -l | grep -i scipy || echo "No scipy found in system packages" && \
-     exit 1)
+     echo "Attempting to install scipy via pip..." && \
+     pip install --no-cache-dir scipy && \
+     python3 -c "import scipy; print(f'scipy version: {scipy.__version__}')")
 
 # Test specific scipy functionality that we need
 RUN python3 -c "from scipy.interpolate import griddata; print('scipy.interpolate import successful')" || \
-    (echo "scipy.interpolate import failed" && exit 1)
+    (echo "scipy.interpolate import failed, attempting to install..." && \
+     pip install --no-cache-dir scipy && \
+     python3 -c "from scipy.interpolate import griddata; print('scipy.interpolate import successful')")
 
 # Method 3: Try to install contextily (satellite background) with fallback
 RUN pip install --no-cache-dir --prefer-binary contextily==1.2.0 || \
