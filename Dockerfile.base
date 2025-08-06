@@ -1,6 +1,10 @@
 FROM python:3.11-slim
 
 # Install system dependencies for bathymetry map generation (ARM-optimized)
+# Note: This base image uses architecture-specific wheel sources:
+# - ARM32 (armv7): Uses piwheels.org (optimized for Raspberry Pi)
+# - ARM64 (armv8): Uses official scipy wheels from PyPI
+# - AMD64: Uses official scipy wheels from PyPI
 RUN apt-get update && \
     apt-get install -y \
     gcc \
@@ -44,14 +48,29 @@ RUN pip install --no-cache-dir --prefer-binary \
     pandas==2.0.3 \
     shapely==2.0.1
 
-# Method 2: Install scipy via pip with pre-built wheels (more reliable than compilation)
-RUN pip install --no-cache-dir --prefer-binary scipy==1.10.1 || \
-    (echo "scipy 1.10.1 wheel not available, trying 1.9.3" && \
-     pip install --no-cache-dir --prefer-binary scipy==1.9.3) || \
-    (echo "scipy 1.9.3 wheel not available, trying 1.8.1" && \
-     pip install --no-cache-dir --prefer-binary scipy==1.8.1) || \
-    (echo "No scipy wheels available, using system package" && \
-     echo "System scipy will be used from apt-get installation")
+# Method 2: Install scipy using architecture-specific wheel sources
+# For ARM32 (armv7): Use piwheels.org (optimized for Raspberry Pi)
+# For ARM64 (armv8): Use official scipy wheels
+# For AMD64: Use official scipy wheels
+RUN if [ "$(uname -m)" = "armv7l" ]; then \
+        echo "ARM32 detected - using piwheels for scipy" && \
+        pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ scipy==1.10.1 || \
+        (echo "scipy 1.10.1 not available on piwheels, trying 1.9.3" && \
+         pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ scipy==1.9.3) || \
+        (echo "scipy 1.9.3 not available on piwheels, trying 1.8.1" && \
+         pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ scipy==1.8.1) || \
+        (echo "No scipy wheels available on piwheels, falling back to compilation" && \
+         pip install --no-cache-dir scipy); \
+    else \
+        echo "ARM64/AMD64 detected - using official scipy wheels" && \
+        pip install --no-cache-dir --prefer-binary scipy==1.10.1 || \
+        (echo "scipy 1.10.1 wheel not available, trying 1.9.3" && \
+         pip install --no-cache-dir --prefer-binary scipy==1.9.3) || \
+        (echo "scipy 1.9.3 wheel not available, trying 1.8.1" && \
+         pip install --no-cache-dir --prefer-binary scipy==1.8.1) || \
+        (echo "No scipy wheels available, falling back to compilation" && \
+         pip install --no-cache-dir scipy); \
+    fi
 
 # Verify scipy installation with detailed error reporting
 RUN python3 -c "import scipy; print(f'scipy version: {scipy.__version__}')" || \
@@ -59,14 +78,22 @@ RUN python3 -c "import scipy; print(f'scipy version: {scipy.__version__}')" || \
      pip list | grep -i scipy || echo "No scipy found in pip list" && \
      echo "Checking system packages:" && \
      dpkg -l | grep -i scipy || echo "No scipy found in system packages" && \
-     echo "Attempting to install scipy via pip..." && \
-     pip install --no-cache-dir scipy && \
+     echo "Attempting to install scipy via pip with appropriate source..." && \
+     if [ "$(uname -m)" = "armv7l" ]; then \
+         pip install --no-cache-dir --index-url https://www.piwheels.org/simple/ scipy; \
+     else \
+         pip install --no-cache-dir scipy; \
+     fi && \
      python3 -c "import scipy; print(f'scipy version: {scipy.__version__}')")
 
 # Test specific scipy functionality that we need
 RUN python3 -c "from scipy.interpolate import griddata; print('scipy.interpolate import successful')" || \
     (echo "scipy.interpolate import failed, attempting to install..." && \
-     pip install --no-cache-dir scipy && \
+     if [ "$(uname -m)" = "armv7l" ]; then \
+         pip install --no-cache-dir --index-url https://www.piwheels.org/simple/ scipy; \
+     else \
+         pip install --no-cache-dir scipy; \
+     fi && \
      python3 -c "from scipy.interpolate import griddata; print('scipy.interpolate import successful')")
 
 # Method 3: Skip contextily for now to speed up base image build (can be added later if needed)
