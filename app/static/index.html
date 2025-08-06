@@ -543,7 +543,8 @@
             display: flex;
             flex-direction: column;
             height: 100%;
-            overflow: hidden;
+            overflow-y: auto; /* Allow vertical scrolling */
+            padding-bottom: 20px; /* Add padding at bottom for button visibility */
         }
         
         .bathymetry-container h3 {
@@ -673,6 +674,7 @@
             flex: 1;
             overflow-y: auto;
             min-height: 0; /* Allow flex item to shrink */
+            padding-bottom: 40px; /* Extra padding for button visibility */
         }
         
         .log-files-list {

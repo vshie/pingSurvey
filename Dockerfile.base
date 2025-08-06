@@ -46,8 +46,16 @@ RUN pip install --no-cache-dir --prefer-binary scipy==1.11.1 || \
      pip install --no-cache-dir --prefer-binary scipy==1.10.1) || \
     (echo "scipy 1.10.1 wheel not available, trying 1.9.3" && \
      pip install --no-cache-dir --prefer-binary scipy==1.9.3) || \
-    (echo "No scipy wheels available, using system package" && \
+    (echo "No scipy wheels available, trying to compile from source" && \
+     pip install --no-cache-dir scipy) || \
+    (echo "All scipy installation methods failed, using system package" && \
      echo "System scipy will be used from apt-get installation")
+
+# Verify scipy installation
+RUN python -c "import scipy; print(f'scipy version: {scipy.__version__}')" || \
+    (echo "scipy import failed, checking system installation" && \
+     python3 -c "import scipy; print(f'scipy version: {scipy.__version__}')" || \
+     echo "scipy not available in Python environment")
 
 # Method 3: Try to install contextily (satellite background) with fallback
 RUN pip install --no-cache-dir --prefer-binary contextily==1.2.0 || \
