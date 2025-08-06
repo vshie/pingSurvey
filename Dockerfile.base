@@ -21,6 +21,10 @@ RUN apt-get update && \
     proj-bin \
     libgdal-dev \
     gdal-bin \
+    # OpenBLAS dependencies for scipy compilation
+    libopenblas-dev \
+    liblapack-dev \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # Upgrade pip and install build tools
@@ -40,18 +44,9 @@ RUN pip install --no-cache-dir --prefer-binary \
     pandas==2.0.3 \
     shapely==2.0.1
 
-# Method 2: Install scipy with multiple fallback strategies (most problematic package)
-# First, try to use the system scipy that was installed via apt-get
+# Method 2: Use system scipy (installed via apt-get) - much more reliable than pip installation
 RUN python3 -c "import scipy; print(f'System scipy version: {scipy.__version__}')" || \
-    (echo "System scipy not available, trying pip installation" && \
-     pip install --no-cache-dir --prefer-binary scipy==1.11.1 || \
-     (echo "scipy 1.11.1 wheel not available, trying 1.10.1" && \
-      pip install --no-cache-dir --prefer-binary scipy==1.10.1) || \
-     (echo "scipy 1.10.1 wheel not available, trying 1.9.3" && \
-      pip install --no-cache-dir --prefer-binary scipy==1.9.3) || \
-     (echo "No scipy wheels available, trying to compile from source" && \
-      pip install --no-cache-dir scipy) || \
-     (echo "All scipy installation methods failed" && exit 1))
+    (echo "System scipy not available, this should not happen" && exit 1)
 
 # Verify scipy installation with detailed error reporting
 RUN python3 -c "import scipy; print(f'scipy version: {scipy.__version__}')" || \
