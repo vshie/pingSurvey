@@ -69,11 +69,12 @@ RUN python3 -c "from scipy.interpolate import griddata; print('scipy.interpolate
      pip install --no-cache-dir scipy && \
      python3 -c "from scipy.interpolate import griddata; print('scipy.interpolate import successful')")
 
-# Method 3: Try to install contextily (satellite background) with fallback
-RUN pip install --no-cache-dir --prefer-binary contextily==1.2.0 || \
-    (echo "Contextily installation failed, using fallback method" && \
-     pip install --no-deps contextily==1.2.0 || \
-     echo "Contextily not available - maps will work without satellite background")
+# Method 3: Skip contextily for now to speed up base image build (can be added later if needed)
+# RUN pip install --no-cache-dir --prefer-binary contextily==1.2.0 || \
+#     (echo "Contextily installation failed, using fallback method" && \
+#      pip install --no-deps contextily==1.2.0 || \
+#      echo "Contextily not available - maps will work without satellite background")
+RUN echo "Contextily installation skipped for faster base image build"
 
 # Create app directory structure
 RUN mkdir -p /app/logs /app/static /app/contour_map_generator
