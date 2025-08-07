@@ -113,4 +113,5 @@ WORKDIR /app
 # Expose port
 EXPOSE 5420/tcp
 
-# This base image is ready for application code to be copied in 
+# This base image is ready for application code to be copied in
+# Trigger base image rebuild with multi-platform manifest 
