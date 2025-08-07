@@ -1,14 +1,8 @@
 FROM vshie/simplepingsurvey-base:latest
-# Using updated base image with multi-platform manifest
+# Using updated base image with multi-platform manifest and compatible package versions
 
-# Note: Most packages are installed in the base image, but we need to verify and handle any missing ones
-# System packages (numpy, pandas) are installed via apt-get and may need pip equivalents for some use cases
-
-# Verify and install any missing packages
-RUN python3 -c "import numpy, scipy, folium, shapely; print('Core packages available')" && \
-    python3 -c "import pandas; print('pandas available')" || \
-    (echo "pandas not available via python3, installing via pip" && \
-     pip install --no-cache-dir --prefer-binary pandas==2.0.3)
+# Verify all required packages are available from base image
+RUN python3 -c "import numpy, pandas, folium, shapely, scipy; print('All required packages available from base image')"
 
 # Copy application files (these change most frequently)
 COPY contour_map_generator/ /app/contour_map_generator/
