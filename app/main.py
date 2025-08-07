@@ -677,6 +677,7 @@ def get_recent_cached_area():
 def status():
     return {"logging_active": logging_active}
 
+
 @app.route('/debug/logs')
 def debug_logs():
     """Debug endpoint to check logs directory status."""
