@@ -36,37 +36,13 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build and push base image (AMD64)
+      - name: Build and push base image (Multi-platform)
         uses: docker/build-push-action@v5
-        timeout-minutes: 360  # 6 hours timeout per architecture
+        timeout-minutes: 720  # 12 hours timeout for all architectures
         with:
           context: .
           file: ./Dockerfile.base
-          platforms: linux/amd64
-          push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/simplepingsurvey-base:latest
-          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/simplepingsurvey-base:latest
-          cache-to: type=inline
-
-      - name: Build and push base image (ARM64)
-        uses: docker/build-push-action@v5
-        timeout-minutes: 360  # 6 hours timeout per architecture
-        with:
-          context: .
-          file: ./Dockerfile.base
-          platforms: linux/arm64
-          push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/simplepingsurvey-base:latest
-          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/simplepingsurvey-base:latest
-          cache-to: type=inline
-
-      - name: Build and push base image (ARM32)
-        uses: docker/build-push-action@v5
-        timeout-minutes: 360  # 6 hours timeout per architecture
-        with:
-          context: .
-          file: ./Dockerfile.base
-          platforms: linux/arm/v7
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
           push: true
           tags: ${{ secrets.DOCKER_USERNAME }}/simplepingsurvey-base:latest
           cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/simplepingsurvey-base:latest

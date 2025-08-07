@@ -5,7 +5,7 @@
 
 echo "Building base image..."
 
-# Build the base image for all platforms
+# Build the base image for all platforms with proper multi-platform manifest
 docker buildx build \
   --platform linux/amd64,linux/arm64,linux/arm/v7 \
   -f Dockerfile.base \
