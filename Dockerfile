@@ -1,4 +1,5 @@
 FROM vshie/simplepingsurvey-base:latest
+# Using updated base image with multi-platform manifest
 
 # Install additional Python dependencies that might be missing from base image
 # Use system packages where possible and fallback strategies for ARM compatibility
