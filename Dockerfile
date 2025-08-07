@@ -1,28 +1,13 @@
 FROM vshie/simplepingsurvey-base:latest
 # Using updated base image with multi-platform manifest
 
-# Install additional Python dependencies that might be missing from base image
-# Use system packages where possible and fallback strategies for ARM compatibility
-RUN pip install --no-cache-dir --prefer-binary \
-    folium==0.12.1 \
-    branca==0.4.2 \
-    geojson==2.5.0 \
-    mercantile==1.2.1 \
-    Pillow==9.0.1
+# Note: All required packages are already installed in the base image:
+# - numpy, pandas (via apt-get)
+# - folium, branca, geojson, mercantile, Pillow, shapely (via pip)
+# - scipy (architecture-specific installation)
 
-# Install numpy and pandas (usually have ARM wheels)
-RUN pip install --no-cache-dir --prefer-binary \
-    numpy==1.24.3 \
-    pandas==2.0.3
-
-# Install shapely (has good ARM support)
-RUN pip install --no-cache-dir --prefer-binary shapely==2.0.1
-
-# Note: scipy is already installed in the base image, no need to reinstall
-
-# Verify scipy is available from base image (temporarily disabled during base image rebuild)
-# RUN python -c "import scipy; print(f'scipy version: {scipy.__version__}')" || \
-#     (echo "ERROR: scipy not found in base image!" && exit 1)
+# Verify key packages are available from base image
+RUN python -c "import numpy, pandas, folium, shapely, scipy; print('All required packages available from base image')"
 
 # Copy application files (these change most frequently)
 COPY contour_map_generator/ /app/contour_map_generator/
