@@ -12,11 +12,9 @@ RUN apt-get update && \
     python3-dev \
     python3-pip \
     python3-venv \
-    # Remove system numpy/pandas to avoid version conflicts
-    # python3-pandas \
-    # python3-numpy \
-    python3-scipy \
-    python3-matplotlib \
+    # Avoid mixing system python scientific libs with pip ones
+    # python3-scipy \
+    # python3-matplotlib \
     python3-pil \
     python3-requests \
     python3-shapely \
@@ -26,7 +24,7 @@ RUN apt-get update && \
     proj-bin \
     libgdal-dev \
     gdal-bin \
-    # OpenBLAS dependencies for scipy compilation
+    # OpenBLAS dependencies for scipy
     libopenblas-dev \
     liblapack-dev \
     pkg-config \
@@ -65,11 +63,8 @@ RUN if [ "$(uname -m)" = "armv7l" ]; then \
          pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ matplotlib==3.7.1) || \
         (echo "matplotlib 3.7.1 not available on piwheels, trying 3.7.0" && \
          pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ matplotlib==3.7.0) || \
-        (echo "No matplotlib wheels available on piwheels, using system matplotlib" && \
-         echo "System matplotlib should be available via apt-get" && \
-         python3 -c "import matplotlib; print(f'Using system matplotlib: {matplotlib.__version__}')" || \
-         (echo "System matplotlib not available, falling back to pip compilation" && \
-          pip install --no-cache-dir matplotlib==3.7.2)); \
+        (echo "No matplotlib wheels available on piwheels, falling back to pip" && \
+         pip install --no-cache-dir matplotlib==3.7.2); \
     else \
         echo "ARM64/AMD64 detected - using official matplotlib wheels" && \
         pip install --no-cache-dir --prefer-binary matplotlib==3.7.2 || \
@@ -81,86 +76,29 @@ RUN if [ "$(uname -m)" = "armv7l" ]; then \
          pip install --no-cache-dir matplotlib==3.7.2); \
     fi
 
-# Method 2: Install scipy using architecture-specific wheel sources
-# For ARM32 (armv7): Use piwheels.org with newer versions that have wheels
-# For ARM64 (armv8): Use official scipy wheels
-# For AMD64: Use official scipy wheels
+# Install scipy using architecture-specific wheel sources (PINNED to 1.11.x)
+# Pin to 1.11.x across all arch to avoid pulling NumPy 2.x wheels
 RUN if [ "$(uname -m)" = "armv7l" ]; then \
-        echo "ARM32 detected - trying piwheels for scipy" && \
-        # Try newer versions first that might have ARM32 wheels \
-        pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ scipy==1.14.0 || \
-        (echo "scipy 1.14.0 not available on piwheels, trying 1.13.0" && \
-         pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ scipy==1.13.0) || \
-        (echo "scipy 1.13.0 not available on piwheels, trying 1.12.0" && \
-         pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ scipy==1.12.0) || \
-        (echo "scipy 1.12.0 not available on piwheels, trying 1.11.4" && \
-         pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ scipy==1.11.4) || \
-        (echo "No scipy wheels available on piwheels, using system scipy" && \
-         echo "System scipy should be available via apt-get" && \
-         python3 -c "import scipy; print(f'Using system scipy: {scipy.__version__}')" || \
-         (echo "System scipy not available, this is unexpected!" && exit 1)); \
+        echo "ARM32 detected - using piwheels for scipy 1.11.x" && \
+        pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ scipy==1.11.4 || \
+        pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ scipy==1.11.3 || \
+        pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ scipy==1.11.2 || \
+        pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ scipy==1.11.1; \
     else \
-        echo "ARM64/AMD64 detected - using official scipy wheels" && \
-        pip install --no-cache-dir --prefer-binary scipy==1.14.0 || \
-        (echo "scipy 1.14.0 wheel not available, trying 1.13.0" && \
-         pip install --no-cache-dir --prefer-binary scipy==1.13.0) || \
-        (echo "scipy 1.13.0 wheel not available, trying 1.12.0" && \
-         pip install --no-cache-dir --prefer-binary scipy==1.12.0) || \
-        (echo "scipy 1.12.0 wheel not available, trying 1.11.4" && \
-         pip install --no-cache-dir --prefer-binary scipy==1.11.4) || \
-        (echo "No scipy wheels available, falling back to compilation" && \
-         pip install --no-cache-dir scipy); \
+        echo "ARM64/AMD64 detected - using official scipy wheels 1.11.x" && \
+        pip install --no-cache-dir --prefer-binary scipy==1.11.4 || \
+        pip install --no-cache-dir --prefer-binary scipy==1.11.3 || \
+        pip install --no-cache-dir --prefer-binary scipy==1.11.2 || \
+        pip install --no-cache-dir --prefer-binary scipy==1.11.1; \
     fi
 
-# Verify scipy installation with detailed error reporting
-RUN python3 -c "import scipy; print(f'scipy version: {scipy.__version__}')" || \
-    (echo "scipy import failed, checking what's installed:" && \
-     pip list | grep -i scipy || echo "No scipy found in pip list" && \
-     echo "Checking system packages:" && \
-     dpkg -l | grep -i scipy || echo "No scipy found in system packages" && \
-     echo "Attempting to install scipy via pip with appropriate source..." && \
-     if [ "$(uname -m)" = "armv7l" ]; then \
-         echo "ARM32: Trying to install scipy via pip with piwheels..." && \
-         pip install --no-cache-dir --index-url https://www.piwheels.org/simple/ scipy==1.14.0 || \
-         pip install --no-cache-dir --index-url https://www.piwheels.org/simple/ scipy==1.13.0 || \
-         pip install --no-cache-dir --index-url https://www.piwheels.org/simple/ scipy==1.12.0 || \
-         pip install --no-cache-dir --index-url https://www.piwheels.org/simple/ scipy==1.11.4 || \
-         (echo "No piwheels scipy available, trying system scipy" && \
-          python3 -c "import scipy; print(f'system scipy version: {scipy.__version__}')"); \
-     else \
-         pip install --no-cache-dir scipy==1.14.0 || \
-         pip install --no-cache-dir scipy==1.13.0 || \
-         pip install --no-cache-dir scipy==1.12.0 || \
-         pip install --no-cache-dir scipy==1.11.4 || \
-         pip install --no-cache-dir scipy; \
-     fi && \
-     python3 -c "import scipy; print(f'scipy version: {scipy.__version__}')")
+# FINAL PIN: ensure NumPy remains at 1.24.x after scipy/matplotlib installs
+RUN pip install --no-cache-dir --prefer-binary numpy==1.24.3
 
-# Test specific scipy functionality that we need
-RUN python3 -c "from scipy.interpolate import griddata; print('scipy.interpolate import successful')" || \
-    (echo "scipy.interpolate import failed, attempting to install..." && \
-     if [ "$(uname -m)" = "armv7l" ]; then \
-         echo "ARM32: Trying to install scipy via pip with piwheels..." && \
-         pip install --no-cache-dir --index-url https://www.piwheels.org/simple/ scipy==1.14.0 || \
-         pip install --no-cache-dir --index-url https://www.piwheels.org/simple/ scipy==1.13.0 || \
-         pip install --no-cache-dir --index-url https://www.piwheels.org/simple/ scipy==1.12.0 || \
-         pip install --no-cache-dir --index-url https://www.piwheels.org/simple/ scipy==1.11.4 || \
-         (echo "No piwheels scipy available, trying system scipy" && \
-          python3 -c "from scipy.interpolate import griddata; print('system scipy.interpolate import successful')"); \
-     else \
-         pip install --no-cache-dir scipy==1.14.0 || \
-         pip install --no-cache-dir scipy==1.13.0 || \
-         pip install --no-cache-dir scipy==1.12.0 || \
-         pip install --no-cache-dir scipy==1.11.4 || \
-         pip install --no-cache-dir scipy; \
-     fi && \
-     python3 -c "from scipy.interpolate import griddata; print('scipy.interpolate import successful')")
+# Verify scipy installation with detailed error reporting
+RUN python3 -c "import numpy, pandas, scipy; print(f'numpy: {numpy.__version__}, pandas: {pandas.__version__}, scipy: {scipy.__version__}')"
 
 # Method 3: Skip contextily for now to speed up base image build (can be added later if needed)
-# RUN pip install --no-cache-dir --prefer-binary contextily==1.2.0 || \
-#     (echo "Contextily installation failed, using fallback method" && \
-#      pip install --no-deps contextily==1.2.0 || \
-#      echo "Contextily not available - maps will work without satellite background")
 RUN echo "Contextily installation skipped for faster base image build"
 
 # Create app directory structure
