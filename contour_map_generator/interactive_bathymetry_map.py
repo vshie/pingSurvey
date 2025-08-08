@@ -22,8 +22,17 @@ def load_and_process_data(csv_file):
     print("Loading bathymetry data...")
     df = pd.read_csv(csv_file)
     
+    # Handle different column names for depth/distance
+    depth_column = None
+    if 'Depth (cm)' in df.columns:
+        depth_column = 'Depth (cm)'
+    elif 'Distance (cm)' in df.columns:
+        depth_column = 'Distance (cm)'
+    else:
+        raise ValueError("No 'Depth (cm)' or 'Distance (cm)' column found in CSV file")
+    
     # Convert depth from cm to meters
-    df['Depth_m'] = df['Depth (cm)'] / 100.0
+    df['Depth_m'] = df[depth_column] / 100.0
     
     # Filter out any invalid coordinates
     df = df.dropna(subset=['Latitude', 'Longitude', 'Depth_m'])
