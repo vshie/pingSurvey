@@ -173,4 +173,4 @@ WORKDIR /app
 EXPOSE 5420/tcp
 
 # This base image is ready for application code to be copied in
-# Trigger base image rebuild with multi-platform manifest 
+# Trigger base image rebuild with NumPy/pandas compatibility fix 
