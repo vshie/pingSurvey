@@ -37,9 +37,14 @@ RUN pip install --upgrade pip setuptools wheel
 
 # Install Python dependencies with compatible versions
 # Use NumPy 1.x to avoid compatibility issues with shapely and other packages
+# Install numpy first, then pandas to ensure compatibility
+RUN pip install --no-cache-dir --prefer-binary numpy==1.24.3
+
+# Install pandas with compatible numpy version
+RUN pip install --no-cache-dir --prefer-binary pandas==2.0.3
+
+# Install other dependencies
 RUN pip install --no-cache-dir --prefer-binary \
-    numpy==1.24.3 \
-    pandas==2.0.3 \
     flask==2.3.3 \
     requests==2.28.2 \
     folium==0.12.1 \
