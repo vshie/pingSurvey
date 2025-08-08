@@ -2,7 +2,7 @@ FROM vshie/simplepingsurvey-base:latest
 # Using updated base image with multi-platform manifest and compatible package versions
 
 # Verify all required packages are available from base image
-RUN python3 -c "import numpy, pandas, folium, shapely, scipy; print('All required packages available from base image')"
+RUN python3 -c "import numpy, pandas, folium, shapely, scipy, matplotlib; print('All required packages available from base image')"
 
 # Copy application files (these change most frequently)
 COPY contour_map_generator/ /app/contour_map_generator/
