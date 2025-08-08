@@ -47,8 +47,34 @@ RUN pip install --no-cache-dir --prefer-binary \
     geojson==2.5.0 \
     mercantile==1.2.1 \
     Pillow==9.0.1 \
-    shapely==2.0.1 \
-    matplotlib==3.7.2
+    shapely==2.0.1
+
+# Install matplotlib using architecture-specific wheel sources
+# For ARM32 (armv7): Use piwheels.org with optimized wheels
+# For ARM64 (armv8): Use official matplotlib wheels
+# For AMD64: Use official matplotlib wheels
+RUN if [ "$(uname -m)" = "armv7l" ]; then \
+        echo "ARM32 detected - trying piwheels for matplotlib" && \
+        pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ matplotlib==3.7.2 || \
+        (echo "matplotlib 3.7.2 not available on piwheels, trying 3.7.1" && \
+         pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ matplotlib==3.7.1) || \
+        (echo "matplotlib 3.7.1 not available on piwheels, trying 3.7.0" && \
+         pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ matplotlib==3.7.0) || \
+        (echo "No matplotlib wheels available on piwheels, using system matplotlib" && \
+         echo "System matplotlib should be available via apt-get" && \
+         python3 -c "import matplotlib; print(f'Using system matplotlib: {matplotlib.__version__}')" || \
+         (echo "System matplotlib not available, falling back to pip compilation" && \
+          pip install --no-cache-dir matplotlib==3.7.2)); \
+    else \
+        echo "ARM64/AMD64 detected - using official matplotlib wheels" && \
+        pip install --no-cache-dir --prefer-binary matplotlib==3.7.2 || \
+        (echo "matplotlib 3.7.2 wheel not available, trying 3.7.1" && \
+         pip install --no-cache-dir --prefer-binary matplotlib==3.7.1) || \
+        (echo "matplotlib 3.7.1 wheel not available, trying 3.7.0" && \
+         pip install --no-cache-dir --prefer-binary matplotlib==3.7.0) || \
+        (echo "No matplotlib wheels available, falling back to compilation" && \
+         pip install --no-cache-dir matplotlib==3.7.2); \
+    fi
 
 # Method 2: Install scipy using architecture-specific wheel sources
 # For ARM32 (armv7): Use piwheels.org with newer versions that have wheels
