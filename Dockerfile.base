@@ -50,28 +50,32 @@ RUN pip install --no-cache-dir --prefer-binary \
     shapely==2.0.1
 
 # Method 2: Install scipy using architecture-specific wheel sources
-# Use newer scipy versions that have proper ARM wheels available
-# Based on piwheels availability: 1.11.1+ are available
+# For ARM32 (armv7): Use piwheels.org with newer versions that have wheels
+# For ARM64 (armv8): Use official scipy wheels
+# For AMD64: Use official scipy wheels
 RUN if [ "$(uname -m)" = "armv7l" ]; then \
-        echo "ARM32 detected - using piwheels for scipy" && \
-        pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ scipy==1.11.4 || \
-        (echo "scipy 1.11.4 not available on piwheels, trying 1.11.3" && \
-         pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ scipy==1.11.3) || \
-        (echo "scipy 1.11.3 not available on piwheels, trying 1.11.2" && \
-         pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ scipy==1.11.2) || \
-        (echo "scipy 1.11.2 not available on piwheels, trying 1.11.1" && \
-         pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ scipy==1.11.1) || \
-        (echo "No scipy wheels available on piwheels, falling back to compilation" && \
-         pip install --no-cache-dir scipy); \
+        echo "ARM32 detected - trying piwheels for scipy" && \
+        # Try newer versions first that might have ARM32 wheels \
+        pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ scipy==1.14.0 || \
+        (echo "scipy 1.14.0 not available on piwheels, trying 1.13.0" && \
+         pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ scipy==1.13.0) || \
+        (echo "scipy 1.13.0 not available on piwheels, trying 1.12.0" && \
+         pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ scipy==1.12.0) || \
+        (echo "scipy 1.12.0 not available on piwheels, trying 1.11.4" && \
+         pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ scipy==1.11.4) || \
+        (echo "No scipy wheels available on piwheels, using system scipy" && \
+         echo "System scipy should be available via apt-get" && \
+         python3 -c "import scipy; print(f'Using system scipy: {scipy.__version__}')" || \
+         (echo "System scipy not available, this is unexpected!" && exit 1)); \
     else \
         echo "ARM64/AMD64 detected - using official scipy wheels" && \
-        pip install --no-cache-dir --prefer-binary scipy==1.11.4 || \
-        (echo "scipy 1.11.4 wheel not available, trying 1.11.3" && \
-         pip install --no-cache-dir --prefer-binary scipy==1.11.3) || \
-        (echo "scipy 1.11.3 wheel not available, trying 1.11.2" && \
-         pip install --no-cache-dir --prefer-binary scipy==1.11.2) || \
-        (echo "scipy 1.11.2 wheel not available, trying 1.11.1" && \
-         pip install --no-cache-dir --prefer-binary scipy==1.11.1) || \
+        pip install --no-cache-dir --prefer-binary scipy==1.14.0 || \
+        (echo "scipy 1.14.0 wheel not available, trying 1.13.0" && \
+         pip install --no-cache-dir --prefer-binary scipy==1.13.0) || \
+        (echo "scipy 1.13.0 wheel not available, trying 1.12.0" && \
+         pip install --no-cache-dir --prefer-binary scipy==1.12.0) || \
+        (echo "scipy 1.12.0 wheel not available, trying 1.11.4" && \
+         pip install --no-cache-dir --prefer-binary scipy==1.11.4) || \
         (echo "No scipy wheels available, falling back to compilation" && \
          pip install --no-cache-dir scipy); \
     fi
@@ -84,9 +88,19 @@ RUN python3 -c "import scipy; print(f'scipy version: {scipy.__version__}')" || \
      dpkg -l | grep -i scipy || echo "No scipy found in system packages" && \
      echo "Attempting to install scipy via pip with appropriate source..." && \
      if [ "$(uname -m)" = "armv7l" ]; then \
-         pip install --no-cache-dir --index-url https://www.piwheels.org/simple/ scipy==1.11.4; \
+         echo "ARM32: Trying to install scipy via pip with piwheels..." && \
+         pip install --no-cache-dir --index-url https://www.piwheels.org/simple/ scipy==1.14.0 || \
+         pip install --no-cache-dir --index-url https://www.piwheels.org/simple/ scipy==1.13.0 || \
+         pip install --no-cache-dir --index-url https://www.piwheels.org/simple/ scipy==1.12.0 || \
+         pip install --no-cache-dir --index-url https://www.piwheels.org/simple/ scipy==1.11.4 || \
+         (echo "No piwheels scipy available, trying system scipy" && \
+          python3 -c "import scipy; print(f'system scipy version: {scipy.__version__}')"); \
      else \
-         pip install --no-cache-dir scipy==1.11.4; \
+         pip install --no-cache-dir scipy==1.14.0 || \
+         pip install --no-cache-dir scipy==1.13.0 || \
+         pip install --no-cache-dir scipy==1.12.0 || \
+         pip install --no-cache-dir scipy==1.11.4 || \
+         pip install --no-cache-dir scipy; \
      fi && \
      python3 -c "import scipy; print(f'scipy version: {scipy.__version__}')")
 
@@ -94,9 +108,19 @@ RUN python3 -c "import scipy; print(f'scipy version: {scipy.__version__}')" || \
 RUN python3 -c "from scipy.interpolate import griddata; print('scipy.interpolate import successful')" || \
     (echo "scipy.interpolate import failed, attempting to install..." && \
      if [ "$(uname -m)" = "armv7l" ]; then \
-         pip install --no-cache-dir --index-url https://www.piwheels.org/simple/ scipy==1.11.4; \
+         echo "ARM32: Trying to install scipy via pip with piwheels..." && \
+         pip install --no-cache-dir --index-url https://www.piwheels.org/simple/ scipy==1.14.0 || \
+         pip install --no-cache-dir --index-url https://www.piwheels.org/simple/ scipy==1.13.0 || \
+         pip install --no-cache-dir --index-url https://www.piwheels.org/simple/ scipy==1.12.0 || \
+         pip install --no-cache-dir --index-url https://www.piwheels.org/simple/ scipy==1.11.4 || \
+         (echo "No piwheels scipy available, trying system scipy" && \
+          python3 -c "from scipy.interpolate import griddata; print('system scipy.interpolate import successful')"); \
      else \
-         pip install --no-cache-dir scipy==1.11.4; \
+         pip install --no-cache-dir scipy==1.14.0 || \
+         pip install --no-cache-dir scipy==1.13.0 || \
+         pip install --no-cache-dir scipy==1.12.0 || \
+         pip install --no-cache-dir scipy==1.11.4 || \
+         pip install --no-cache-dir scipy; \
      fi && \
      python3 -c "from scipy.interpolate import griddata; print('scipy.interpolate import successful')")
 
