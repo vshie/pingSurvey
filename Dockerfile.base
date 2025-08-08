@@ -47,7 +47,8 @@ RUN pip install --no-cache-dir --prefer-binary \
     geojson==2.5.0 \
     mercantile==1.2.1 \
     Pillow==9.0.1 \
-    shapely==2.0.1
+    shapely==2.0.1 \
+    matplotlib==3.7.2
 
 # Method 2: Install scipy using architecture-specific wheel sources
 # For ARM32 (armv7): Use piwheels.org with newer versions that have wheels

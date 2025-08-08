@@ -42,13 +42,19 @@ def load_and_process_data(csv_file):
     df = df[df['Depth_m'] >= 5.0]
     
     # Filter out low confidence measurements (less than 95%)
+    confidence_column = None
     if 'Confidence' in df.columns:
+        confidence_column = 'Confidence'
+    elif 'Confidence (%)' in df.columns:
+        confidence_column = 'Confidence (%)'
+    
+    if confidence_column:
         original_count = len(df)
-        df = df[df['Confidence'] >= 95.0]
+        df = df[df[confidence_column] >= 95.0]
         confidence_filtered = original_count - len(df)
         print(f"Low confidence points (<95%) removed: {confidence_filtered}")
     else:
-        print("No 'Confidence' column found in CSV - skipping confidence filter")
+        print("No 'Confidence' or 'Confidence (%)' column found in CSV - skipping confidence filter")
     
     # Calculate average location
     avg_lat = df['Latitude'].mean()
