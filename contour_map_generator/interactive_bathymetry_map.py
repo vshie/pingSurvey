@@ -176,16 +176,12 @@ def extract_contour_data_from_python_map(lats, lons, depths, primary_interval=5.
     # Create contour levels (same as Python version)
     min_depth = np.nanmin(depth_grid)
     max_depth = np.nanmax(depth_grid)
-    
-    # Create primary interval contours (yellow)
-    levels_primary = np.arange(np.floor(min_depth / primary_interval) * primary_interval, 
-                              np.ceil(max_depth / primary_interval) * primary_interval + primary_interval, 
-                              primary_interval)
-    
-    # Create secondary interval contours (red)
-    levels_secondary = np.arange(np.floor(min_depth / secondary_interval) * secondary_interval, 
-                                np.ceil(max_depth / secondary_interval) * secondary_interval + secondary_interval, 
-                                secondary_interval)
+
+    # Create primary interval contours (yellow) safely
+    levels_primary = _build_levels(min_depth, max_depth, primary_interval, max_levels=1000)
+
+    # Create secondary interval contours (red) safely
+    levels_secondary = _build_levels(min_depth, max_depth, secondary_interval, max_levels=1500)
     
     # Create figure and axis exactly like PNG version
     fig, ax = plt.subplots(1, 1, figsize=(15, 12))
@@ -398,6 +394,53 @@ def calculate_optimal_zoom(lats, lons, max_zoom=20):
     
     return zoom
 
+def _safe_float(value, default):
+    try:
+        v = float(value)
+        if not np.isfinite(v) or v <= 0:
+            return default
+        return v
+    except Exception:
+        return default
+
+
+def _build_levels(min_v: float, max_v: float, step: float, max_levels: int = 1000):
+    """Create contour levels safely. Falls back to linspace if arange length is invalid.
+    Ensures finite values, positive step, and caps total number of levels.
+    """
+    if not (np.isfinite(min_v) and np.isfinite(max_v)):
+        # default small range
+        min_v, max_v = 0.0, step
+    if min_v == max_v:
+        min_v -= step
+        max_v += step
+
+    step = _safe_float(step, max(1.0, (max_v - min_v) / 20.0))
+
+    start = np.floor(min_v / step) * step
+    stop = np.ceil(max_v / step) * step + step
+
+    span = stop - start
+    if not np.isfinite(span) or span <= 0:
+        # Degenerate span, fallback to small range
+        start, stop = min_v, max_v + step
+        span = stop - start
+
+    est_levels = span / step
+    if (not np.isfinite(est_levels)) or est_levels <= 0:
+        # Fallback to a fixed small number of levels
+        return np.linspace(min_v, max_v, num=10)
+
+    if est_levels > max_levels:
+        # Cap the number of levels to avoid huge arrays
+        return np.linspace(start, stop, num=max_levels)
+
+    try:
+        return np.arange(start, stop, step)
+    except Exception:
+        # Final fallback
+        n = int(min(max_levels, max(2, np.ceil(est_levels))))
+        return np.linspace(start, stop, num=n)
 
 
 def create_interactive_map(lats, lons, depths, df_filtered, output_file='interactive_bathymetry_map.html', primary_interval=5.0, secondary_interval=1.0):
