@@ -97,9 +97,9 @@ def calculate_survey_area_mask(lats, lons, grid_size=256):
     - Uses KDTree nearest-neighbor distances to estimate average spacing
     - Uses KDTree query_ball_point to count neighbors per grid cell
     - Avoids building an O(N^2) pairwise distance matrix
+    - Adaptively relaxes radius/threshold so we don't end up with 0 valid cells
     """
     from scipy.spatial import KDTree
-    from shapely.geometry import Point  # retained if used elsewhere
     import numpy as np
 
     # Create grid for analysis
@@ -125,38 +125,60 @@ def calculate_survey_area_mask(lats, lons, grid_size=256):
     # k=2 returns [self, nearest_non_self]
     nn_dists, _ = tree.query(points, k=2)
     nearest_non_self = nn_dists[:, 1]
-    avg_distance = float(np.mean(nearest_non_self))
+    avg_distance = float(np.mean(nearest_non_self)) if nearest_non_self.size else 0.0
 
-    # Use a restrictive search radius (same factor as before)
-    search_radius = avg_distance * 0.2
+    # Initial parameters (slightly looser than before)
+    search_radius = max(avg_distance * 0.5, 1e-9)
+    min_neighbors = 5
 
-    print(f"Survey area analysis:")
+    def build_mask(radius: float, threshold: int) -> tuple:
+        mask = np.zeros((grid_size, grid_size), dtype=bool)
+        for i in range(grid_size):
+            for j in range(grid_size):
+                grid_lon = lon_mesh[i, j]
+                grid_lat = lat_mesh[i, j]
+                nearby_idx = tree.query_ball_point([grid_lon, grid_lat], r=radius)
+                mask[i, j] = len(nearby_idx) >= threshold
+        valid = int(np.sum(mask))
+        total = int(grid_size * grid_size)
+        return mask, valid, total
+
+    # Try a few adaptive passes to avoid zero coverage
+    attempts = [
+        (search_radius, min_neighbors),
+        (search_radius * 1.5, max(3, int(min_neighbors * 0.8))),
+        (search_radius * 2.25, 3),
+        (search_radius * 3.0, 2),
+    ]
+
+    chosen_mask = None
+    coverage_percent = 0.0
+    for idx, (radius, threshold) in enumerate(attempts, start=1):
+        mask, valid, total = build_mask(radius, threshold)
+        coverage_percent = (valid / total) * 100 if total else 0.0
+        print(f"  Mask attempt {idx}: radius={radius:.8f} deg, min_neighbors={threshold}, valid={valid}/{total} ({coverage_percent:.2f}%)")
+        if valid > 0:
+            chosen_mask = mask
+            search_radius = radius  # keep for return/debug
+            min_neighbors = threshold
+            break
+
+    # Last-resort fallback: if still empty, mark entire bounds as valid
+    if chosen_mask is None:
+        print("  No valid grid cells after adaptive attempts; falling back to full-bounds mask")
+        chosen_mask = np.ones((grid_size, grid_size), dtype=bool)
+
+    print("Survey area analysis:")
     print(f"  Total survey points: {len(lats)}")
     print(f"  Average point distance: {avg_distance:.6f} degrees")
-    print(f"  Search radius: {search_radius:.6f} degrees")
-
-    # Create mask for grid points with sufficient nearby data
-    survey_mask = np.zeros((grid_size, grid_size), dtype=bool)
-
-    for i in range(grid_size):
-        for j in range(grid_size):
-            grid_lon = lon_mesh[i, j]
-            grid_lat = lat_mesh[i, j]
-
-            # Count points within search radius using KDTree (no full vector allocation)
-            nearby_idx = tree.query_ball_point([grid_lon, grid_lat], r=search_radius)
-            nearby_points = len(nearby_idx)
-
-            # Mark as valid if there are at least 8 nearby points (very restrictive)
-            survey_mask[i, j] = nearby_points >= 8
-
-    valid_pixels = int(np.sum(survey_mask))
+    print(f"  Search radius (final): {search_radius:.6f} degrees")
+    print(f"  Min neighbors (final): {min_neighbors}")
+    valid_pixels = int(np.sum(chosen_mask))
     total_pixels = int(grid_size * grid_size)
     coverage_percent = (valid_pixels / total_pixels) * 100 if total_pixels else 0.0
-
     print(f"  Valid grid cells: {valid_pixels}/{total_pixels} ({coverage_percent:.1f}%)")
 
-    return survey_mask, lon_mesh, lat_mesh, bounds, search_radius
+    return chosen_mask, lon_mesh, lat_mesh, bounds, search_radius
 
 def extract_contour_data_from_python_map(lats, lons, depths, primary_interval=5.0, secondary_interval=1.0):
     """Extract exact contour data from Python matplotlib version"""
