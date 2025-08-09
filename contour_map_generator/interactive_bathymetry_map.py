@@ -235,8 +235,8 @@ def extract_contour_data_from_python_map(lats, lons, depths, primary_interval=5.
         avg_nn = float(np.mean(nn)) if nn.size else 0.0
 
         # Mask triangles with any edge longer than a threshold (avoid bridging gaps)
-        # Threshold factor can be tuned; start with 4x nearest-neighbor average
-        long_edge_factor = 4.0
+        # Loosen factor to keep more triangles and produce denser contours on sparse transects
+        long_edge_factor = 10.0
         triangles = triang.triangles
         p0 = np.column_stack((lons[triangles[:, 0]], lats[triangles[:, 0]]))
         p1 = np.column_stack((lons[triangles[:, 1]], lats[triangles[:, 1]]))
@@ -249,9 +249,13 @@ def extract_contour_data_from_python_map(lats, lons, depths, primary_interval=5.
         if np.any(mask):
             triang.set_mask(mask)
 
-        # Generate tricontours
-        contours_secondary = ax.tricontour(triang, depths, levels=levels_secondary, colors='red', linewidths=2, alpha=0.9)
-        contours_primary = ax.tricontour(triang, depths, levels=levels_primary, colors='yellow', linewidths=1, alpha=0.8)
+        # Refine triangulation for denser, smoother contours without full grids
+        refiner = mtri.UniformTriRefiner(triang)
+        tri_refined, depth_refined = refiner.refine_field(depths, subdiv=2)
+
+        # Generate tricontours on refined triangulation
+        contours_secondary = ax.tricontour(tri_refined, depth_refined, levels=levels_secondary, colors='red', linewidths=2, alpha=0.9)
+        contours_primary = ax.tricontour(tri_refined, depth_refined, levels=levels_primary, colors='yellow', linewidths=1, alpha=0.8)
 
     except Exception as e:
         print(f"Triangulation contouring failed, falling back to gridded method: {e}")
