@@ -482,6 +482,7 @@ def create_interactive_map(lats, lons, depths, df_filtered, output_file='interac
             geometry=geom,
             properties={
                 'level': str(contour['level']),
+                'depth_m': str(contour.get('depth_m', abs(contour['level']))),
                 'color': 'red'
             }
         )
@@ -489,17 +490,20 @@ def create_interactive_map(lats, lons, depths, df_filtered, output_file='interac
     
     secondary_fc = geojson.FeatureCollection(secondary_features)
     
-    # Add secondary contours using embedded GeoJSON
-    folium.GeoJson(
-        secondary_fc,
-        name=f'{secondary_interval}m Contours',
-        style_function=lambda feature: {
-            'color': 'red',
-            'weight': 3,
-            'opacity': 0.9
-        },
-        tooltip=folium.GeoJsonTooltip(fields=['level'], aliases=['Depth (m):'])
-    ).add_to(contours_secondary_layer)
+    # Add secondary contours using embedded GeoJSON (guard against empty)
+    if secondary_features:
+        folium.GeoJson(
+            secondary_fc,
+            name=f'{secondary_interval}m Contours',
+            style_function=lambda feature: {
+                'color': 'red',
+                'weight': 3,
+                'opacity': 0.9
+            },
+            tooltip=folium.GeoJsonTooltip(fields=['depth_m'], aliases=['Depth (m):'])
+        ).add_to(contours_secondary_layer)
+    else:
+        print(f"No {secondary_interval}m contours to embed (empty feature collection)")
     contours_secondary_layer.add_to(m)
     
     # Create GeoJSON data for primary contours
@@ -518,6 +522,7 @@ def create_interactive_map(lats, lons, depths, df_filtered, output_file='interac
             geometry=geom,
             properties={
                 'level': str(contour['level']),
+                'depth_m': str(contour.get('depth_m', abs(contour['level']))),
                 'color': 'yellow'
             }
         )
@@ -525,17 +530,20 @@ def create_interactive_map(lats, lons, depths, df_filtered, output_file='interac
     
     primary_fc = geojson.FeatureCollection(primary_features)
     
-    # Add primary contours using embedded GeoJSON
-    folium.GeoJson(
-        primary_fc,
-        name=f'{primary_interval}m Contours',
-        style_function=lambda feature: {
-            'color': 'yellow',
-            'weight': 2,
-            'opacity': 0.8
-        },
-        tooltip=folium.GeoJsonTooltip(fields=['level'], aliases=['Depth (m):'])
-    ).add_to(contours_primary_layer)
+    # Add primary contours using embedded GeoJSON (guard against empty)
+    if primary_features:
+        folium.GeoJson(
+            primary_fc,
+            name=f'{primary_interval}m Contours',
+            style_function=lambda feature: {
+                'color': 'yellow',
+                'weight': 2,
+                'opacity': 0.8
+            },
+            tooltip=folium.GeoJsonTooltip(fields=['depth_m'], aliases=['Depth (m):'])
+        ).add_to(contours_primary_layer)
+    else:
+        print(f"No {primary_interval}m contours to embed (empty feature collection)")
     contours_primary_layer.add_to(m)
     
     # Add JavaScript to prevent zoom reset, fix contour rendering, and add click-to-mark functionality
