@@ -173,15 +173,34 @@ def extract_contour_data_from_python_map(lats, lons, depths, primary_interval=5.
     # Apply survey area mask - set areas outside the surveyed area to NaN
     depth_grid[~survey_mask] = np.nan
     
-    # Create contour levels (same as Python version)
+    # Create contour levels (robust to negative depths and NaNs)
     min_depth = np.nanmin(depth_grid)
     max_depth = np.nanmax(depth_grid)
 
-    # Create primary interval contours (yellow) safely
-    levels_primary = _build_levels(min_depth, max_depth, primary_interval, max_levels=1000)
-
-    # Create secondary interval contours (red) safely
-    levels_secondary = _build_levels(min_depth, max_depth, secondary_interval, max_levels=1500)
+    def _safe_levels(dmin: float, dmax: float, interval: float) -> np.ndarray:
+        interval = float(abs(interval)) if np.isfinite(interval) else 1.0
+        if not (np.isfinite(dmin) and np.isfinite(dmax)):
+            # Fallback to a simple two-level linspace if data is degenerate
+            return np.linspace(-1.0, 1.0, num=3, dtype=float)
+        start = np.floor(dmin / interval) * interval
+        stop = np.ceil(dmax / interval) * interval
+        if stop <= start:
+            stop = start + interval
+        # Try arange first; if it fails (float edge cases), fallback to linspace
+        try:
+            levels = np.arange(start, stop + interval * 0.5, interval, dtype=float)
+            if levels.size < 2:
+                levels = np.array([start, start + interval], dtype=float)
+        except Exception:
+            count = int(max(2, np.ceil((stop - start) / interval)))
+            levels = np.linspace(start, stop, num=count, dtype=float)
+        # Deduplicate and sort
+        levels = np.unique(np.round(levels, 6))
+        return levels
+    
+    # Create primary and secondary interval contours
+    levels_primary = _safe_levels(min_depth, max_depth, primary_interval)
+    levels_secondary = _safe_levels(min_depth, max_depth, secondary_interval)
     
     # Create figure and axis exactly like PNG version
     fig, ax = plt.subplots(1, 1, figsize=(15, 12))
@@ -394,53 +413,6 @@ def calculate_optimal_zoom(lats, lons, max_zoom=20):
     
     return zoom
 
-def _safe_float(value, default):
-    try:
-        v = float(value)
-        if not np.isfinite(v) or v <= 0:
-            return default
-        return v
-    except Exception:
-        return default
-
-
-def _build_levels(min_v: float, max_v: float, step: float, max_levels: int = 1000):
-    """Create contour levels safely. Falls back to linspace if arange length is invalid.
-    Ensures finite values, positive step, and caps total number of levels.
-    """
-    if not (np.isfinite(min_v) and np.isfinite(max_v)):
-        # default small range
-        min_v, max_v = 0.0, step
-    if min_v == max_v:
-        min_v -= step
-        max_v += step
-
-    step = _safe_float(step, max(1.0, (max_v - min_v) / 20.0))
-
-    start = np.floor(min_v / step) * step
-    stop = np.ceil(max_v / step) * step + step
-
-    span = stop - start
-    if not np.isfinite(span) or span <= 0:
-        # Degenerate span, fallback to small range
-        start, stop = min_v, max_v + step
-        span = stop - start
-
-    est_levels = span / step
-    if (not np.isfinite(est_levels)) or est_levels <= 0:
-        # Fallback to a fixed small number of levels
-        return np.linspace(min_v, max_v, num=10)
-
-    if est_levels > max_levels:
-        # Cap the number of levels to avoid huge arrays
-        return np.linspace(start, stop, num=max_levels)
-
-    try:
-        return np.arange(start, stop, step)
-    except Exception:
-        # Final fallback
-        n = int(min(max_levels, max(2, np.ceil(est_levels))))
-        return np.linspace(start, stop, num=n)
 
 
 def create_interactive_map(lats, lons, depths, df_filtered, output_file='interactive_bathymetry_map.html', primary_interval=5.0, secondary_interval=1.0):
