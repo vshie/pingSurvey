@@ -273,7 +273,8 @@ def extract_contour_data_from_python_map(lats, lons, depths, primary_interval=5.
                 # Get the correct level for this contour
                 contour_data_primary.append({
                     'coordinates': contour_coords,
-                    'level': level,
+                    'level': level,  # signed level (bathymetry likely negative)
+                    'depth_m': float(abs(level)),  # absolute depth for display
                     'color': 'yellow',
                     'weight': 2,
                     'opacity': 0.8,
@@ -331,7 +332,8 @@ def extract_contour_data_from_python_map(lats, lons, depths, primary_interval=5.
                 # Get the correct level for this contour
                 contour_data_secondary.append({
                     'coordinates': contour_coords,
-                    'level': level,
+                    'level': level,  # signed level (bathymetry likely negative)
+                    'depth_m': float(abs(level)),  # absolute depth for display
                     'color': 'red',
                     'weight': 3,
                     'opacity': 0.9,
