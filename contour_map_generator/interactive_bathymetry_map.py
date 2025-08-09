@@ -90,65 +90,73 @@ def load_and_process_data(csv_file):
     
     return lats, lons, depths, df_filtered
 
-def calculate_survey_area_mask(lats, lons, grid_size=400):
-    """Calculate a mask for the surveyed area using point density analysis."""
-    from scipy.spatial.distance import cdist
-    from shapely.geometry import Point
+def calculate_survey_area_mask(lats, lons, grid_size=256):
+    """Calculate a mask for the surveyed area using point density analysis.
+
+    Optimized for low-memory devices (e.g., Raspberry Pi):
+    - Uses KDTree nearest-neighbor distances to estimate average spacing
+    - Uses KDTree query_ball_point to count neighbors per grid cell
+    - Avoids building an O(N^2) pairwise distance matrix
+    """
+    from scipy.spatial import KDTree
+    from shapely.geometry import Point  # retained if used elsewhere
     import numpy as np
-    
+
     # Create grid for analysis
     lat_padding = (lats.max() - lats.min()) * 0.05
     lon_padding = (lons.max() - lons.min()) * 0.05
-    
+
     bounds = [
         lons.min() - lon_padding,
         lons.max() + lon_padding,
         lats.min() - lat_padding,
         lats.max() + lat_padding
     ]
-    
+
     lon_grid = np.linspace(bounds[0], bounds[1], grid_size)
     lat_grid = np.linspace(bounds[2], bounds[3], grid_size)
     lon_mesh, lat_mesh = np.meshgrid(lon_grid, lat_grid)
-    
-    # Calculate average distance between points to determine search radius
+
+    # Build KDTree for efficient neighbor queries
     points = np.column_stack((lons, lats))
-    distances = cdist(points, points)
-    distances = distances[distances > 0]  # Remove self-distances
-    avg_distance = np.mean(distances)
-    
-    # Use a very restrictive search radius (0.2x average distance)
+    tree = KDTree(points)
+
+    # Estimate average nearest-neighbor distance without NxN matrix
+    # k=2 returns [self, nearest_non_self]
+    nn_dists, _ = tree.query(points, k=2)
+    nearest_non_self = nn_dists[:, 1]
+    avg_distance = float(np.mean(nearest_non_self))
+
+    # Use a restrictive search radius (same factor as before)
     search_radius = avg_distance * 0.2
-    
+
     print(f"Survey area analysis:")
     print(f"  Total survey points: {len(lats)}")
     print(f"  Average point distance: {avg_distance:.6f} degrees")
     print(f"  Search radius: {search_radius:.6f} degrees")
-    
+
     # Create mask for grid points with sufficient nearby data
     survey_mask = np.zeros((grid_size, grid_size), dtype=bool)
-    
+
     for i in range(grid_size):
         for j in range(grid_size):
-            grid_lat = lat_mesh[i, j]
             grid_lon = lon_mesh[i, j]
-            
-            # Calculate distances from this grid point to all data points
-            distances_to_points = np.sqrt((lats - grid_lat)**2 + (lons - grid_lon)**2)
-            
-            # Count points within search radius
-            nearby_points = np.sum(distances_to_points <= search_radius)
-            
+            grid_lat = lat_mesh[i, j]
+
+            # Count points within search radius using KDTree (no full vector allocation)
+            nearby_idx = tree.query_ball_point([grid_lon, grid_lat], r=search_radius)
+            nearby_points = len(nearby_idx)
+
             # Mark as valid if there are at least 8 nearby points (very restrictive)
             survey_mask[i, j] = nearby_points >= 8
-    
-    valid_pixels = np.sum(survey_mask)
-    total_pixels = grid_size * grid_size
-    coverage_percent = (valid_pixels / total_pixels) * 100
-    
+
+    valid_pixels = int(np.sum(survey_mask))
+    total_pixels = int(grid_size * grid_size)
+    coverage_percent = (valid_pixels / total_pixels) * 100 if total_pixels else 0.0
+
     print(f"  Valid grid cells: {valid_pixels}/{total_pixels} ({coverage_percent:.1f}%)")
-    
-    return survey_mask, lon_mesh, lat_mesh, bounds, None
+
+    return survey_mask, lon_mesh, lat_mesh, bounds, search_radius
 
 def extract_contour_data_from_python_map(lats, lons, depths, primary_interval=5.0, secondary_interval=1.0):
     """Extract exact contour data from Python matplotlib version"""
