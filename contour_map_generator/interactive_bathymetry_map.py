@@ -181,34 +181,28 @@ def calculate_survey_area_mask(lats, lons, grid_size=256):
     return chosen_mask, lon_mesh, lat_mesh, bounds, search_radius
 
 def extract_contour_data_from_python_map(lats, lons, depths, primary_interval=5.0, secondary_interval=1.0):
-    """Extract exact contour data from Python matplotlib version"""
+    """Extract exact contour data from Python matplotlib version using TIN-based contours.
+
+    Uses matplotlib.tri.Triangulation to better handle sparse, line-based surveys.
+    Masks triangles with long edges to avoid bridging between widely spaced transects.
+    Falls back to gridded interpolation if triangulation/contouring fails.
+    """
     import matplotlib.pyplot as plt
-    from scipy.interpolate import griddata
-    
-    # Calculate survey area mask
-    survey_mask, lon_mesh, lat_mesh, bounds, _ = calculate_survey_area_mask(lats, lons)
-    
-    # Interpolate depth data to regular grid (same as Python version)
-    points = np.column_stack((lons, lats))
-    depth_grid = griddata(points, depths, (lon_mesh, lat_mesh), method='linear', fill_value=np.nan)
-    
-    # Apply survey area mask - set areas outside the surveyed area to NaN
-    depth_grid[~survey_mask] = np.nan
-    
-    # Create contour levels (robust to negative depths and NaNs)
-    min_depth = np.nanmin(depth_grid)
-    max_depth = np.nanmax(depth_grid)
+    import matplotlib.tri as mtri
+    from scipy.spatial import KDTree
+
+    # Compute contour levels from raw depths (handle negatives)
+    dmin = float(np.nanmin(depths))
+    dmax = float(np.nanmax(depths))
 
     def _safe_levels(dmin: float, dmax: float, interval: float) -> np.ndarray:
         interval = float(abs(interval)) if np.isfinite(interval) else 1.0
         if not (np.isfinite(dmin) and np.isfinite(dmax)):
-            # Fallback to a simple two-level linspace if data is degenerate
             return np.linspace(-1.0, 1.0, num=3, dtype=float)
         start = np.floor(dmin / interval) * interval
         stop = np.ceil(dmax / interval) * interval
         if stop <= start:
             stop = start + interval
-        # Try arange first; if it fails (float edge cases), fallback to linspace
         try:
             levels = np.arange(start, stop + interval * 0.5, interval, dtype=float)
             if levels.size < 2:
@@ -216,166 +210,115 @@ def extract_contour_data_from_python_map(lats, lons, depths, primary_interval=5.
         except Exception:
             count = int(max(2, np.ceil((stop - start) / interval)))
             levels = np.linspace(start, stop, num=count, dtype=float)
-        # Deduplicate and sort
-        levels = np.unique(np.round(levels, 6))
-        return levels
-    
-    # Create primary and secondary interval contours
-    levels_primary = _safe_levels(min_depth, max_depth, primary_interval)
-    levels_secondary = _safe_levels(min_depth, max_depth, secondary_interval)
-    
-    # Create figure and axis exactly like PNG version
+        return np.unique(np.round(levels, 6))
+
+    levels_primary = _safe_levels(dmin, dmax, primary_interval)
+    levels_secondary = _safe_levels(dmin, dmax, secondary_interval)
+
+    # Figure and bounds from data
     fig, ax = plt.subplots(1, 1, figsize=(15, 12))
+    bounds = [np.min(lons), np.max(lons), np.min(lats), np.max(lats)]
     ax.set_xlim(bounds[0], bounds[1])
     ax.set_ylim(bounds[2], bounds[3])
-    
-    # Generate contours exactly like PNG version
-    contours_primary = ax.contour(lon_mesh, lat_mesh, depth_grid, levels=levels_primary, 
-                                 colors='yellow', linewidths=1, alpha=0.8)
-    contours_secondary = ax.contour(lon_mesh, lat_mesh, depth_grid, levels=levels_secondary, 
-                                   colors='red', linewidths=2, alpha=0.9)
-    
-    # Extract contour data and labels exactly like PNG version
+
+    contours_primary = None
+    contours_secondary = None
+
+    try:
+        # Build triangulation
+        triang = mtri.Triangulation(lons, lats)
+
+        # Compute average nearest-neighbor distance
+        tree = KDTree(np.column_stack((lons, lats)))
+        nn_dists, _ = tree.query(np.column_stack((lons, lats)), k=2)
+        nn = nn_dists[:, 1]
+        avg_nn = float(np.mean(nn)) if nn.size else 0.0
+
+        # Mask triangles with any edge longer than a threshold (avoid bridging gaps)
+        # Threshold factor can be tuned; start with 4x nearest-neighbor average
+        long_edge_factor = 4.0
+        triangles = triang.triangles
+        p0 = np.column_stack((lons[triangles[:, 0]], lats[triangles[:, 0]]))
+        p1 = np.column_stack((lons[triangles[:, 1]], lats[triangles[:, 1]]))
+        p2 = np.column_stack((lons[triangles[:, 2]], lats[triangles[:, 2]]))
+        e01 = np.sqrt(np.sum((p0 - p1) ** 2, axis=1))
+        e12 = np.sqrt(np.sum((p1 - p2) ** 2, axis=1))
+        e20 = np.sqrt(np.sum((p2 - p0) ** 2, axis=1))
+        max_edge = np.maximum(e01, np.maximum(e12, e20))
+        mask = max_edge > (long_edge_factor * max(avg_nn, 1e-9))
+        if np.any(mask):
+            triang.set_mask(mask)
+
+        # Generate tricontours
+        contours_secondary = ax.tricontour(triang, depths, levels=levels_secondary, colors='red', linewidths=2, alpha=0.9)
+        contours_primary = ax.tricontour(triang, depths, levels=levels_primary, colors='yellow', linewidths=1, alpha=0.8)
+
+    except Exception as e:
+        print(f"Triangulation contouring failed, falling back to gridded method: {e}")
+        # Fallback to gridded interpolation if triangulation fails
+        from scipy.interpolate import griddata
+        # Create a modest grid
+        grid_size = 256
+        lon_grid = np.linspace(bounds[0], bounds[1], grid_size)
+        lat_grid = np.linspace(bounds[2], bounds[3], grid_size)
+        lon_mesh, lat_mesh = np.meshgrid(lon_grid, lat_grid)
+        points = np.column_stack((lons, lats))
+        depth_grid = griddata(points, depths, (lon_mesh, lat_mesh), method='linear', fill_value=np.nan)
+        contours_secondary = ax.contour(lon_mesh, lat_mesh, depth_grid, levels=levels_secondary, colors='red', linewidths=2, alpha=0.9)
+        contours_primary = ax.contour(lon_mesh, lat_mesh, depth_grid, levels=levels_primary, colors='yellow', linewidths=1, alpha=0.8)
+
     contour_data_primary = []
     contour_data_secondary = []
-    label_data_primary = []
-    label_data_secondary = []
-    
-    closed_count_primary = 0
-    open_count_primary = 0
-    closed_count_secondary = 0
-    open_count_secondary = 0
-    
+
     # Extract primary interval contours and their labels
-    for i, collection in enumerate(contours_primary.collections):
-        level = levels_primary[i] if i < len(levels_primary) else levels_primary[-1]
-        
-        for path_obj in collection.get_paths():
-            # Get vertices and codes to properly separate subpaths
-            vertices = path_obj.vertices
-            codes = path_obj.codes
-            
-            if len(vertices) < 2:
-                continue
-            
-            # Split the path into separate subpaths based on move-to commands
-            subpaths = []
-            current_subpath = []
-            
-            for j, (vertex, code) in enumerate(zip(vertices, codes)):
-                if code == 1:  # MOVETO - start of new subpath
-                    if current_subpath:  # Save previous subpath
-                        subpaths.append(current_subpath)
-                    current_subpath = [vertex]
-                else:  # LINETO or other commands
-                    current_subpath.append(vertex)
-            
-            # Add the last subpath
-            if current_subpath:
-                subpaths.append(current_subpath)
-            
-            # Process each subpath as a separate contour
-            for subpath in subpaths:
-                if len(subpath) < 2:
+    if contours_primary is not None:
+        for i, collection in enumerate(contours_primary.collections):
+            level = levels_primary[i] if i < len(levels_primary) else levels_primary[-1]
+            for path_obj in collection.get_paths():
+                vertices = path_obj.vertices
+                if len(vertices) < 2:
                     continue
-                
-                # Convert to lat,lon format
-                contour_coords = [[lat, lon] for lon, lat in subpath]
-                
-                # Check if this is a closed contour (first and last points are the same)
+                # Convert to lat,lon format (path vertices are [[x, y]] == [[lon, lat]])
+                contour_coords = [[lat, lon] for lon, lat in vertices]
+                # Check if this is a closed contour
                 is_closed = (abs(contour_coords[0][0] - contour_coords[-1][0]) < 1e-10 and 
-                           abs(contour_coords[0][1] - contour_coords[-1][1]) < 1e-10)
-                
-                # Count closed vs open contours
-                if is_closed:
-                    closed_count_primary += 1
-                else:
-                    open_count_primary += 1
-                
-                # Get the correct level for this contour
+                             abs(contour_coords[0][1] - contour_coords[-1][1]) < 1e-10)
                 contour_data_primary.append({
                     'coordinates': contour_coords,
-                    'level': level,  # signed level (bathymetry likely negative)
-                    'depth_m': float(abs(level)),  # absolute depth for display
+                    'level': level,
+                    'depth_m': float(abs(level)),
                     'color': 'yellow',
                     'weight': 2,
                     'opacity': 0.8,
                     'is_closed': is_closed
                 })
-                
-                # Labels removed - no longer adding contour labels
-    
+
     # Extract secondary interval contours and their labels
-    for i, collection in enumerate(contours_secondary.collections):
-        level = levels_secondary[i] if i < len(levels_secondary) else levels_secondary[-1]
-        
-        for path_obj in collection.get_paths():
-            # Get vertices and codes to properly separate subpaths
-            vertices = path_obj.vertices
-            codes = path_obj.codes
-            
-            if len(vertices) < 2:
-                continue
-            
-            # Split the path into separate subpaths based on move-to commands
-            subpaths = []
-            current_subpath = []
-            
-            for j, (vertex, code) in enumerate(zip(vertices, codes)):
-                if code == 1:  # MOVETO - start of new subpath
-                    if current_subpath:  # Save previous subpath
-                        subpaths.append(current_subpath)
-                    current_subpath = [vertex]
-                else:  # LINETO or other commands
-                    current_subpath.append(vertex)
-            
-            # Add the last subpath
-            if current_subpath:
-                subpaths.append(current_subpath)
-            
-            # Process each subpath as a separate contour
-            for subpath in subpaths:
-                if len(subpath) < 2:
+    if contours_secondary is not None:
+        for i, collection in enumerate(contours_secondary.collections):
+            level = levels_secondary[i] if i < len(levels_secondary) else levels_secondary[-1]
+            for path_obj in collection.get_paths():
+                vertices = path_obj.vertices
+                if len(vertices) < 2:
                     continue
-                
-                # Convert to lat,lon format
-                contour_coords = [[lat, lon] for lon, lat in subpath]
-                
-                # Check if this is a closed contour (first and last points are the same)
+                contour_coords = [[lat, lon] for lon, lat in vertices]
                 is_closed = (abs(contour_coords[0][0] - contour_coords[-1][0]) < 1e-10 and 
-                           abs(contour_coords[0][1] - contour_coords[-1][1]) < 1e-10)
-                
-                # Count closed vs open contours
-                if is_closed:
-                    closed_count_secondary += 1
-                else:
-                    open_count_secondary += 1
-                
-                # Get the correct level for this contour
+                             abs(contour_coords[0][1] - contour_coords[-1][1]) < 1e-10)
                 contour_data_secondary.append({
                     'coordinates': contour_coords,
-                    'level': level,  # signed level (bathymetry likely negative)
-                    'depth_m': float(abs(level)),  # absolute depth for display
+                    'level': level,
+                    'depth_m': float(abs(level)),
                     'color': 'red',
                     'weight': 3,
                     'opacity': 0.9,
                     'is_closed': is_closed
                 })
-                
-                # Labels removed - no longer adding contour labels
-    
-    plt.close(fig)  # Close to free memory
-    
-    print(f"{primary_interval}m contours: {len(contour_data_primary)} total ({closed_count_primary} closed, {open_count_primary} open)")
-    print(f"{secondary_interval}m contours: {len(contour_data_secondary)} total ({closed_count_secondary} closed, {open_count_secondary} open)")
-    
-    # Debug: show first few contours
-    if contour_data_primary:
-        print(f"First {primary_interval}m contour: {len(contour_data_primary[0]['coordinates'])} points")
-        print(f"  Start: {contour_data_primary[0]['coordinates'][0]}")
-        print(f"  End: {contour_data_primary[0]['coordinates'][-1]}")
-        print(f"  Distance: {abs(contour_data_primary[0]['coordinates'][0][0] - contour_data_primary[0]['coordinates'][-1][0]) + abs(contour_data_primary[0]['coordinates'][0][1] - contour_data_primary[0]['coordinates'][-1][1])}")
-    
+
+    plt.close(fig)
+
+    print(f"{primary_interval}m contours: {len(contour_data_primary)} total")
+    print(f"{secondary_interval}m contours: {len(contour_data_secondary)} total")
+
     return contour_data_primary, contour_data_secondary, [], []
 
 def calculate_optimal_zoom(lats, lons, max_zoom=20):

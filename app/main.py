@@ -461,7 +461,8 @@ def download_file():
     """Download the current log file."""
     global current_log_file
     if current_log_file and os.path.exists(current_log_file):
-        return send_file(current_log_file, as_attachment=True, cache_timeout=0)
+        # Flask 3: use max_age instead of cache_timeout
+        return send_file(current_log_file, as_attachment=True, max_age=0)
     else:
         return jsonify({'error': 'No log file available'}), 404
 
@@ -900,7 +901,8 @@ def download_map(filename):
         if not os.path.exists(file_path):
             return jsonify({'error': 'Map file not found'}), 404
         
-        return send_file(file_path, as_attachment=True, cache_timeout=0)
+        # Flask 3: use max_age instead of cache_timeout
+        return send_file(file_path, as_attachment=True, max_age=0)
         
     except Exception as e:
         print(f"Error downloading map: {e}")
