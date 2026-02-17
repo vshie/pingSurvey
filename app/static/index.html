@@ -516,213 +516,64 @@
             background-color: rgba(156, 39, 176, 0.2) !important;
         }
         
-        /* Tab Navigation Styles */
-        .tab-navigation {
-            display: flex;
-            background-color: #1E1E1E;
-            padding: 8px 16px;
-            gap: 8px;
-            border-bottom: 1px solid #333;
-        }
-        
-        .tab-btn {
-            flex: 1;
-            max-width: 200px;
-        }
-        
-        /* Bathymetry Tab Styles */
-        .bathymetry-tab {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            min-height: 0; /* Allow flex item to shrink */
-            overflow: hidden;
-        }
-        
-        .bathymetry-container {
-            display: flex;
-            flex-direction: column;
-            height: 100%;
-            overflow-y: auto; /* Allow vertical scrolling */
-            padding-bottom: 20px; /* Add padding at bottom for button visibility */
-        }
-        
-        .bathymetry-container h3 {
-            color: #4CAF50;
-            margin-bottom: 8px;
-            font-size: 1.5rem;
-        }
-        
-        .bathymetry-description {
-            color: #888;
-            margin-bottom: 24px;
-            font-size: 14px;
-            line-height: 1.5;
-        }
-        
-        .log-selection-panel,
-        .contour-settings-panel,
-        .generate-panel {
-            background-color: #1E1E1E;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
-            border: 1px solid #333;
-        }
-        
-        .panel-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 16px;
-        }
-        
-        .panel-header h4 {
-            margin: 0;
-            color: #4CAF50;
-            font-size: 1.1rem;
-        }
-        
-        .loading-state {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            color: #888;
-            padding: 20px;
-            justify-content: center;
-        }
-        
-        .no-files {
-            text-align: center;
-            padding: 40px 20px;
-            color: #888;
-        }
-        
-        .no-files p {
-            margin-top: 12px;
-            font-size: 14px;
-        }
-        
-        .log-files-list {
-            margin-top: 16px;
-        }
-        
-        .settings-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 16px;
-        }
-        
-        .generate-panel {
-            text-align: center;
-        }
-        
-        .generated-map-info {
-            margin-top: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            align-items: center;
-        }
-        
-        /* Mobile responsiveness for bathymetry tab */
-        @media (max-width: 600px) {
-            .tab-navigation {
-                flex-direction: column;
-                gap: 4px;
-            }
-            
-            .tab-btn {
-                max-width: none;
-            }
-            
-            .bathymetry-tab {
-                padding: 12px;
-            }
-            
-            .settings-grid {
-                grid-template-columns: 1fr;
-                gap: 12px;
-            }
-            
-            .panel-header {
-                flex-direction: column;
-                gap: 8px;
-                align-items: flex-start;
-            }
-        }
-        
-        /* Bathymetry section styles */
-        .bathymetry-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px;
-            background-color: rgba(0, 0, 0, 0.1);
-            border-radius: 4px;
-            margin-bottom: 8px;
-            flex-shrink: 0; /* Don't shrink the header */
-        }
-        
-        .bathymetry-header h3 {
-            margin: 0;
-            font-size: 1.2rem;
-        }
-        
-        .bathymetry-content {
-            padding: 12px;
-            flex: 1;
-            overflow-y: auto;
-            min-height: 0; /* Allow flex item to shrink */
-            padding-bottom: 40px; /* Extra padding for button visibility */
-        }
-        
-        .log-files-list {
-            max-height: 300px;
-            overflow-y: auto;
-        }
-        
-        .log-selection-panel {
-            margin-bottom: 16px;
-        }
-        
-        .contour-settings-panel {
-            margin-bottom: 16px;
-        }
-        
-        .generate-panel {
-            margin-top: 16px;
-        }
-        
-        /* Mobile responsiveness for bathymetry section */
-        @media (max-width: 768px) {
-            .content {
-                height: calc(100vh - 100px); /* Smaller header on mobile */
-            }
-            
-            .bathymetry-content {
-                padding: 8px;
-            }
-            
-            .log-files-list {
-                max-height: 200px;
-            }
-            
-            .bathymetry-header h3 {
-                font-size: 1.1rem;
-            }
-            
-            .settings-grid {
-                grid-template-columns: 1fr;
-                gap: 12px;
-            }
-        }
-        
         /* Map source selector on mobile */
         @media (max-width: 600px) {
             .v-select {
                 min-width: 120px !important;
                 font-size: 12px;
+            }
+        }
+        
+        /* Widget URL Footer */
+        .widget-url-footer {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 16px;
+            background-color: #1E1E1E;
+            border-top: 1px solid #333;
+            font-size: 12px;
+            flex-wrap: wrap;
+        }
+        
+        .widget-url-label {
+            color: #888;
+        }
+        
+        .widget-url {
+            background-color: #2d2d2d;
+            padding: 4px 8px;
+            border-radius: 4px;
+            color: #4CAF50;
+            cursor: pointer;
+            font-family: monospace;
+            font-size: 11px;
+            user-select: all;
+        }
+        
+        .widget-url:hover {
+            background-color: #3d3d3d;
+        }
+        
+        .copy-btn {
+            margin-left: 4px;
+        }
+        
+        .copied-msg {
+            color: #4CAF50;
+            font-size: 11px;
+            animation: fadeIn 0.2s ease-in;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @media (max-width: 600px) {
+            .widget-url-footer {
+                justify-content: center;
+                text-align: center;
             }
         }
     </style>
@@ -741,34 +592,8 @@
             </div>
             
             <div class="content">
-                <!-- Tab Navigation -->
-                <div class="tab-navigation">
-                    <v-btn 
-                        class="tab-btn" 
-                        :color="activeTab === 'survey' ? 'primary' : 'grey'"
-                        @click="activeTab = 'survey'"
-                        dark
-                        rounded
-                        elevation="2"
-                    >
-                        <v-icon left>mdi-map-marker-path</v-icon>
-                        Survey
-                    </v-btn>
-                    <v-btn 
-                        class="tab-btn" 
-                        :color="activeTab === 'bathymetry' ? 'primary' : 'grey'"
-                        @click="activeTab = 'bathymetry'"
-                        dark
-                        rounded
-                        elevation="2"
-                    >
-                        <v-icon left>mdi-map-plus</v-icon>
-                        Bathymetry Maps
-                    </v-btn>
-                </div>
-
-                <!-- Survey Tab Content -->
-                <div v-show="activeTab === 'survey'">
+                <!-- Survey Content -->
+                <div>
                     <div class="map-container">
                         <div id="map"></div>
                         <!-- Floating center map button for mobile -->
@@ -837,6 +662,11 @@
                                 <v-icon left>mdi-download</v-icon>
                                 Download
                             </v-btn>
+                            <v-btn :color="simulationActive ? 'orange darken-2' : 'orange'" dark rounded elevation="2" 
+                                   @click="toggleSimulation" :disabled="run">
+                                <v-icon left>{{ simulationActive ? 'mdi-stop' : 'mdi-replay' }}</v-icon>
+                                {{ simulationActive ? 'Stop Sim' : 'Simulate' }}
+                            </v-btn>
                         </div>
                         <!-- Center section - Map Controls -->
                         <div class="controls-section">
@@ -861,8 +691,12 @@
                                 style="min-width: 150px;"
                                 @change="changeMapSource"
                             ></v-select>
-                            <v-btn color="purple" dark rounded elevation="2" @click="togglePolygonDrawing" :loading="cacheLoading" :disabled="cacheProgress.active">
-                                <v-icon left>mdi-cached</v-icon>
+                            <v-btn color="purple" dark rounded elevation="2" @click="cacheVisibleTiles" :loading="cacheLoading" :disabled="cacheProgress.active">
+                                <v-icon left>mdi-download-multiple</v-icon>
+                                Cache View
+                            </v-btn>
+                            <v-btn color="purple darken-2" dark rounded elevation="2" @click="togglePolygonDrawing" :loading="cacheLoading" :disabled="cacheProgress.active">
+                                <v-icon left>mdi-vector-polygon</v-icon>
                                 {{ isDrawingPolygon ? 'Cancel Drawing' : 'Cache Region' }}
                             </v-btn>
                             <v-btn color="green" dark rounded elevation="2" @click="getRecentCachedArea" v-if="cacheStats.cachedTiles > 0">
@@ -895,6 +729,42 @@
                             </td>
                         </template>
                         </v-data-table>
+                    </div>
+                    <!-- Contour Map Generation -->
+                    <div class="status-panel" style="margin-top: 8px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                            <h4 style="margin: 0;">Contour Map</h4>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <v-btn color="teal" dark small rounded elevation="2" 
+                                       @click="generateContourMap" :loading="contourGenerating">
+                                    <v-icon left small>mdi-chart-line</v-icon>
+                                    Generate
+                                </v-btn>
+                                <v-btn color="teal darken-2" dark small rounded elevation="2" 
+                                       @click="listContourMaps">
+                                    <v-icon left small>mdi-refresh</v-icon>
+                                    Refresh
+                                </v-btn>
+                            </div>
+                        </div>
+                        <div v-if="contourStatus" style="font-size: 12px; color: #888; margin-bottom: 8px;">
+                            {{ contourStatus }}
+                        </div>
+                        <div v-if="contourMaps.length > 0">
+                            <div v-for="map in contourMaps" :key="map.filename" 
+                                 style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid #333; font-size: 12px;">
+                                <span>{{ map.filename }}</span>
+                                <div style="display: flex; gap: 4px; align-items: center;">
+                                    <span style="color: #888;">{{ map.size_mb }} MB</span>
+                                    <v-btn x-small color="teal" dark @click="viewContourMap(map.filename)">
+                                        <v-icon x-small>mdi-open-in-new</v-icon>
+                                    </v-btn>
+                                </div>
+                            </div>
+                        </div>
+                        <div v-else style="font-size: 12px; color: #666; text-align: center; padding: 8px;">
+                            No contour maps generated yet. Record survey data and click Generate.
+                        </div>
                     </div>
                     <!-- Cache Progress Bar -->
                     <div v-if="cacheProgress.active" class="cache-progress-panel">
@@ -961,114 +831,16 @@
                         </div>
                     </div>
                 </div>
-
-                <!-- Bathymetry Tab Content -->
-                <div v-show="activeTab === 'bathymetry'" class="bathymetry-tab">
-                    <div class="bathymetry-container">
-                        <h3>Generate Bathymetry Contour Maps</h3>
-                        <p class="bathymetry-description">
-                            Select one or more log files to combine and generate an interactive bathymetry map with contour lines.
-                        </p>
-                        <!-- Log File Selection -->
-                        <div class="log-selection-panel">
-                            <div class="panel-header">
-                                <h4>Select Log Files</h4>
-                                <v-btn small color="info" @click="loadLogFiles">
-                                    <v-icon left>mdi-refresh</v-icon>
-                                    Refresh
-                                </v-btn>
-                            </div>
-                            <div v-if="logFilesLoading" class="loading-state">
-                                <v-progress-circular indeterminate color="primary"></v-progress-circular>
-                                <span>Loading log files...</span>
-                            </div>
-                            <div v-else-if="logFiles.length === 0" class="no-files">
-                                <v-icon large color="grey">mdi-file-document-outline</v-icon>
-                                <p>No log files found. Start a survey to create log files.</p>
-                            </div>
-                            <div v-else class="log-files-list">
-                                <v-checkbox
-                                    v-model="selectAllLogs"
-                                    label="Select All"
-                                    @change="toggleSelectAllLogs"
-                                ></v-checkbox>
-                                <v-data-table
-                                    :headers="logFileHeaders"
-                                    :items="logFiles"
-                                    :items-per-page="10"
-                                    dense
-                                    class="elevation-1"
-                                >
-                                    <template v-slot:item.select="{ item }">
-                                        <v-checkbox
-                                            v-model="selectedLogFiles"
-                                            :value="item.filename"
-                                            hide-details
-                                        ></v-checkbox>
-                                    </template>
-                                    <template v-slot:item.size_mb="{ item }">
-                                        {{ item.size_mb }} MB
-                                    </template>
-                                    <template v-slot:item.modified="{ item }">
-                                        {{ item.date }}
-                                    </template>
-                                </v-data-table>
-                            </div>
-                        </div>
-                        <!-- Contour Settings -->
-                        <div class="contour-settings-panel">
-                            <h4>Contour Settings</h4>
-                            <div class="settings-grid">
-                                <v-text-field
-                                    v-model.number="primaryInterval"
-                                    label="Primary Contour Interval (m)"
-                                    type="number"
-                                    min="1"
-                                    max="50"
-                                    step="0.5"
-                                    outlined
-                                    dense
-                                    hint="Major contour lines (e.g., 5m, 10m)"
-                                    persistent-hint
-                                ></v-text-field>
-                                <v-text-field
-                                    v-model.number="secondaryInterval"
-                                    label="Secondary Contour Interval (m)"
-                                    type="number"
-                                    min="0.5"
-                                    max="10"
-                                    step="0.1"
-                                    outlined
-                                    dense
-                                    hint="Minor contour lines (e.g., 1m, 2m)"
-                                    persistent-hint
-                                ></v-text-field>
-                            </div>
-                        </div>
-                        <!-- Generate Button -->
-                        <div class="generate-panel">
-                            <v-btn 
-                                color="success" 
-                                large 
-                                :disabled="selectedLogFiles.length === 0 || generatingMap"
-                                :loading="generatingMap"
-                                @click="generateBathymetryMap"
-                            >
-                                <v-icon left>mdi-map-plus</v-icon>
-                                {{ generatingMap ? 'Generating Map...' : 'Generate Bathymetry Map' }}
-                            </v-btn>
-                            <div v-if="generatedMap" class="generated-map-info">
-                                <v-alert type="success" dense>
-                                    <strong>Map Generated Successfully!</strong><br>
-                                    {{ generatedMap.message }}
-                                </v-alert>
-                                <v-btn color="primary" @click="downloadGeneratedMap">
-                                    <v-icon left>mdi-download</v-icon>
-                                    Download {{ generatedMap.html_file }}
-                                </v-btn>
-                            </div>
-                        </div>
-                    </div>
+                
+                <!-- Widget URL Footer -->
+                <div class="widget-url-footer">
+                    <span class="widget-url-label">Cockpit Widget URL:</span>
+                    <code class="widget-url" @click="copyWidgetUrl">{{ widgetUrl }}</code>
+                    <v-btn x-small color="primary" @click="copyWidgetUrl" class="copy-btn">
+                        <v-icon small>mdi-content-copy</v-icon>
+                        Copy
+                    </v-btn>
+                    <span v-if="urlCopied" class="copied-msg">Copied!</span>
                 </div>
             </div>
         </v-app>
@@ -1174,33 +946,31 @@
                     polygonLayers: [],
                     isDrawingPolygon: false,
                     cacheProgressCollapsed: false,
-
-                    // Bathymetry tab data
-                    activeTab: 'survey',
-                    logFiles: [],
-                    selectedLogFiles: [],
-                    selectAllLogs: false,
-                    logFilesLoading: false,
-                    primaryInterval: 5.0,
-                    secondaryInterval: 1.0,
-                    generatingMap: false,
-                    generatedMap: null,
-                    logFileHeaders: [
-                        { text: 'Select', value: 'select', sortable: false, width: 60 },
-                        { text: 'Filename', value: 'filename', sortable: true },
-                        { text: 'Size', value: 'size_mb', sortable: true, width: 100 },
-                        { text: 'Modified', value: 'modified', sortable: true, width: 150 }
-                    ],
+                    
+                    // Simulation
+                    simulationActive: false,
+                    
+                    // Contour maps
+                    contourMaps: [],
+                    contourGenerating: false,
+                    contourStatus: '',
+                    
+                    // Widget URL
+                    widgetUrl: '',
+                    urlCopied: false
                 }
             },
             methods: {
                 async toggleRun() {
-                    this.icon = this.icon === 'mdi-play' ? 'mdi-stop' : 'mdi-play';
-                    this.run = !this.run;
-                    if (this.run) {
-                        await this.start();
-                    } else {
-                        await this.stop();
+                    this.isLoading = true;
+                    try {
+                        if (!this.run) {
+                            await this.start();
+                        } else {
+                            await this.stop();
+                        }
+                    } finally {
+                        this.isLoading = false;
                     }
                 },
                 async start() {
@@ -1209,12 +979,14 @@
                         if (!response.ok) {
                             throw new Error(`HTTP error! Status: ${response.status}`);
                         }
+                        this.run = true;
+                        this.icon = 'mdi-stop';
                         this.status = 'Data logging started.';
                         this.receivingData = true;
                         this.resetMap(9.2, -133, 10);
                         this.intervalId = setInterval(this.fetchData, 1000);
                     } catch (error) {
-                        console.error('Error fetching data:', error);
+                        console.error('Error starting logging:', error);
                         this.status = 'Error: ' + error.message;
                     }
                 },
@@ -1224,11 +996,13 @@
                         if (!response.ok) {
                             throw new Error(`HTTP error! Status: ${response.status}`);
                         }
+                        this.run = false;
+                        this.icon = 'mdi-play';
                         this.status = 'Data logging stopped.';
-                        this.receivingData = false; // Ensure animation stops
+                        this.receivingData = false;
                         clearInterval(this.intervalId);
                     } catch (error) {
-                        console.error('Error fetching data:', error);
+                        console.error('Error stopping logging:', error);
                         this.status = 'Error: ' + error.message;
                     }
                 },
@@ -1413,12 +1187,15 @@
                             this.icon = 'mdi-stop';
                             this.resetMap(9.2, -133, 10);
                             this.intervalId = setInterval(this.fetchData, 1000);
+                        } else if (response.data.simulation_active) {
+                            this.simulationActive = true;
+                            this.receivingData = true;
+                            this.resetMap(9.2, -133, 10);
+                            this.intervalId = setInterval(this.fetchData, 200);
                         } else {
                             this.run = false;
                             this.icon = 'mdi-play';
                         }
-                        
-
                     } catch (error) {
                         console.error('Error fetching status:', error);
                         this.run = false;
@@ -1939,9 +1716,11 @@
                     const bounds = this.getPolygonBounds();
                     
                     // Start progress tracking
+                    const minCacheZoom = 17;
+                    const maxCacheZoom = 19;
                     this.cacheProgress.active = true;
-                    this.cacheProgress.currentZoom = 17;
-                    this.cacheProgress.maxZoom = 19;
+                    this.cacheProgress.currentZoom = minCacheZoom;
+                    this.cacheProgress.maxZoom = maxCacheZoom;
                     this.cacheProgress.tilesProcessed = 0;
                     this.cacheProgress.newTilesCached = 0;
                     this.cacheProgress.alreadyCached = 0;
@@ -1949,16 +1728,16 @@
                     
                     // Calculate total tiles to process
                     let totalTiles = 0;
-                    for (let z = 17; z <= 19; z++) {
+                    for (let z = minCacheZoom; z <= maxCacheZoom; z++) {
                         const tiles = this.getTilesForBounds(bounds, z);
                         totalTiles += tiles.length;
                     }
                     
                     this.cacheProgress.totalTiles = totalTiles;
-                    this.cacheProgress.status = `Found ${totalTiles} tiles to check in polygon region`;
+                    this.cacheProgress.status = `Found ${totalTiles} tiles to check in polygon region (zoom ${minCacheZoom}-${maxCacheZoom})`;
                     
-                    // Cache tiles for zoom levels 17-19 within the polygon bounds
-                    await this.cacheTilesInBoundsWithProgress(bounds, 17, 19);
+                    // Cache tiles from current zoom to max within the polygon bounds
+                    await this.cacheTilesInBoundsWithProgress(bounds, minCacheZoom, maxCacheZoom);
                     
                     // Clean up
                     this.cacheProgress.active = false;
@@ -2051,144 +1830,109 @@
                     }
                     return inside;
                 },
-
-                // Bathymetry tab methods
-                async loadLogFiles() {
-                    this.logFilesLoading = true;
+                
+                async generateContourMap() {
+                    this.contourGenerating = true;
+                    this.contourStatus = 'Generating contour map...';
                     try {
-                        const response = await fetch('/log_files');
-                        if (!response.ok) {
-                            throw new Error(`HTTP error! Status: ${response.status}`);
-                        }
-                        const data = await response.json();
-                        this.logFiles = data.files || [];
-                        this.selectedLogFiles = [];
-                        this.selectAllLogs = false;
-                    } catch (error) {
-                        console.error('Error loading log files:', error);
-                        this.logFiles = [];
-                    } finally {
-                        this.logFilesLoading = false;
-                    }
-                },
-
-                // Watch for changes in selectedLogFiles to update selectAllLogs
-                updateSelectAllStatus() {
-                    if (this.logFiles.length === 0) {
-                        this.selectAllLogs = false;
-                        return;
-                    }
-                    
-                    const allSelected = this.logFiles.every(file => 
-                        this.selectedLogFiles.includes(file.filename)
-                    );
-                    const someSelected = this.logFiles.some(file => 
-                        this.selectedLogFiles.includes(file.filename)
-                    );
-                    
-                    this.selectAllLogs = allSelected;
-                },
-
-                toggleSelectAllLogs() {
-                    if (this.selectAllLogs) {
-                        this.selectedLogFiles = this.logFiles.map(file => file.filename);
-                    } else {
-                        this.selectedLogFiles = [];
-                    }
-                },
-
-                async generateBathymetryMap() {
-                    if (this.selectedLogFiles.length === 0) {
-                        alert('Please select at least one log file.');
-                        return;
-                    }
-
-                    this.generatingMap = true;
-                    this.generatedMap = null;
-
-                    try {
-                        const response = await fetch('/combine_logs', {
+                        const response = await fetch('/generate_contour', {
                             method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify({
-                                files: this.selectedLogFiles,
-                                primary_interval: this.primaryInterval,
-                                secondary_interval: this.secondaryInterval
-                            })
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ primary_interval: 5.0, secondary_interval: 1.0 })
                         });
-
                         const result = await response.json();
-
                         if (result.success) {
-                            this.generatedMap = result;
-                            console.log('Bathymetry map generated successfully:', result);
+                            this.contourStatus = result.message;
+                            await this.listContourMaps();
                         } else {
-                            alert(`Error generating map: ${result.error}`);
+                            this.contourStatus = 'Error: ' + result.message;
                         }
                     } catch (error) {
-                        console.error('Error generating bathymetry map:', error);
-                        alert('Error generating bathymetry map: ' + error.message);
+                        console.error('Error generating contour map:', error);
+                        this.contourStatus = 'Error: ' + error.message;
                     } finally {
-                        this.generatingMap = false;
+                        this.contourGenerating = false;
                     }
                 },
-
-                async downloadGeneratedMap() {
-                    if (!this.generatedMap) return;
-
+                async listContourMaps() {
                     try {
-                        const response = await fetch(`/download_map/${this.generatedMap.html_file}`);
-                        if (!response.ok) {
-                            throw new Error(`HTTP error! Status: ${response.status}`);
-                        }
-
-                        const blob = await response.blob();
-                        const url = window.URL.createObjectURL(blob);
-                        const link = document.createElement('a');
-                        link.href = url;
-                        link.setAttribute('download', this.generatedMap.html_file);
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                        window.URL.revokeObjectURL(url);
-
-                        console.log('Bathymetry map downloaded successfully');
+                        const response = await fetch('/contour_maps');
+                        const result = await response.json();
+                        this.contourMaps = result.maps || [];
                     } catch (error) {
-                        console.error('Error downloading bathymetry map:', error);
-                        alert('Error downloading bathymetry map: ' + error.message);
+                        console.error('Error listing contour maps:', error);
                     }
-                }
-            },
-            watch: {
-                selectedLogFiles() {
-                    this.updateSelectAllStatus();
                 },
-                activeTab(newTab) {
-                    // Reinitialize map when switching to survey tab
-                    if (newTab === 'survey' && this.map) {
-                        console.log('Switching to survey tab, reinitializing map...');
-                        setTimeout(() => {
-                            if (this.map) {
-                                this.map.invalidateSize();
-                                console.log('Map size invalidated after tab switch');
-                            }
-                        }, 100);
+                viewContourMap(filename) {
+                    window.open('/contour_map/' + filename, '_blank');
+                },
+                
+                async toggleSimulation() {
+                    if (!this.simulationActive) {
+                        await this.startSimulation();
+                    } else {
+                        await this.stopSimulation();
                     }
+                },
+                async startSimulation() {
+                    try {
+                        const response = await fetch('/start_simulation');
+                        const result = await response.json();
+                        if (result.success) {
+                            this.simulationActive = true;
+                            this.status = `Simulation started: ${result.message}`;
+                            this.receivingData = true;
+                            this.resetMap(9.2, -133, 10);
+                            this.intervalId = setInterval(this.fetchData, 200);
+                        } else {
+                            this.status = 'Simulation error: ' + result.message;
+                            alert('Could not start simulation: ' + result.message);
+                        }
+                    } catch (error) {
+                        console.error('Error starting simulation:', error);
+                        this.status = 'Error: ' + error.message;
+                    }
+                },
+                async stopSimulation() {
+                    try {
+                        const response = await fetch('/stop_simulation');
+                        const result = await response.json();
+                        this.simulationActive = false;
+                        this.receivingData = false;
+                        clearInterval(this.intervalId);
+                        this.status = 'Simulation stopped.';
+                    } catch (error) {
+                        console.error('Error stopping simulation:', error);
+                        this.status = 'Error: ' + error.message;
+                    }
+                },
+                
+                copyWidgetUrl() {
+                    navigator.clipboard.writeText(this.widgetUrl).then(() => {
+                        this.urlCopied = true;
+                        setTimeout(() => { this.urlCopied = false; }, 2000);
+                    }).catch(() => {
+                        // Fallback for older browsers
+                        const textArea = document.createElement('textarea');
+                        textArea.value = this.widgetUrl;
+                        document.body.appendChild(textArea);
+                        textArea.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(textArea);
+                        this.urlCopied = true;
+                        setTimeout(() => { this.urlCopied = false; }, 2000);
+                    });
                 }
             },
             mounted() {
+                // Set widget URL based on current location, preserving BlueOS path prefix
+                const pathPrefix = window.location.pathname.replace(/\/$/, '');
+                this.widgetUrl = window.location.origin + pathPrefix + '/widget';
+                
                 this.$nextTick(() => {
                     console.log('Initializing map...');
                     
-                    // Ensure the survey tab is active and map container is visible
-                    this.activeTab = 'survey';
-                    
-                    // Force a re-render to ensure the map container is visible
-                    this.$forceUpdate();
-                    
-                    // Wait longer for the DOM to update and ensure the map container is visible
+                    // Wait for the DOM to update and ensure the map container is visible
                     setTimeout(() => {
                         // Check if map container exists and is visible
                         const mapContainer = document.getElementById('map');
@@ -2253,9 +1997,7 @@
                         this.getRecentCachedArea();
                         this.startCacheStatsRefresh();
                         this.loadMapSources();
-                        
-                        // Load log files for bathymetry tab
-                        this.loadLogFiles();
+                        this.listContourMaps();
                         
                         console.log('Map initialization complete');
                     }, 200); // Increased delay to ensure DOM is updated

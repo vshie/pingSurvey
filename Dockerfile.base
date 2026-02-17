@@ -1,10 +1,10 @@
 FROM python:3.11-slim
 
-# Install system dependencies for bathymetry map generation (ARM-optimized)
+# Install system dependencies (ARM-optimized)
 # Note: This base image uses architecture-specific wheel sources:
 # - ARM32 (armv7): Uses piwheels.org (optimized for Raspberry Pi)
-# - ARM64 (armv8): Uses official scipy wheels from PyPI
-# - AMD64: Uses official scipy wheels from PyPI
+# - ARM64 (armv8): Uses official wheels from PyPI
+# - AMD64: Uses official wheels from PyPI
 RUN apt-get update && \
     apt-get install -y \
     gcc \
@@ -102,7 +102,7 @@ RUN python3 -c "import numpy, pandas, scipy; print(f'numpy: {numpy.__version__},
 RUN echo "Contextily installation skipped for faster base image build"
 
 # Create app directory structure
-RUN mkdir -p /app/logs /app/static /app/contour_map_generator
+RUN mkdir -p /app/logs /app/static
 
 # Set working directory
 WORKDIR /app

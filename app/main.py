@@ -1,13 +1,13 @@
-from flask import Flask, render_template, send_file, jsonify, request, Response #used as back-end service for Vue2 WebApp
-import requests #used to communicate with Vue2 app
-import csv #used to work with output data file
-import time #used for getting current OS time
-import threading #used to run main app within a thread
-import math #used for yaw radian to degree calc
-from datetime import datetime #used for timestamps
-import json #used for JSON decoding
-import os #used for file operations
-import hashlib #used for tile caching
+from flask import Flask, send_file, jsonify, request, Response
+import requests
+import csv
+import time
+import threading
+import math
+from datetime import datetime
+import json
+import os
+import hashlib
 
 # Offline map tile caching - store in external file system alongside logs
 OFFLINE_MAPS_DIR = '/app/logs/offline_maps'
@@ -18,6 +18,9 @@ _offline_maps_dir_verified = False
 _system_id_cache = None
 _distance_component_cache = None
 _urls_cache = None
+_cache_size_bytes = 0
+_cache_size_last_check = 0
+_CACHE_SIZE_CHECK_INTERVAL = 60  # Only recalculate cache size every 60 seconds
 
 # Map tile sources
 MAP_SOURCES = {
@@ -33,20 +36,25 @@ MAP_SOURCES = {
     }
 }
 
-print("hello we are in the script world")
-print(f"Offline map tiles will be stored in: {OFFLINE_MAPS_DIR}")
-print(f"Cache size limit: {TILE_CACHE_SIZE_LIMIT / (1024**3):.1f} GB")
-print(f"Log files will be stored in: /app/logs/ with timestamped names")
-app = Flask(__name__, static_url_path="/static", static_folder="static") #setup flask app
+print("Ping Survey Extension initializing...")
+print(f"Offline map tiles: {OFFLINE_MAPS_DIR} (limit: {TILE_CACHE_SIZE_LIMIT / (1024**3):.1f} GB)")
+app = Flask(__name__, static_url_path="/static", static_folder="static")
 
-logging_active = False# Global variable to control the logging 
+# Thread lock for global state
+_state_lock = threading.Lock()
 
+logging_active = False
+simulation_active = False
+simulation_index = 0
+simulation_data = []
 base_url = 'http://host.docker.internal/mavlink2rest/mavlink'
-log_rate = 2 #Desired rate in Hz
+log_rate = 2  # Desired rate in Hz
+simulation_speed = 5  # Playback speed multiplier
+simulation_file = '/app/logs/simulation.csv'
 
 data = []
 row_counter = 0
-feedback_interval = 5 # Define the feedback interval (in seconds)
+feedback_interval = 5  # Define the feedback interval (in seconds)
 current_log_file = None  # Will be set when logging starts
 
 def ensure_logs_dir():
@@ -126,43 +134,54 @@ def is_tile_cached(z, x, y):
     cache_path = get_tile_cache_path(z, x, y)
     return os.path.exists(cache_path)
 
+def _get_cache_size():
+    """Get the cache size, recalculating only periodically."""
+    global _cache_size_bytes, _cache_size_last_check
+    now = time.time()
+    if now - _cache_size_last_check > _CACHE_SIZE_CHECK_INTERVAL:
+        if os.path.exists(OFFLINE_MAPS_DIR):
+            _cache_size_bytes = sum(
+                os.path.getsize(os.path.join(OFFLINE_MAPS_DIR, f))
+                for f in os.listdir(OFFLINE_MAPS_DIR) if f.endswith('.png')
+            )
+        else:
+            _cache_size_bytes = 0
+        _cache_size_last_check = now
+    return _cache_size_bytes
+
 def cache_tile(z, x, y, tile_data):
     """Cache a tile locally."""
-    if z < 17:  # Only cache high zoom levels as requested
+    global _cache_size_bytes
+    if z < 17:  # Only cache high zoom levels (17-19) to save space
         return
     
     try:
-        # Only verify directory once
         if not ensure_offline_maps_dir():
             return
             
         cache_path = get_tile_cache_path(z, x, y)
         
-        # Check if already cached to avoid redundant operations
         if os.path.exists(cache_path):
             return
         
-        # Check cache size limit (only periodically)
-        if os.path.exists(OFFLINE_MAPS_DIR):
-            total_size = sum(os.path.getsize(os.path.join(OFFLINE_MAPS_DIR, f)) 
-                           for f in os.listdir(OFFLINE_MAPS_DIR) 
-                           if f.endswith('.png'))
-            if total_size > TILE_CACHE_SIZE_LIMIT:
-                # Remove oldest files to make space
-                files = [(f, os.path.getmtime(os.path.join(OFFLINE_MAPS_DIR, f))) 
-                        for f in os.listdir(OFFLINE_MAPS_DIR) if f.endswith('.png')]
-                files.sort(key=lambda x: x[1])  # Sort by modification time
-                
-                # Remove oldest 10% of files
-                files_to_remove = files[:max(1, len(files) // 10)]
-                for f, _ in files_to_remove:
-                    os.remove(os.path.join(OFFLINE_MAPS_DIR, f))
-                print(f"Cleaned up {len(files_to_remove)} old cached tiles")
+        # Check cache size limit periodically
+        if _get_cache_size() > TILE_CACHE_SIZE_LIMIT:
+            files = [(f, os.path.getmtime(os.path.join(OFFLINE_MAPS_DIR, f))) 
+                    for f in os.listdir(OFFLINE_MAPS_DIR) if f.endswith('.png')]
+            files.sort(key=lambda x: x[1])
+            files_to_remove = files[:max(1, len(files) // 10)]
+            removed_size = 0
+            for f, _ in files_to_remove:
+                fpath = os.path.join(OFFLINE_MAPS_DIR, f)
+                removed_size += os.path.getsize(fpath)
+                os.remove(fpath)
+            _cache_size_bytes -= removed_size
+            print(f"Cleaned up {len(files_to_remove)} old cached tiles")
         
         with open(cache_path, 'wb') as f:
             f.write(tile_data)
+        _cache_size_bytes += len(tile_data)
         
-        # Store metadata about this tile (silently)
         store_tile_metadata(z, x, y)
         
     except Exception as e:
@@ -182,7 +201,7 @@ def store_tile_metadata(z, x, y):
             try:
                 with open(metadata_file, 'r') as f:
                     metadata = json.load(f)
-            except:
+            except (json.JSONDecodeError, IOError):
                 metadata = []
         
         # Add new tile info
@@ -389,14 +408,16 @@ def main():
             # Coordinates
             latitude = gps_data['lat'] / 1e7
             longitude = gps_data['lon'] / 1e7
-            altitude = gps_data['alt'] / 1e7
-            data = [unix_timestamp, date, timenow, distance, confidence, yaw, roll, pitch, latitude, longitude, altitude]
-            with open(current_log_file, 'a', newline='') as csvfile: # Create or append to the log file and write the data
+            altitude = gps_data['alt'] / 1000  # GLOBAL_POSITION_INT.alt is in mm
+            row = [unix_timestamp, date, timenow, distance, confidence, yaw, roll, pitch, latitude, longitude, altitude]
+            with _state_lock:
+                data = row
+            with open(current_log_file, 'a', newline='') as csvfile:
                 writer = csv.writer(csvfile)
-                if csvfile.tell() == 0: # Write the column labels as the header row (only for the first write)
+                if csvfile.tell() == 0:
                     writer.writerow(column_labels)
-                writer.writerow(data) # Write the data as a new row
-                row_counter += 1 # Increment the row counter
+                writer.writerow(row)
+                row_counter += 1
 
         else:
             # Print an error message if any of the required requests were unsuccessful
@@ -412,10 +433,6 @@ def main():
                 
         time.sleep(1 / log_rate)
 
-        #except Exception as e:
-        #    print(f"An error occurred: {e}")
-        #    break
-
 @app.route('/')
 def home():
     return app.send_static_file("index.html")
@@ -424,24 +441,106 @@ def home():
 def widget():
     return app.send_static_file("widget.html")
 
-@app.route('/new')
-def new_interface():
-    return app.send_static_file("new_index.html")
-
 @app.route('/start')
 def start_logging():
     global logging_active
-    if not logging_active:
-        logging_active = True
-        thread = threading.Thread(target=main)
-        thread.start()
+    with _state_lock:
+        if not logging_active:
+            logging_active = True
+            thread = threading.Thread(target=main, daemon=True)
+            thread.start()
     return 'Started'
 
 @app.route('/stop')
 def stop_logging():
     global logging_active
-    logging_active = False
+    with _state_lock:
+        logging_active = False
     return 'Stopped'
+
+@app.route('/start_simulation')
+def start_simulation():
+    global simulation_active, simulation_data, simulation_index, logging_active, data
+    
+    with _state_lock:
+        # Stop normal logging if it's running
+        if logging_active:
+            logging_active = False
+    
+    if os.path.exists(simulation_file):
+        simulation_data = []
+        try:
+            with open(simulation_file, 'r') as csvfile:
+                reader = csv.reader(csvfile)
+                next(reader, None)  # Skip header
+                for row in reader:
+                    if len(row) >= 8:
+                        # Pad old format (8 columns) to new format (11 columns)
+                        if len(row) < 11:
+                            row.insert(6, "0")  # Roll
+                            row.insert(7, "0")  # Pitch
+                            row.append("0")     # Altitude
+                        simulation_data.append(row)
+            
+            if simulation_data:
+                with _state_lock:
+                    simulation_active = True
+                    simulation_index = 0
+                    data = simulation_data[0]
+                
+                thread = threading.Thread(target=simulation_loop, daemon=True)
+                thread.start()
+                return jsonify({"success": True, "data_rows": len(simulation_data),
+                                "message": f"Loaded {len(simulation_data)} rows from simulation file"})
+            else:
+                return jsonify({"success": False, "message": "Simulation file is empty or invalid format."})
+        except Exception as e:
+            print(f"Simulation error: {str(e)}")
+            return jsonify({"success": False, "message": f"Error loading simulation file: {str(e)}"})
+    else:
+        return jsonify({"success": False, "message": f"Simulation file not found: {simulation_file}"})
+
+def simulation_loop():
+    global simulation_active, simulation_data, simulation_index, data
+    
+    while simulation_active:
+        if simulation_index < len(simulation_data):
+            try:
+                current_row = simulation_data[simulation_index]
+                if len(current_row) >= 11:
+                    with _state_lock:
+                        data = current_row
+                elif len(current_row) >= 8:
+                    padded_row = list(current_row)
+                    padded_row.insert(6, "0")  # Roll
+                    padded_row.insert(7, "0")  # Pitch
+                    padded_row.append("0")     # Altitude
+                    with _state_lock:
+                        data = padded_row
+                
+                with _state_lock:
+                    simulation_index = (simulation_index + 1) % len(simulation_data)
+            except Exception as e:
+                print(f"Error in simulation loop: {str(e)}")
+                with _state_lock:
+                    simulation_index = (simulation_index + 1) % len(simulation_data)
+        
+        time.sleep((1 / log_rate) / simulation_speed)
+
+@app.route('/stop_simulation')
+def stop_simulation():
+    global simulation_active
+    with _state_lock:
+        simulation_active = False
+    return jsonify({"success": True, "message": "Simulation stopped"})
+
+@app.route('/simulation_status')
+def simulation_status():
+    return jsonify({
+        "simulation_active": simulation_active,
+        "data_rows": len(simulation_data) if simulation_data else 0,
+        "current_index": simulation_index
+    })
 
 @app.route('/register_service')
 def servicenames():
@@ -471,11 +570,11 @@ def download_file():
 @app.route('/data')
 def get_data():
     global data
-    # Return empty array if no data has been collected yet
-    # The frontend expects an array with at least 11 elements when data is available
-    if not data or len(data) == 0:
-        return jsonify([])
-    return jsonify(data)
+    with _state_lock:
+        # Return empty array if no data has been collected yet
+        if not data or len(data) == 0:
+            return jsonify([])
+        return jsonify(list(data))
 
 @app.route('/tiles/<int:z>/<int:x>/<int:y>.png')
 def serve_tile(z, x, y):
@@ -486,49 +585,31 @@ def serve_tile(z, x, y):
         if map_source not in MAP_SOURCES:
             map_source = 'google'  # Fallback to Google if invalid source
         
-        print(f"Serving tile: z={z}, x={x}, y={y}, source={map_source}")
-        
         # First check if we have the tile cached (fast path)
         cached_tile = get_cached_tile(z, x, y)
         if cached_tile:
-            print(f"Tile {z}/{x}/{y} served from cache")
             return Response(cached_tile, mimetype='image/png')
         
         # If not cached, try to fetch from the selected map source
         source_config = MAP_SOURCES[map_source]
         tile_url = source_config['url'].format(x=x, y=y, z=z)
-        print(f"Fetching tile from: {tile_url}")
         
-        # Add headers to mimic a browser request
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             'Accept': 'image/png,image/*,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1'
         }
         
         response = requests.get(tile_url, timeout=10, headers=headers)
         
         if response.status_code == 200:
             tile_data = response.content
-            print(f"Tile {z}/{x}/{y} fetched successfully, size: {len(tile_data)} bytes")
-            
-            # Cache the tile for future offline use (async)
             cache_tile(z, x, y, tile_data)
-            
             return Response(tile_data, mimetype='image/png')
         else:
-            print(f"Failed to fetch tile {z}/{x}/{y}, status: {response.status_code}")
-            print(f"Response headers: {dict(response.headers)}")
-            print(f"Response content: {response.text[:200]}...")
             return Response(status=404)
             
     except Exception as e:
         print(f"Error serving tile {z}/{x}/{y}: {e}")
-        import traceback
-        traceback.print_exc()
         return Response(status=500)
 
 @app.route('/cache_stats')
@@ -555,7 +636,6 @@ def cache_stats():
             'cache_location': OFFLINE_MAPS_DIR
         }
         
-        print(f"Cache stats: {stats}")
         return jsonify(stats)
         
     except Exception as e:
@@ -676,305 +756,84 @@ def get_recent_cached_area():
 
 @app.route('/status', methods=['GET'])
 def status():
-    return {"logging_active": logging_active}
+    with _state_lock:
+        return {"logging_active": logging_active, "simulation_active": simulation_active}
 
-
-@app.route('/debug/logs')
-def debug_logs():
-    """Debug endpoint to check logs directory status."""
+@app.route('/generate_contour', methods=['POST'])
+def generate_contour():
+    """Generate a contour map from a CSV file."""
     try:
-        logs_dir = '/app/logs'
-        exists = os.path.exists(logs_dir)
-        readable = os.access(logs_dir, os.R_OK) if exists else False
-        writable = os.access(logs_dir, os.W_OK) if exists else False
+        from contour_generator import generate_contour_map
         
-        files = []
-        if exists and readable:
-            try:
-                files = os.listdir(logs_dir)
-            except Exception as e:
-                files = [f"Error listing files: {e}"]
+        data = request.get_json() if request.is_json else {}
+        csv_file = data.get('csv_file', current_log_file)
+        primary = data.get('primary_interval', 5.0)
+        secondary = data.get('secondary_interval', 1.0)
         
-        return jsonify({
-            'logs_dir': logs_dir,
-            'exists': exists,
-            'readable': readable,
-            'writable': writable,
-            'files': files,
-            'current_working_dir': os.getcwd(),
-            'env_vars': {k: v for k, v in os.environ.items() if 'LOG' in k.upper() or 'PATH' in k.upper()}
-        })
+        if not csv_file or not os.path.exists(csv_file):
+            # Try to find the most recent CSV in logs
+            logs_dir = '/app/logs'
+            csv_files = [f for f in os.listdir(logs_dir) if f.endswith('.csv') and f != 'simulation.csv']
+            if csv_files:
+                csv_files.sort(key=lambda f: os.path.getmtime(os.path.join(logs_dir, f)), reverse=True)
+                csv_file = os.path.join(logs_dir, csv_files[0])
+            else:
+                return jsonify({'success': False, 'message': 'No CSV files found in logs directory'}), 404
+        
+        result = generate_contour_map(csv_file, primary_interval=primary, secondary_interval=secondary)
+        return jsonify(result)
+    except ImportError as e:
+        return jsonify({'success': False, 'message': f'Contour generator not available: {str(e)}'}), 500
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
 
-@app.route('/debug/test_tile')
-def debug_test_tile():
-    """Test endpoint to check if tile serving works."""
-    try:
-        # Test with a simple tile request
-        z, x, y = 10, 512, 512  # A simple tile
-        map_source = 'google'
-        source_config = MAP_SOURCES[map_source]
-        tile_url = source_config['url'].format(x=x, y=y, z=z)
-        
-        print(f"Testing tile fetch from: {tile_url}")
-        
-        # Add headers to mimic a browser request
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'image/png,image/*,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1'
-        }
-        
-        response = requests.get(tile_url, timeout=10, headers=headers)
-        
-        return jsonify({
-            'tile_url': tile_url,
-            'response_status': response.status_code,
-            'response_size': len(response.content) if response.status_code == 200 else 0,
-            'response_headers': dict(response.headers),
-            'map_sources': MAP_SOURCES,
-            'test_tile_cached': is_tile_cached(z, x, y),
-            'error_details': response.text[:500] if response.status_code != 200 else None
-        })
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+@app.route('/contour_maps')
+def list_contour_maps():
+    """List available contour maps."""
+    contour_dir = '/app/logs/contour_maps'
+    if not os.path.exists(contour_dir):
+        return jsonify({'maps': []})
+    
+    maps = []
+    for f in os.listdir(contour_dir):
+        if f.endswith('.html'):
+            fpath = os.path.join(contour_dir, f)
+            maps.append({
+                'filename': f,
+                'size_mb': round(os.path.getsize(fpath) / (1024 * 1024), 2),
+                'created': os.path.getmtime(fpath)
+            })
+    maps.sort(key=lambda m: m['created'], reverse=True)
+    return jsonify({'maps': maps})
 
-@app.route('/debug/test_image')
-def debug_test_image():
-    """Test endpoint that returns a simple test image to verify image serving works."""
-    try:
-        # Create a simple 256x256 test image (red square)
-        from PIL import Image, ImageDraw
-        
-        # Create a simple test image
-        img = Image.new('RGB', (256, 256), color='red')
-        draw = ImageDraw.Draw(img)
-        draw.rectangle([50, 50, 206, 206], fill='white')
-        draw.text((128, 128), "TEST", fill='black', anchor='mm')
-        
-        # Convert to bytes
-        import io
-        img_byte_arr = io.BytesIO()
-        img.save(img_byte_arr, format='PNG')
-        img_byte_arr = img_byte_arr.getvalue()
-        
-        print(f"Generated test image, size: {len(img_byte_arr)} bytes")
-        
-        return Response(img_byte_arr, mimetype='image/png')
-    except Exception as e:
-        print(f"Error generating test image: {e}")
-        import traceback
-        traceback.print_exc()
-        return Response(status=500)
+@app.route('/contour_map/<filename>')
+def serve_contour_map(filename):
+    """Serve a generated contour map."""
+    contour_dir = '/app/logs/contour_maps'
+    filepath = os.path.join(contour_dir, filename)
+    if os.path.exists(filepath) and filename.endswith('.html'):
+        return send_file(filepath, mimetype='text/html')
+    return jsonify({'error': 'Contour map not found'}), 404
 
 @app.route('/log_files')
 def list_log_files():
-    """List available log files for contour map generation."""
-    try:
-        logs_dir = '/app/logs'
-        print(f"Looking for log files in: {logs_dir}")
-        
-        if not os.path.exists(logs_dir):
-            print(f"Logs directory does not exist: {logs_dir}")
-            # Try to create it
-            try:
-                os.makedirs(logs_dir, exist_ok=True)
-                print(f"Created logs directory: {logs_dir}")
-            except Exception as e:
-                print(f"Failed to create logs directory: {e}")
-                return jsonify({'error': f'Logs directory not found and could not be created: {e}'}), 404
-        
-        # List all files in directory for debugging
-        all_files = os.listdir(logs_dir)
-        print(f"All files in {logs_dir}: {all_files}")
-        
-        files = []
-        for filename in all_files:
-            if filename.endswith('.csv') and filename.startswith('ping_survey_'):
-                file_path = os.path.join(logs_dir, filename)
-                try:
-                    file_size = os.path.getsize(file_path)
-                    file_mtime = os.path.getmtime(file_path)
-                    files.append({
-                        'filename': filename,
-                        'size_mb': round(file_size / (1024 * 1024), 2),
-                        'modified': datetime.fromtimestamp(file_mtime).isoformat(),
-                        'date': datetime.fromtimestamp(file_mtime).strftime('%Y-%m-%d %H:%M:%S')
-                    })
-                    print(f"Found log file: {filename}, size: {file_size} bytes")
-                except (OSError, PermissionError) as e:
-                    print(f"Error accessing file {filename}: {e}")
-                    continue
-        
-        # Sort by modification time (newest first)
-        files.sort(key=lambda x: x['modified'], reverse=True)
-        
-        print(f"Returning {len(files)} log files")
-        return jsonify({'files': files})
-        
-    except Exception as e:
-        print(f"Error listing log files: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/combine_logs', methods=['POST'])
-def combine_log_files():
-    """Combine selected log files into a single CSV for contour map generation."""
-    try:
-        data = request.get_json()
-        selected_files = data.get('files', [])
-        primary_interval = data.get('primary_interval', 5.0)
-        secondary_interval = data.get('secondary_interval', 1.0)
-        
-        if not selected_files:
-            return jsonify({'error': 'No files selected'}), 400
-        
-        logs_dir = '/app/logs'
-        combined_data = []
-        header_written = False
-        
-        # Combine all selected files
-        for filename in selected_files:
-            file_path = os.path.join(logs_dir, filename)
-            if not os.path.exists(file_path):
-                continue
-                
-            try:
-                with open(file_path, 'r') as f:
-                    lines = f.readlines()
-                    
-                if not lines:
-                    continue
-                    
-                # Skip header if we've already written one
-                start_line = 0 if not header_written else 1
-                header_written = True
-                
-                for line in lines[start_line:]:
-                    combined_data.append(line.strip())
-                    
-            except Exception as e:
-                print(f"Error reading file {filename}: {e}")
-                continue
-        
-        if not combined_data:
-            return jsonify({'error': 'No valid data found in selected files'}), 400
-        
-        # Create temporary combined file
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        combined_filename = f'combined_bathymetry_{timestamp}.csv'
-        combined_path = os.path.join(logs_dir, combined_filename)
-        
-        with open(combined_path, 'w') as f:
-            f.write('\n'.join(combined_data))
-        
-        # Generate the bathymetry map
-        result = generate_bathymetry_map(combined_path, primary_interval, secondary_interval)
-        
-        if result['success']:
-            return jsonify({
-                'success': True,
-                'html_file': result['html_file'],
-                'message': f'Bathymetry map generated successfully! {len(combined_data)-1} data points processed.'
+    """List available CSV log files."""
+    logs_dir = '/app/logs'
+    if not os.path.exists(logs_dir):
+        return jsonify({'files': []})
+    
+    files = []
+    for f in os.listdir(logs_dir):
+        if f.endswith('.csv') and f != 'simulation.csv':
+            fpath = os.path.join(logs_dir, f)
+            files.append({
+                'filename': f,
+                'path': fpath,
+                'size_mb': round(os.path.getsize(fpath) / (1024 * 1024), 2),
+                'modified': os.path.getmtime(fpath)
             })
-        else:
-            return jsonify({'error': result['error']}), 500
-            
-    except Exception as e:
-        print(f"Error combining log files: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/download_map/<filename>')
-def download_map(filename):
-    """Download a generated bathymetry map HTML file."""
-    try:
-        logs_dir = '/app/logs'
-        file_path = os.path.join(logs_dir, filename)
-        
-        if not os.path.exists(file_path):
-            return jsonify({'error': 'Map file not found'}), 404
-        
-        # Flask 3: use max_age instead of cache_timeout
-        return send_file(file_path, as_attachment=True, max_age=0)
-        
-    except Exception as e:
-        print(f"Error downloading map: {e}")
-        return jsonify({'error': str(e)}), 500
-
-def generate_bathymetry_map(csv_file, primary_interval=5.0, secondary_interval=1.0):
-    """Generate an interactive bathymetry map using the contour map generator."""
-    try:
-        # Import the bathymetry map generator
-        import sys
-        import os
-        
-        # Try multiple possible paths for the contour map generator
-        possible_paths = [
-            os.path.join(os.path.dirname(__file__), '..', 'contour map generator'),
-            os.path.join(os.path.dirname(__file__), '..', 'contour_map_generator'),
-            '/app/contour_map_generator'
-        ]
-        
-        contour_dir = None
-        for path in possible_paths:
-            if os.path.exists(path):
-                contour_dir = path
-                break
-        
-        if contour_dir is None:
-            return {'success': False, 'error': 'Contour map generator not found. Please ensure the contour map generator files are available.'}
-        
-        sys.path.insert(0, contour_dir)
-        
-        # Import the interactive bathymetry map generator
-        from interactive_bathymetry_map import create_interactive_map, load_and_process_data
-        
-        print(f"Generating bathymetry map for {csv_file}")
-        print(f"Primary interval: {primary_interval}m, Secondary interval: {secondary_interval}m")
-        
-        # Load and process the data
-        lats, lons, depths, df_filtered = load_and_process_data(csv_file)
-        
-        if len(lats) == 0:
-            return {'success': False, 'error': 'No valid data points found after filtering'}
-        
-        # Generate output filename
-        base_name = os.path.splitext(os.path.basename(csv_file))[0]
-        output_filename = f"{base_name}_bathymetry_map.html"
-        output_path = os.path.join(os.path.dirname(csv_file), output_filename)
-        
-        # Create the interactive map
-        create_interactive_map(
-            lats, lons, depths, df_filtered,
-            output_file=output_path,
-            primary_interval=primary_interval,
-            secondary_interval=secondary_interval
-        )
-        
-        print(f"Bathymetry map generated: {output_path}")
-        
-        return {
-            'success': True,
-            'html_file': output_filename,
-            'data_points': len(lats),
-            'depth_range': f"{depths.min():.1f}m - {depths.max():.1f}m"
-        }
-        
-    except ImportError as e:
-        print(f"Import error: {e}")
-        return {'success': False, 'error': f'Required packages not installed: {str(e)}. Please check the Dockerfile includes all necessary dependencies.'}
-    except Exception as e:
-        print(f"Error generating bathymetry map: {e}")
-        import traceback
-        traceback.print_exc()
-        return {'success': False, 'error': str(e)}
+    files.sort(key=lambda f: f['modified'], reverse=True)
+    return jsonify({'files': files})
 
 if __name__ == '__main__':
     # Ensure logs directory exists at startup

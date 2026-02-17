@@ -830,63 +830,47 @@ def create_interactive_map(lats, lons, depths, df_filtered, output_file='interac
     
     return m
 
-def main():
-    """Main function to run the interactive bathymetry map generator."""
-    import sys
-    import argparse
+def generate_contour_map(csv_file, output_file=None, primary_interval=5.0, secondary_interval=1.0):
+    """Generate an interactive bathymetry contour map from a CSV file.
+    
+    Args:
+        csv_file: Path to CSV file with survey data
+        output_file: Output HTML file path. If None, auto-generated in /app/logs/contour_maps/
+        primary_interval: Primary contour interval in meters
+        secondary_interval: Secondary contour interval in meters
+    
+    Returns:
+        dict with 'success', 'output_file', 'message', and 'data_points' keys
+    """
     import os
     
-    # Set up command line argument parsing
-    parser = argparse.ArgumentParser(description='Generate an interactive bathymetry map from CSV data.')
-    parser.add_argument('csv_file', 
-                       help='Path to the CSV file containing bathymetry data')
-    parser.add_argument('-o', '--output', default='interactive_bathymetry_map.html',
-                       help='Output HTML file name (default: interactive_bathymetry_map.html)')
-    parser.add_argument('-p', '--primary', type=float, default=5.0,
-                       help='Primary contour interval in meters (default: 5.0)')
-    parser.add_argument('-s', '--secondary', type=float, default=1.0,
-                       help='Secondary contour interval in meters (default: 1.0)')
-
+    if not os.path.exists(csv_file):
+        return {'success': False, 'message': f'CSV file not found: {csv_file}'}
     
-    args = parser.parse_args()
-    
-    print("Interactive bathymetry map generation started...")
-    print(f"Input CSV file: {args.csv_file}")
-    print(f"Output HTML file: {args.output}")
-    print(f"Primary contour interval: {args.primary}m")
-    print(f"Secondary contour interval: {args.secondary}m")
-
-    
-    # Check if CSV file exists
-    if not os.path.exists(args.csv_file):
-        print(f"Error: CSV file '{args.csv_file}' not found!")
-        print("Please make sure the file exists and the path is correct.")
-        sys.exit(1)
+    # Auto-generate output path if not provided
+    if output_file is None:
+        contour_dir = '/app/logs/contour_maps'
+        os.makedirs(contour_dir, exist_ok=True)
+        basename = os.path.splitext(os.path.basename(csv_file))[0]
+        output_file = os.path.join(contour_dir, f'{basename}_contour.html')
     
     try:
-        # Load and process data
-        lats, lons, depths, df_filtered = load_and_process_data(args.csv_file)
+        lats, lons, depths, df_filtered = load_and_process_data(csv_file)
         
-        # Create interactive map
-        m = create_interactive_map(lats, lons, depths, df_filtered, args.output, args.primary, args.secondary)
+        if len(lats) < 10:
+            return {'success': False, 'message': f'Not enough valid data points ({len(lats)}). Need at least 10.'}
         
-        print("\nInteractive bathymetry map generation completed successfully!")
-        print("Features:")
-        print("- Interactive web map with zoom and pan")
-        print("- Google satellite imagery background")
-        print(f"- Yellow lines: {args.primary}m depth intervals")
-        print(f"- Red lines: {args.secondary}m depth intervals")
-        print("- Data points as toggleable layer")
-        print("- Layer controls for different map types")
-        print("- Measurement tools")
-        print("- Fullscreen option")
-        print("- Clickable depth histogram link")
-        print(f"\nOpen '{args.output}' in your web browser to view the map!")
+        m = create_interactive_map(lats, lons, depths, df_filtered, output_file, 
+                                   primary_interval, secondary_interval)
         
+        return {
+            'success': True,
+            'output_file': output_file,
+            'message': f'Contour map generated with {len(lats)} data points',
+            'data_points': len(lats),
+            'depth_range': f'{depths.min():.1f}m - {depths.max():.1f}m'
+        }
     except Exception as e:
-        print(f"Error: {e}")
-        print("Please check your data and try again.")
-        sys.exit(1)
-
-if __name__ == "__main__":
-    main() 
+        import traceback
+        traceback.print_exc()
+        return {'success': False, 'message': f'Error generating contour map: {str(e)}'} 
