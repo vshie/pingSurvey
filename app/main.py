@@ -769,9 +769,10 @@ def generate_contour():
         csv_file = data.get('csv_file', current_log_file)
         primary = data.get('primary_interval', 5.0)
         secondary = data.get('secondary_interval', 1.0)
+        tidal_offset = data.get('tidal_offset', 0.0)
+        min_confidence = data.get('min_confidence', 90.0)
         
         if not csv_file or not os.path.exists(csv_file):
-            # Try to find the most recent CSV in logs
             logs_dir = '/app/logs'
             csv_files = [f for f in os.listdir(logs_dir) if f.endswith('.csv') and f != 'simulation.csv']
             if csv_files:
@@ -780,7 +781,8 @@ def generate_contour():
             else:
                 return jsonify({'success': False, 'message': 'No CSV files found in logs directory'}), 404
         
-        result = generate_contour_map(csv_file, primary_interval=primary, secondary_interval=secondary)
+        result = generate_contour_map(csv_file, primary_interval=primary, secondary_interval=secondary,
+                                      tidal_offset=tidal_offset, min_confidence=min_confidence)
         return jsonify(result)
     except ImportError as e:
         return jsonify({'success': False, 'message': f'Contour generator not available: {str(e)}'}), 500
