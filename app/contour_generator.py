@@ -390,11 +390,66 @@ def calculate_optimal_zoom(lats, lons, max_zoom=20):
     return min(zoom, max_zoom)
 
 
+def generate_histogram(depths, output_dir, basename, tidal_offset=0.0):
+    """Generate a depth distribution histogram and save it as a PNG.
+    
+    Args:
+        depths: Array of depth values in meters
+        output_dir: Directory to save the histogram image
+        basename: Base filename (without extension) for the histogram
+        tidal_offset: Tidal offset applied (shown in title for reference)
+    
+    Returns:
+        Path to the saved histogram image, or None on failure
+    """
+    import os
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    try:
+        hist_path = os.path.join(output_dir, f'{basename}_histogram.png')
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.hist(depths, bins=50, alpha=0.7, color='steelblue', edgecolor='black')
+        ax.set_xlabel('Depth (meters)')
+        ax.set_ylabel('Number of measurements')
+        title = 'Depth Distribution - Bathymetry Data'
+        if tidal_offset != 0.0:
+            title += f' (tidal offset: {tidal_offset:+.2f}m)'
+        ax.set_title(title)
+        ax.grid(True, alpha=0.3)
+
+        # Add summary stats
+        stats_text = (f'n={len(depths)}\n'
+                      f'min={depths.min():.1f}m\n'
+                      f'max={depths.max():.1f}m\n'
+                      f'mean={depths.mean():.1f}m\n'
+                      f'median={np.median(depths):.1f}m')
+        ax.text(0.97, 0.95, stats_text, transform=ax.transAxes, fontsize=9,
+                verticalalignment='top', horizontalalignment='right',
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+
+        fig.savefig(hist_path, dpi=150, bbox_inches='tight')
+        plt.close(fig)
+        print(f"Depth histogram saved as: {hist_path}")
+        return hist_path
+    except Exception as e:
+        print(f"Error generating histogram: {e}")
+        return None
+
+
 def create_interactive_map(lats, lons, depths, df_filtered, output_file='interactive_bathymetry_map.html',
                            primary_interval=5.0, secondary_interval=1.0, tidal_offset=0.0):
     """Create an interactive web map with bathymetry contours constrained to the survey region."""
 
     import os
+
+    # Generate depth histogram alongside the map
+    output_dir = os.path.dirname(output_file) or '.'
+    basename = os.path.splitext(os.path.basename(output_file))[0]
+    hist_path = generate_histogram(depths, output_dir, basename, tidal_offset)
+    hist_filename = os.path.basename(hist_path) if hist_path else None
 
     # Calculate center and zoom
     center_lat = np.mean(lats)
@@ -499,10 +554,11 @@ def create_interactive_map(lats, lons, depths, df_filtered, output_file='interac
         secondary_area_unit='acres'
     ).add_to(m)
 
-    # Build tidal offset info for legend
+    # Build optional legend lines
     offset_text = f'<p style="color: #666; font-size: 12px;">Tidal offset: {tidal_offset:+.2f}m</p>' if tidal_offset != 0.0 else ''
+    hist_link = f'<p><a href="{hist_filename}" target="_blank" style="color: #0066cc; text-decoration: none;"><i class="fa fa-bar-chart"></i> View Depth Histogram</a></p>' if hist_filename else ''
 
-    # Add legend with coordinate tool
+    # Add legend with histogram link and coordinate tool
     legend_html = f'''
     <div style="position: fixed; 
                 bottom: 50px; left: 50px; width: 220px;
@@ -512,6 +568,7 @@ def create_interactive_map(lats, lons, depths, df_filtered, output_file='interac
     <p><i class="fa fa-circle" style="color:yellow"></i> {primary_interval}m contours</p>
     <p><i class="fa fa-circle" style="color:red"></i> {secondary_interval}m contours</p>
     <p><i class="fa fa-circle" style="color:blue"></i> Data points</p>
+    {hist_link}
     {offset_text}
     <hr style="margin: 8px 0; border: 1px solid #ccc;">
     <p><b>Coordinate Tool</b></p>

@@ -810,12 +810,16 @@ def list_contour_maps():
 
 @app.route('/contour_map/<filename>')
 def serve_contour_map(filename):
-    """Serve a generated contour map."""
+    """Serve a generated contour map or associated asset (e.g. histogram PNG)."""
     contour_dir = '/app/logs/contour_maps'
     filepath = os.path.join(contour_dir, filename)
-    if os.path.exists(filepath) and filename.endswith('.html'):
+    if not os.path.exists(filepath):
+        return jsonify({'error': 'File not found'}), 404
+    if filename.endswith('.html'):
         return send_file(filepath, mimetype='text/html')
-    return jsonify({'error': 'Contour map not found'}), 404
+    if filename.endswith('.png'):
+        return send_file(filepath, mimetype='image/png')
+    return jsonify({'error': 'Unsupported file type'}), 400
 
 @app.route('/log_files')
 def list_log_files():
