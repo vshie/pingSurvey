@@ -770,9 +770,9 @@ def generate_contour():
         primary = data.get('primary_interval', 5.0)
         secondary = data.get('secondary_interval', 1.0)
         tidal_offset = data.get('tidal_offset', 0.0)
-        min_confidence = data.get('min_confidence', 90.0)
         
         if not csv_file or not os.path.exists(csv_file):
+            # Try to find the most recent CSV in logs
             logs_dir = '/app/logs'
             csv_files = [f for f in os.listdir(logs_dir) if f.endswith('.csv') and f != 'simulation.csv']
             if csv_files:
@@ -782,7 +782,7 @@ def generate_contour():
                 return jsonify({'success': False, 'message': 'No CSV files found in logs directory'}), 404
         
         result = generate_contour_map(csv_file, primary_interval=primary, secondary_interval=secondary,
-                                      tidal_offset=tidal_offset, min_confidence=min_confidence)
+                                      tidal_offset=tidal_offset)
         return jsonify(result)
     except ImportError as e:
         return jsonify({'success': False, 'message': f'Contour generator not available: {str(e)}'}), 500
@@ -810,16 +810,12 @@ def list_contour_maps():
 
 @app.route('/contour_map/<filename>')
 def serve_contour_map(filename):
-    """Serve a generated contour map or associated asset (e.g. histogram PNG)."""
+    """Serve a generated contour map."""
     contour_dir = '/app/logs/contour_maps'
     filepath = os.path.join(contour_dir, filename)
-    if not os.path.exists(filepath):
-        return jsonify({'error': 'File not found'}), 404
-    if filename.endswith('.html'):
+    if os.path.exists(filepath) and filename.endswith('.html'):
         return send_file(filepath, mimetype='text/html')
-    if filename.endswith('.png'):
-        return send_file(filepath, mimetype='image/png')
-    return jsonify({'error': 'Unsupported file type'}), 400
+    return jsonify({'error': 'Contour map not found'}), 404
 
 @app.route('/log_files')
 def list_log_files():
