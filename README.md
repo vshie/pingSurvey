@@ -106,7 +106,7 @@ To create a simulation file, rename a previously downloaded survey CSV to `simul
 
 ## Data Format
 
-### Current Format (11 columns)
+### Current Format (12 columns)
 
 | Column | Description | Units |
 |--------|-------------|-------|
@@ -121,10 +121,13 @@ To create a simulation file, rename a previously downloaded survey CSV to `simul
 | Latitude | GPS latitude | decimal degrees |
 | Longitude | GPS longitude | decimal degrees |
 | Altitude (m) | GPS altitude MSL | meters |
+| Pos/Depth Delta (ms) | Time delta between GPS and depth readings | milliseconds |
 
-### Legacy Format (8 columns)
+The Pos/Depth Delta column records how far apart in time the GPS position fix and depth measurement were received by mavlink2rest. Lower values indicate better temporal synchronization. A value of -1 means the distance sensor was unavailable or the delta could not be computed.
 
-Older log files may have 8 columns (without Roll, Pitch, and Altitude). The extension handles both formats automatically, padding legacy data with zeros for missing fields.
+### Legacy Formats
+
+Older log files may have 8 columns (without Roll, Pitch, Altitude, and Delta) or 11 columns (without Delta). The extension handles all formats automatically, padding missing fields with defaults.
 
 ## API Reference
 

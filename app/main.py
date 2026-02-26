@@ -4,7 +4,7 @@ import csv
 import time
 import threading
 import math
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import os
 import hashlib
@@ -360,17 +360,22 @@ def main():
         # Check if GPS and yaw data are available (required)
         if gps_response.status_code == 200 and yaw_response.status_code == 200:
             try:
-                gps_data = gps_response.json()['message']
-                yaw_data = yaw_response.json()['message']
+                gps_json = gps_response.json()
+                yaw_json = yaw_response.json()
+                gps_data = gps_json['message']
+                yaw_data = yaw_json['message']
                 
                 # Handle distance sensor data (optional)
                 distance_data = None
+                distance_json = None
                 if distance_response.status_code == 200:
                     try:
-                        distance_data = distance_response.json()['message']
+                        distance_json = distance_response.json()
+                        distance_data = distance_json['message']
                     except json.JSONDecodeError as e:
                         print(f"Warning: Error decoding distance sensor JSON response: {distance_response.text}")
                         distance_data = None
+                        distance_json = None
                 else:
                     print(f"Warning: Distance sensor not available (status: {distance_response.status_code})")
                 
@@ -380,9 +385,22 @@ def main():
                 print(f"Yaw response: {yaw_response.text}")
                 print(f"Distance response: {distance_response.text}")
                 raise e
-            column_labels = ['Unix Timestamp', 'Date', 'Time','Depth (cm)', 'Confidence (%)', 'Vessel heading (deg)', 'Roll (deg)', 'Pitch (deg)', 'Latitude', 'Longitude', 'Altitude (m)']
-            timestamp = int(time.time() * 1000)  # Convert current time to milliseconds
-            dt = datetime.fromtimestamp(timestamp / 1000)  # Convert timestamp to datetime object 
+
+            # Compute position/depth delta time using mavlink2rest reception timestamps.
+            # Both last_update values are on the companion computer's wall clock,
+            # so the delta is meaningful even though GPS and sonar are different components.
+            position_depth_delta_ms = -1
+            if distance_json is not None:
+                try:
+                    gps_last = datetime.fromisoformat(gps_json['status']['time']['last_update'])
+                    dist_last = datetime.fromisoformat(distance_json['status']['time']['last_update'])
+                    position_depth_delta_ms = round(abs((gps_last - dist_last).total_seconds() * 1000), 1)
+                except (KeyError, ValueError) as e:
+                    print(f"Warning: Could not compute position/depth delta: {e}")
+
+            column_labels = ['Unix Timestamp', 'Date', 'Time','Depth (cm)', 'Confidence (%)', 'Vessel heading (deg)', 'Roll (deg)', 'Pitch (deg)', 'Latitude', 'Longitude', 'Altitude (m)', 'Pos/Depth Delta (ms)']
+            timestamp = int(time.time() * 1000)
+            dt = datetime.fromtimestamp(timestamp / 1000)
             unix_timestamp = timestamp
             timenow = dt.strftime('%H:%M:%S')
             date = dt.strftime('%m/%d/%y')
@@ -391,8 +409,8 @@ def main():
                 distance = distance_data['current_distance']
                 confidence = distance_data['signal_quality']
             else:
-                distance = 0  # Default depth value
-                confidence = 0  # Default confidence value
+                distance = 0
+                confidence = 0
             # Yaw
             yawRad = yaw_data['yaw']
             yawDeg = math.degrees(yawRad)
@@ -409,7 +427,7 @@ def main():
             latitude = gps_data['lat'] / 1e7
             longitude = gps_data['lon'] / 1e7
             altitude = gps_data['alt'] / 1000  # GLOBAL_POSITION_INT.alt is in mm
-            row = [unix_timestamp, date, timenow, distance, confidence, yaw, roll, pitch, latitude, longitude, altitude]
+            row = [unix_timestamp, date, timenow, distance, confidence, yaw, roll, pitch, latitude, longitude, altitude, position_depth_delta_ms]
             with _state_lock:
                 data = row
             with open(current_log_file, 'a', newline='') as csvfile:
@@ -475,11 +493,14 @@ def start_simulation():
                 next(reader, None)  # Skip header
                 for row in reader:
                     if len(row) >= 8:
-                        # Pad old format (8 columns) to new format (11 columns)
+                        # Pad old format (8 columns) to 11-column format
                         if len(row) < 11:
                             row.insert(6, "0")  # Roll
                             row.insert(7, "0")  # Pitch
                             row.append("0")     # Altitude
+                        # Pad 11-column format to 12 columns
+                        if len(row) < 12:
+                            row.append("-1")    # Pos/Depth Delta (ms) unknown
                         simulation_data.append(row)
             
             if simulation_data:
@@ -507,14 +528,20 @@ def simulation_loop():
         if simulation_index < len(simulation_data):
             try:
                 current_row = simulation_data[simulation_index]
-                if len(current_row) >= 11:
+                if len(current_row) >= 12:
                     with _state_lock:
                         data = current_row
+                elif len(current_row) >= 11:
+                    padded_row = list(current_row)
+                    padded_row.append("-1")    # Pos/Depth Delta (ms) unknown
+                    with _state_lock:
+                        data = padded_row
                 elif len(current_row) >= 8:
                     padded_row = list(current_row)
                     padded_row.insert(6, "0")  # Roll
                     padded_row.insert(7, "0")  # Pitch
                     padded_row.append("0")     # Altitude
+                    padded_row.append("-1")    # Pos/Depth Delta (ms) unknown
                     with _state_lock:
                         data = padded_row
                 
