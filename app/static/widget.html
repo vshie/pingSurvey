@@ -169,19 +169,57 @@
                     longitude: '--',
                     status: '',
                     intervalId: null,
-                    receivingData: false
+                    receivingData: false,
+                    currentLogFile: null
                 }
             },
             methods: {
+                localDayString() {
+                    return new Date().toLocaleDateString('en-CA');
+                },
+                localTimestampString() {
+                    const d = new Date();
+                    const pad = (n) => String(n).padStart(2, '0');
+                    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+                },
+                filenameFromContentDisposition(headerValue) {
+                    if (!headerValue) return null;
+                    const starMatch = /filename\*=(?:UTF-\d['']*)?([^;]+)/i.exec(headerValue);
+                    if (starMatch) {
+                        try { return decodeURIComponent(starMatch[1].trim().replace(/^"|"$/g, '')); }
+                        catch (e) { /* fall through */ }
+                    }
+                    const match = /filename="?([^";]+)"?/i.exec(headerValue);
+                    return match ? match[1].trim() : null;
+                },
                 async toggleRun() {
                     this.isLoading = true;
                     try {
                         if (!this.run) {
-                            const response = await fetch('/start');
+                            const day = this.localDayString();
+                            let hasCurrent = false;
+                            const currentResp = await fetch(`/current_log?day=${encodeURIComponent(day)}`);
+                            if (currentResp.ok) {
+                                const currentInfo = await currentResp.json();
+                                hasCurrent = !!currentInfo.has_current;
+                                if (currentInfo.filename) this.currentLogFile = currentInfo.filename;
+                            }
+
+                            const response = await fetch('/start', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({
+                                    day,
+                                    timestamp_iso: this.localTimestampString(),
+                                    name: hasCurrent ? undefined : 'Survey',
+                                }),
+                            });
                             if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+                            const result = await response.json().catch(() => ({}));
+                            if (result.filename) this.currentLogFile = result.filename;
                             this.run = true;
                             this.icon = 'mdi-stop';
-                            this.status = 'Logging started';
+                            this.status = this.currentLogFile ? `Logging started: ${this.currentLogFile}` : 'Logging started';
                             this.intervalId = setInterval(this.fetchData, 1000);
                         } else {
                             const response = await fetch('/stop');
@@ -206,18 +244,15 @@
                         
                         const blob = await response.blob();
                         const url = window.URL.createObjectURL(blob);
-                        const timestamp = new Date().toLocaleString('en-US', { 
-                            year: 'numeric', month: '2-digit', day: '2-digit', 
-                            hour: '2-digit', minute: '2-digit' 
-                        }).replace(/[/:]/g, '-');
-                        
-                        const fileName = `ping_survey_${timestamp}.csv`;
+                        const headerName = this.filenameFromContentDisposition(response.headers.get('Content-Disposition'));
+                        const fileName = headerName || this.currentLogFile || 'survey_log.csv';
                         const link = document.createElement('a');
                         link.href = url;
                         link.setAttribute('download', fileName);
                         document.body.appendChild(link);
                         link.click();
                         document.body.removeChild(link);
+                        window.URL.revokeObjectURL(url);
                         
                         this.status = 'Download complete';
                         setTimeout(() => {

@@ -10,6 +10,14 @@ RUN python -m pip install /app --extra-index-url https://www.piwheels.org/simple
 EXPOSE 5420/tcp
 
 LABEL version="1.0.1"
+LABEL name="simple_ping_survey"
+LABEL display_name="Simple Ping Survey"
+LABEL display_description="Record Ping sonar, GPS, and vehicle attitude data to survey CSV logs"
+LABEL display_category="Sensors"
+LABEL display_icon="mdi-map-plus"
+LABEL display_order="10"
+LABEL description="Simple Ping Survey records Ping sonar and navigation data to CSV logs"
+LABEL icon="mdi-map-plus"
 
 ARG IMAGE_NAME
 
@@ -24,10 +32,11 @@ LABEL permissions='\
     "PortBindings": {\
       "5420/tcp": [\
         {\
-          "HostPort": ""\
+          "HostPort": "5420"\
         }\
       ]\
-    }\
+    },\
+    "NetworkMode": "host"\
   }\
 }'
 
