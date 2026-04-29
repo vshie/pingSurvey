@@ -9,7 +9,7 @@ RUN python -m pip install /app --extra-index-url https://www.piwheels.org/simple
 
 EXPOSE 5420/tcp
 
-LABEL version="1.0.1"
+LABEL version="1.2.1"
 LABEL name="simple_ping_survey"
 LABEL display_name="Simple Ping Survey"
 LABEL display_description="Record Ping sonar, GPS, and vehicle attitude data to survey CSV logs"

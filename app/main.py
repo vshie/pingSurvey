@@ -410,7 +410,7 @@ def servicenames():
     "description": "This extension makes it easy to record data from the Ping sonar and gps onboard the vehicle, keeping a poor communications link from interfering with the quality of collected survey data. When connected, the extension displays a data preview that is intended to aide in survey grid spacing determination while logging at 2Hz. Happy motoring!",
     "icon": "mdi-map-plus",
     "company": "Blue Robotics",
-    "version": "0.5",
+    "version": "1.2.1",
     "webpage": "https://github.com/vshie/pingSurvey",
     "api": "https://github.com/bluerobotics/BlueOS-docker"}
     '''
