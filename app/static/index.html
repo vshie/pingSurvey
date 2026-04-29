@@ -308,6 +308,10 @@
                             <v-icon left>mdi-download</v-icon>
                             Download
                         </v-btn>
+                        <v-btn color="error" outlined rounded elevation="2" @click="confirmDeleteOldLogs">
+                            <v-icon left>mdi-trash-can-outline</v-icon>
+                            Delete Old Logs
+                        </v-btn>
                     </div>
                     
                     <!-- Center section - Map Controls -->
@@ -380,6 +384,7 @@
                     receivingData: false,
                     scaleAdded: false,
                     showLegend: true,
+                    currentLogFile: null,
                     simulation: {
                         active: false,
                         dataRows: 0,
@@ -412,27 +417,80 @@
             },
             methods: {
                 async toggleRun() {
-                    this.icon = this.icon === 'mdi-play' ? 'mdi-stop' : 'mdi-play';
-                    this.run = !this.run;
-                    if (this.run) {
-                        await this.start();
+                    if (!this.run) {
+                        const started = await this.start();
+                        if (started) {
+                            this.run = true;
+                            this.icon = 'mdi-stop';
+                        }
                     } else {
                         await this.stop();
+                        this.run = false;
+                        this.icon = 'mdi-play';
                     }
+                },
+                localDayString() {
+                    // YYYY-MM-DD in browser-local time (en-CA gives that exact format).
+                    return new Date().toLocaleDateString('en-CA');
+                },
+                localTimestampString() {
+                    const d = new Date();
+                    const pad = (n) => String(n).padStart(2, '0');
+                    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
                 },
                 async start() {
                     try {
-                        const response = await fetch('/start');
+                        const day = this.localDayString();
+
+                        // Check whether the server already has an active log file for today.
+                        let hasCurrent = false;
+                        try {
+                            const checkResp = await fetch(`/current_log?day=${encodeURIComponent(day)}`);
+                            if (checkResp.ok) {
+                                const info = await checkResp.json();
+                                hasCurrent = !!info.has_current;
+                                if (hasCurrent && info.filename) {
+                                    this.currentLogFile = info.filename;
+                                }
+                            }
+                        } catch (err) {
+                            console.warn('current_log check failed, will prompt for name:', err);
+                        }
+
+                        const body = {day, timestamp_iso: this.localTimestampString()};
+                        if (!hasCurrent) {
+                            const defaultName = this.randomNames[Math.floor(Math.random() * this.randomNames.length)];
+                            const name = window.prompt('Name this survey (used in the file name):', defaultName);
+                            if (name === null) {
+                                this.status = 'Start cancelled.';
+                                return false;
+                            }
+                            body.name = name.trim() || defaultName;
+                        }
+
+                        const response = await fetch('/start', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify(body),
+                        });
                         if (!response.ok) {
                             throw new Error(`HTTP error! Status: ${response.status}`);
                         }
-                        this.status = 'Data logging started.';
+                        const result = await response.json().catch(() => ({}));
+                        if (result && result.filename) {
+                            this.currentLogFile = result.filename;
+                        }
+                        this.status = this.currentLogFile
+                            ? `Data logging started -> ${this.currentLogFile}`
+                            : 'Data logging started.';
                         this.receivingData = true;
                         this.resetMap(9.2, -133, 10);
                         this.intervalId = setInterval(this.fetchData, 1000);
+                        return true;
                     } catch (error) {
-                        console.error('Error fetching data:', error);
+                        console.error('Error starting logging:', error);
                         this.status = 'Error: ' + error.message;
+                        return false;
                     }
                 },
                 async stop() {
@@ -449,29 +507,60 @@
                         this.status = 'Error: ' + error.message;
                     }
                 },
+                filenameFromContentDisposition(headerValue) {
+                    if (!headerValue) return null;
+                    // Try RFC 5987 filename*=UTF-8''... first
+                    const starMatch = /filename\*=(?:UTF-\d['']*)?([^;]+)/i.exec(headerValue);
+                    if (starMatch) {
+                        try { return decodeURIComponent(starMatch[1].trim().replace(/^"|"$/g, '')); }
+                        catch (e) { /* fall through */ }
+                    }
+                    const match = /filename="?([^";]+)"?/i.exec(headerValue);
+                    return match ? match[1].trim() : null;
+                },
                 async download() {
                     try {
                         const response = await fetch('/download');
                         if (!response.ok) {
+                            if (response.status === 404) {
+                                this.status = 'No active log file to download yet. Click Start first.';
+                                return;
+                            }
                             throw new Error(`HTTP error! Status: ${response.status}`);
                         }
                         const blob = await response.blob();
                         const url = window.URL.createObjectURL(blob);
-                        const randomName = this.randomNames[Math.floor(Math.random() * this.randomNames.length)];
-                        const timestamp = new Date().toLocaleString('en-US', { 
-                            month: '2-digit', day: '2-digit', year: 'numeric', 
-                            hour: '2-digit', minute: '2-digit', second: '2-digit' 
-                        }).replace(',', '');
-                        const fileName = `${randomName}_finished_at_${timestamp}.csv`;
+                        const headerName = this.filenameFromContentDisposition(response.headers.get('Content-Disposition'));
+                        const fileName = headerName || this.currentLogFile || 'survey_log.csv';
                         const link = document.createElement('a');
                         link.href = url;
                         link.setAttribute('download', fileName);
                         document.body.appendChild(link);
                         link.click();
                         document.body.removeChild(link);
+                        window.URL.revokeObjectURL(url);
                         this.status = `Data file downloaded: ${fileName}`;
                     } catch (error) {
-                        console.error('Error fetching data:', error);
+                        console.error('Error downloading log:', error);
+                        this.status = 'Error: ' + error.message;
+                    }
+                },
+                async confirmDeleteOldLogs() {
+                    const ok = window.confirm('Delete all saved log CSVs except the current session?\n\nThis cannot be undone.');
+                    if (!ok) return;
+                    try {
+                        const response = await fetch('/delete_old_logs', {method: 'POST'});
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! Status: ${response.status}`);
+                        }
+                        const result = await response.json();
+                        const deletedCount = (result.deleted || []).length;
+                        const errCount = (result.errors || []).length;
+                        const keptMsg = result.kept ? ` (kept ${result.kept})` : '';
+                        const errMsg = errCount ? `, ${errCount} error(s)` : '';
+                        this.status = `Deleted ${deletedCount} old log file${deletedCount === 1 ? '' : 's'}${keptMsg}${errMsg}.`;
+                    } catch (error) {
+                        console.error('Error deleting old logs:', error);
                         this.status = 'Error: ' + error.message;
                     }
                 },
@@ -656,6 +745,7 @@
                 async checkLoggingStatus() {
                     try {
                         const response = await axios.get('/status');
+                        this.currentLogFile = response.data.current_log_file || null;
                         if (response.data.logging_active) {
                             this.run = true;
                             this.icon = 'mdi-stop';

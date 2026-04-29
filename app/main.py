@@ -1,4 +1,4 @@
-from flask import Flask, render_template, send_file, jsonify #used as back-end service for Vue2 WebApp
+from flask import Flask, render_template, send_file, jsonify, request #used as back-end service for Vue2 WebApp
 import requests #used to communicate with Vue2 app
 import csv #used to work with output data file
 import time #used for getting current OS time
@@ -7,6 +7,8 @@ import math #used for yaw radian to degree calc
 from datetime import datetime #used for timestamps
 import json #used for JSON decoding
 import os #used for file operations
+import re #used for sanitizing survey names / timestamps in filenames
+
 print("hello we are in the script world")
 app = Flask(__name__, static_url_path="/static", static_folder="static") #setup flask app
 
@@ -15,8 +17,102 @@ simulation_active = False # Global variable to control simulation mode
 simulation_index = 0 # Index to track which row of simulation data we're on
 simulation_data = [] # Store simulation data from CSV
 base_url = 'http://host.docker.internal/mavlink2rest/mavlink'
-log_file = '/app/logs/sensordata.csv'
-simulation_file = '/app/logs/simulation.csv'
+
+LOGS_DIR = '/app/logs'
+STATE_FILE = os.path.join(LOGS_DIR, '.current.json')
+simulation_file = os.path.join(LOGS_DIR, 'simulation.csv')
+
+# Active survey log (full path) and calendar day key (YYYY-MM-DD) from browser
+current_log_file = None
+current_log_day = None
+
+
+def _ensure_logs_dir():
+    os.makedirs(LOGS_DIR, exist_ok=True)
+
+
+def _clear_state_file_only():
+    try:
+        if os.path.exists(STATE_FILE):
+            os.remove(STATE_FILE)
+    except OSError:
+        pass
+
+
+def _clear_state():
+    global current_log_file, current_log_day
+    current_log_file = None
+    current_log_day = None
+    _clear_state_file_only()
+
+
+def _save_state(file_path, day):
+    _ensure_logs_dir()
+    with open(STATE_FILE, 'w') as f:
+        json.dump({"file": file_path, "day": day}, f)
+
+
+def _load_state():
+    """Restore current_log_file / current_log_day from disk if valid."""
+    global current_log_file, current_log_day
+    current_log_file = None
+    current_log_day = None
+    if not os.path.exists(STATE_FILE):
+        return
+    try:
+        with open(STATE_FILE, 'r') as f:
+            st = json.load(f)
+        path = st.get('file')
+        day = st.get('day')
+        if path and day and os.path.isfile(path):
+            current_log_file = path
+            current_log_day = day
+        else:
+            _clear_state_file_only()
+    except Exception as e:
+        print(f"Warning: could not load state: {e}")
+        _clear_state_file_only()
+
+
+def _sanitize_name(raw):
+    if not raw or not str(raw).strip():
+        return 'Survey'
+    s = str(raw).strip().replace('\\', '_').replace('/', '_')
+    s = re.sub(r'\s+', '_', s)
+    s = re.sub(r'[^A-Za-z0-9_-]+', '', s)
+    s = s.strip('_') or 'Survey'
+    return s[:60]
+
+
+def _build_log_path(name, timestamp_iso):
+    """Build log path under LOGS_DIR; timestamp from client ISO string (colons -> -)."""
+    ts = (timestamp_iso or datetime.now().isoformat()).replace(':', '-')
+    for c in '<>:"|?*':
+        ts = ts.replace(c, '-')
+    safe_name = _sanitize_name(name)
+    fname = f"{safe_name}_{ts}.csv"
+    return os.path.join(LOGS_DIR, fname)
+
+
+def _resolve_log_for_start(day, name, timestamp_iso):
+    """Reuse same-day existing file if present; otherwise create new path and persist state."""
+    global current_log_file, current_log_day
+    reuse = (
+        current_log_file
+        and current_log_day == day
+        and os.path.isfile(current_log_file)
+    )
+    if reuse:
+        return
+    if not timestamp_iso:
+        timestamp_iso = datetime.now().isoformat()
+    display_name = name if name and str(name).strip() else 'Survey'
+    current_log_file = _build_log_path(display_name, timestamp_iso)
+    current_log_day = day
+    _ensure_logs_dir()
+    # Create the file immediately so same-day reuse works even before first sensor row.
+    open(current_log_file, 'a').close()
+    _save_state(current_log_file, current_log_day)
 log_rate = 2 #Desired rate in Hz
 simulation_speed = 5 #Playback speed multiplier for simulation
 data = []
@@ -201,7 +297,14 @@ def main():
             longitude = gps_data['lon'] / 1e7
             altitude = gps_data['alt'] / 1e7
             data = [unix_timestamp, date, timenow, distance, confidence, yaw, roll, pitch, latitude, longitude, altitude]
-            with open(log_file, 'a', newline='') as csvfile: # Create or append to the log file and write the data
+            target_file = current_log_file
+            if not target_file:
+                # Defensive: should not happen because /start sets this before launching the thread
+                print("No active log file set; skipping write")
+                time.sleep(1 / log_rate)
+                continue
+            _ensure_logs_dir()
+            with open(target_file, 'a', newline='') as csvfile: # Create or append to the log file and write the data
                 writer = csv.writer(csvfile)
                 if csvfile.tell() == 0: # Write the column labels as the header row (only for the first write)
                     writer.writerow(column_labels)
@@ -238,14 +341,61 @@ def new_interface():
 def get_data():
     return jsonify(data)
 
-@app.route('/start')
+@app.route('/current_log', methods=['GET'])
+def current_log_info():
+    """Report whether there is an active log file for the given browser-local day."""
+    day = request.args.get('day', '').strip()
+    if (
+        day
+        and current_log_file
+        and current_log_day == day
+        and os.path.isfile(current_log_file)
+    ):
+        return jsonify({
+            "has_current": True,
+            "filename": os.path.basename(current_log_file),
+            "day": current_log_day,
+        })
+    return jsonify({"has_current": False})
+
+
+@app.route('/start', methods=['GET', 'POST'])
 def start_logging():
+    """Start logging.
+
+    POST body (preferred): {"name": "...", "day": "YYYY-MM-DD", "timestamp_iso": "..."}
+    - If state already has a file for the given `day`, reuse it (ignore name/timestamp).
+    - Otherwise create a new file named `<sanitized name>_<timestamp>.csv` and persist state.
+
+    A bare GET (legacy) reuses the current file if present, else creates an auto-named
+    file using server-local time/day.
+    """
     global logging_active
+    payload = {}
+    if request.method == 'POST':
+        try:
+            payload = request.get_json(silent=True) or {}
+        except Exception:
+            payload = {}
+
+    now = datetime.now()
+    day = (payload.get('day') or now.strftime('%Y-%m-%d')).strip()
+    name = payload.get('name')
+    timestamp_iso = payload.get('timestamp_iso') or now.isoformat()
+
+    _resolve_log_for_start(day, name, timestamp_iso)
+
     if not logging_active:
         logging_active = True
         thread = threading.Thread(target=main)
         thread.start()
-    return 'Started'
+
+    return jsonify({
+        "status": "started",
+        "filename": os.path.basename(current_log_file) if current_log_file else None,
+        "day": current_log_day,
+    })
+
 
 @app.route('/stop')
 def stop_logging():
@@ -268,7 +418,47 @@ def servicenames():
 
 @app.route('/download')
 def download_file():
-    return send_file(log_file, as_attachment=True, cache_timeout=0)
+    if not current_log_file or not os.path.isfile(current_log_file):
+        return jsonify({"success": False, "message": "No active log file to download"}), 404
+    return send_file(
+        current_log_file,
+        as_attachment=True,
+        attachment_filename=os.path.basename(current_log_file),
+        cache_timeout=0,
+    )
+
+
+@app.route('/delete_old_logs', methods=['POST'])
+def delete_old_logs():
+    """Delete every CSV in LOGS_DIR except the active log file and simulation.csv."""
+    _ensure_logs_dir()
+    deleted = []
+    errors = []
+    keep = os.path.basename(current_log_file) if current_log_file else None
+    try:
+        entries = os.listdir(LOGS_DIR)
+    except OSError as e:
+        return jsonify({"success": False, "message": f"Could not read logs dir: {e}"}), 500
+    for entry in entries:
+        if not entry.lower().endswith('.csv'):
+            continue
+        if entry == 'simulation.csv':
+            continue
+        if keep and entry == keep:
+            continue
+        full_path = os.path.join(LOGS_DIR, entry)
+        try:
+            os.remove(full_path)
+            deleted.append(entry)
+        except OSError as e:
+            errors.append({"file": entry, "error": str(e)})
+    return jsonify({
+        "success": True,
+        "deleted": deleted,
+        "kept": keep,
+        "errors": errors,
+    })
+
 
 @app.route('/data')
 def get_data():
@@ -277,7 +467,12 @@ def get_data():
 
 @app.route('/status', methods=['GET'])
 def status():
-    return {"logging_active": logging_active, "simulation_active": simulation_active}
+    return jsonify({
+        "logging_active": logging_active,
+        "simulation_active": simulation_active,
+        "current_log_file": os.path.basename(current_log_file) if current_log_file else None,
+        "current_log_day": current_log_day,
+    })
 
 @app.route('/start_simulation')
 def start_simulation():
@@ -384,6 +579,8 @@ def simulation_status():
         "current_index": simulation_index,
         "data_format": "enhanced" if simulation_data and len(simulation_data[0]) >= 11 else "legacy"
     })
+
+_load_state()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5420)
