@@ -730,57 +730,6 @@
                         </template>
                         </v-data-table>
                     </div>
-                    <!-- Contour Map Generation -->
-                    <div class="status-panel" style="margin-top: 8px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                            <h4 style="margin: 0;">Contour Map</h4>
-                            <div style="display: flex; gap: 8px; align-items: center;">
-                                <v-btn color="teal" dark small rounded elevation="2" 
-                                       @click="generateContourMap" :loading="contourGenerating">
-                                    <v-icon left small>mdi-chart-line</v-icon>
-                                    Generate
-                                </v-btn>
-                                <v-btn color="teal darken-2" dark small rounded elevation="2" 
-                                       @click="listContourMaps">
-                                    <v-icon left small>mdi-refresh</v-icon>
-                                    Refresh
-                                </v-btn>
-                            </div>
-                        </div>
-                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                            <label style="font-size: 12px; color: #aaa; white-space: nowrap;">Tidal Offset (m):</label>
-                            <v-text-field
-                                v-model.number="tidalOffset"
-                                type="number"
-                                step="0.1"
-                                dense
-                                hide-details
-                                outlined
-                                dark
-                                style="max-width: 100px; font-size: 12px;"
-                                hint="Positive = above datum"
-                            ></v-text-field>
-                            <span style="font-size: 11px; color: #666;">+ above datum</span>
-                        </div>
-                        <div v-if="contourStatus" style="font-size: 12px; color: #888; margin-bottom: 8px;">
-                            {{ contourStatus }}
-                        </div>
-                        <div v-if="contourMaps.length > 0">
-                            <div v-for="map in contourMaps" :key="map.filename" 
-                                 style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid #333; font-size: 12px;">
-                                <span>{{ map.filename }}</span>
-                                <div style="display: flex; gap: 4px; align-items: center;">
-                                    <span style="color: #888;">{{ map.size_mb }} MB</span>
-                                    <v-btn x-small color="teal" dark @click="viewContourMap(map.filename)">
-                                        <v-icon x-small>mdi-open-in-new</v-icon>
-                                    </v-btn>
-                                </div>
-                            </div>
-                        </div>
-                        <div v-else style="font-size: 12px; color: #666; text-align: center; padding: 8px;">
-                            No contour maps generated yet. Record survey data and click Generate.
-                        </div>
-                    </div>
                     <!-- Cache Progress Bar -->
                     <div v-if="cacheProgress.active" class="cache-progress-panel">
                         <div class="progress-header">
@@ -964,12 +913,6 @@
                     
                     // Simulation
                     simulationActive: false,
-                    
-                    // Contour maps
-                    contourMaps: [],
-                    contourGenerating: false,
-                    contourStatus: '',
-                    tidalOffset: 0.0,
                     
                     // Widget URL
                     widgetUrl: '',
@@ -1847,48 +1790,6 @@
                     return inside;
                 },
                 
-                async generateContourMap() {
-                    this.contourGenerating = true;
-                    const offsetVal = parseFloat(this.tidalOffset) || 0.0;
-                    const offsetMsg = offsetVal !== 0 ? ` (tidal offset: ${offsetVal > 0 ? '+' : ''}${offsetVal}m)` : '';
-                    this.contourStatus = `Generating contour map${offsetMsg}...`;
-                    try {
-                        const response = await fetch('/generate_contour', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                primary_interval: 5.0,
-                                secondary_interval: 1.0,
-                                tidal_offset: offsetVal
-                            })
-                        });
-                        const result = await response.json();
-                        if (result.success) {
-                            this.contourStatus = result.message;
-                            await this.listContourMaps();
-                        } else {
-                            this.contourStatus = 'Error: ' + result.message;
-                        }
-                    } catch (error) {
-                        console.error('Error generating contour map:', error);
-                        this.contourStatus = 'Error: ' + error.message;
-                    } finally {
-                        this.contourGenerating = false;
-                    }
-                },
-                async listContourMaps() {
-                    try {
-                        const response = await fetch('/contour_maps');
-                        const result = await response.json();
-                        this.contourMaps = result.maps || [];
-                    } catch (error) {
-                        console.error('Error listing contour maps:', error);
-                    }
-                },
-                viewContourMap(filename) {
-                    window.open('/contour_map/' + filename, '_blank');
-                },
-                
                 async toggleSimulation() {
                     if (!this.simulationActive) {
                         await this.startSimulation();
@@ -2019,7 +1920,6 @@
                         this.getRecentCachedArea();
                         this.startCacheStatsRefresh();
                         this.loadMapSources();
-                        this.listContourMaps();
                         
                         console.log('Map initialization complete');
                     }, 200); // Increased delay to ensure DOM is updated

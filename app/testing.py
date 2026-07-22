@@ -95,11 +95,6 @@ def recent_cached_area():
     return jsonify({'has_cached_tiles': False, 'center_lat': 9.2, 'center_lon': -133, 'zoom': 10})
 
 
-@app.route('/contour_maps')
-def contour_maps():
-    return jsonify({'maps': []})
-
-
 @app.route('/log_files')
 def log_files():
     return jsonify({'files': []})

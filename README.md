@@ -14,7 +14,6 @@ pingSurvey synchronizes and logs data from Ping sonar sensors and GPS/autopilot 
 - **Interactive map** with depth circles overlaid on satellite imagery
 - **Offline map tile caching** for operations without internet connectivity
 - **Cockpit widget** for compact monitoring within the Cockpit interface
-- **Bathymetry contour map generation** from collected survey data
 - **Simulation mode** for reviewing past surveys at 5x playback speed
 - **Automatic system ID detection** for ArduPilot, PX4, and generic autopilots
 
@@ -39,7 +38,6 @@ Access the full interface by navigating to **Simple Ping Survey** in the BlueOS 
 - **Controls**: Start/Stop logging, Download CSV, Center map, Clear markers
 - **Status Console**: Live data table showing depth, confidence, heading, position, and attitude
 - **Offline Caching**: Cache map tiles for offline operation (see below)
-- **Contour Generation**: Generate bathymetry contour maps from collected data
 
 ### Data Collection
 
@@ -78,20 +76,6 @@ For operations without internet connectivity:
 3. Tiles are cached from zoom level 10 to 19 for comprehensive offline coverage
 4. Cache is stored persistently in `/app/logs/offline_maps/` (5GB limit with automatic LRU eviction)
 5. Multiple map sources available: Google Maps and ArcGIS World Imagery
-
-### Contour Map Generation
-
-Generate interactive bathymetry contour maps from your survey data:
-
-1. Collect survey data using the normal logging workflow
-2. Click **Generate** in the Contour Map section
-3. The system generates an interactive HTML map with:
-   - Color-coded depth contours (5m primary, 1m secondary intervals)
-   - IDW interpolation for continuous surface visualization
-   - Toggle-able data point layer
-   - Measurement tools and fullscreen mode
-   - Click-to-mark coordinate tool
-4. View generated maps directly from the interface
 
 ### Simulation Mode
 
@@ -149,9 +133,6 @@ Older log files may have 8 columns (without Roll, Pitch, Altitude, and Delta) or
 | `/map_sources` | GET | Get available map tile sources |
 | `/tile_cached/<z>/<x>/<y>` | GET | Check if a tile is cached |
 | `/recent_cached_area` | GET | Get most recently cached area |
-| `/generate_contour` | POST | Generate contour map from CSV data |
-| `/contour_maps` | GET | List generated contour maps |
-| `/contour_map/<filename>` | GET | View a generated contour map |
 | `/log_files` | GET | List available CSV log files |
 | `/register_service` | GET | BlueOS service registration metadata |
 
@@ -161,7 +142,6 @@ Older log files may have 8 columns (without Roll, Pitch, Altitude, and Delta) or
 pingSurvey/
 ├── app/
 │   ├── main.py                 # Flask backend (data collection, tile proxy, API)
-│   ├── contour_generator.py    # Bathymetry contour map generation
 │   ├── testing.py              # Development test server
 │   ├── pyproject.toml          # Python project metadata
 │   └── static/
@@ -225,7 +205,6 @@ See [BASE_IMAGE_SETUP.md](BASE_IMAGE_SETUP.md) for base image build instructions
 - **No depth readings**: Verify the Ping sonar is connected and detected. Check that DISTANCE_SENSOR messages are available in MAVLink2Rest.
 - **GPS data missing**: Ensure the vehicle has a GPS fix. The extension requires GLOBAL_POSITION_INT messages.
 - **Map tiles not loading**: Check internet connectivity. For offline use, pre-cache tiles using the Cache View or Cache Region buttons while connected.
-- **Contour generation fails**: Ensure you have at least 10 valid data points with confidence >= 95% and depth >= 5m.
 - **Simulation not starting**: Verify `simulation.csv` exists in `/app/logs/` with the correct CSV format.
 
 ## Discussion

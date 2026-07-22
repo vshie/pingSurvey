@@ -786,64 +786,6 @@ def status():
     with _state_lock:
         return {"logging_active": logging_active, "simulation_active": simulation_active}
 
-@app.route('/generate_contour', methods=['POST'])
-def generate_contour():
-    """Generate a contour map from a CSV file."""
-    try:
-        from contour_generator import generate_contour_map
-        
-        data = request.get_json() if request.is_json else {}
-        csv_file = data.get('csv_file', current_log_file)
-        primary = data.get('primary_interval', 5.0)
-        secondary = data.get('secondary_interval', 1.0)
-        tidal_offset = data.get('tidal_offset', 0.0)
-        
-        if not csv_file or not os.path.exists(csv_file):
-            # Try to find the most recent CSV in logs
-            logs_dir = '/app/logs'
-            csv_files = [f for f in os.listdir(logs_dir) if f.endswith('.csv') and f != 'simulation.csv']
-            if csv_files:
-                csv_files.sort(key=lambda f: os.path.getmtime(os.path.join(logs_dir, f)), reverse=True)
-                csv_file = os.path.join(logs_dir, csv_files[0])
-            else:
-                return jsonify({'success': False, 'message': 'No CSV files found in logs directory'}), 404
-        
-        result = generate_contour_map(csv_file, primary_interval=primary, secondary_interval=secondary,
-                                      tidal_offset=tidal_offset)
-        return jsonify(result)
-    except ImportError as e:
-        return jsonify({'success': False, 'message': f'Contour generator not available: {str(e)}'}), 500
-    except Exception as e:
-        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
-
-@app.route('/contour_maps')
-def list_contour_maps():
-    """List available contour maps."""
-    contour_dir = '/app/logs/contour_maps'
-    if not os.path.exists(contour_dir):
-        return jsonify({'maps': []})
-    
-    maps = []
-    for f in os.listdir(contour_dir):
-        if f.endswith('.html'):
-            fpath = os.path.join(contour_dir, f)
-            maps.append({
-                'filename': f,
-                'size_mb': round(os.path.getsize(fpath) / (1024 * 1024), 2),
-                'created': os.path.getmtime(fpath)
-            })
-    maps.sort(key=lambda m: m['created'], reverse=True)
-    return jsonify({'maps': maps})
-
-@app.route('/contour_map/<filename>')
-def serve_contour_map(filename):
-    """Serve a generated contour map."""
-    contour_dir = '/app/logs/contour_maps'
-    filepath = os.path.join(contour_dir, filename)
-    if os.path.exists(filepath) and filename.endswith('.html'):
-        return send_file(filepath, mimetype='text/html')
-    return jsonify({'error': 'Contour map not found'}), 404
-
 @app.route('/log_files')
 def list_log_files():
     """List available CSV log files."""
