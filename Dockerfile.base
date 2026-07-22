@@ -1,105 +1,18 @@
 FROM python:3.11-slim
 
-# Install system dependencies (ARM-optimized)
-# Note: This base image uses architecture-specific wheel sources:
-# - ARM32 (armv7): Uses piwheels.org (optimized for Raspberry Pi)
-# - ARM64 (armv8): Uses official wheels from PyPI
-# - AMD64: Uses official wheels from PyPI
-RUN apt-get update && \
-    apt-get install -y \
-    gcc \
-    gfortran \
-    python3-dev \
-    python3-pip \
-    python3-venv \
-    # Avoid mixing system python scientific libs with pip ones
-    # python3-scipy \
-    # python3-matplotlib \
-    python3-pil \
-    python3-requests \
-    python3-shapely \
-    libgeos-dev \
-    libproj-dev \
-    proj-data \
-    proj-bin \
-    libgdal-dev \
-    gdal-bin \
-    # OpenBLAS dependencies for scipy
-    libopenblas-dev \
-    liblapack-dev \
-    pkg-config \
-    && rm -rf /var/lib/apt/lists/*
-
-# Upgrade pip and install build tools
-RUN pip install --upgrade pip setuptools wheel
-
-# Install Python dependencies with compatible versions
-# Use NumPy 1.x to avoid compatibility issues with shapely and other packages
-# Install numpy first, then pandas to ensure compatibility
-RUN pip install --no-cache-dir --prefer-binary numpy==1.24.3
-
-# Install pandas with compatible numpy version
-RUN pip install --no-cache-dir --prefer-binary pandas==2.0.3
-
-# Install other dependencies
-RUN pip install --no-cache-dir --prefer-binary \
+# Minimal runtime dependencies.
+# The backend only needs Flask + requests (plus the Python standard library).
+# The heavy scientific/geo stack (numpy, pandas, scipy, matplotlib, shapely,
+# folium, etc.) and its build toolchain (gcc/gfortran/BLAS/GEOS/PROJ/GDAL) were
+# only required by the contour map generation feature, which has been deferred.
+# Removing them dramatically speeds up the base image build, especially on ARM.
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir --prefer-binary \
     flask==2.3.3 \
-    requests==2.28.2 \
-    folium==0.12.1 \
-    branca==0.4.2 \
-    geojson==2.5.0 \
-    mercantile==1.2.1 \
-    Pillow==9.0.1 \
-    shapely==2.0.1
+    requests==2.28.2
 
-# Install matplotlib using architecture-specific wheel sources
-# For ARM32 (armv7): Use piwheels.org with optimized wheels
-# For ARM64 (armv8): Use official matplotlib wheels
-# For AMD64: Use official matplotlib wheels
-RUN if [ "$(uname -m)" = "armv7l" ]; then \
-        echo "ARM32 detected - trying piwheels for matplotlib" && \
-        pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ matplotlib==3.7.2 || \
-        (echo "matplotlib 3.7.2 not available on piwheels, trying 3.7.1" && \
-         pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ matplotlib==3.7.1) || \
-        (echo "matplotlib 3.7.1 not available on piwheels, trying 3.7.0" && \
-         pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ matplotlib==3.7.0) || \
-        (echo "No matplotlib wheels available on piwheels, falling back to pip" && \
-         pip install --no-cache-dir matplotlib==3.7.2); \
-    else \
-        echo "ARM64/AMD64 detected - using official matplotlib wheels" && \
-        pip install --no-cache-dir --prefer-binary matplotlib==3.7.2 || \
-        (echo "matplotlib 3.7.2 wheel not available, trying 3.7.1" && \
-         pip install --no-cache-dir --prefer-binary matplotlib==3.7.1) || \
-        (echo "matplotlib 3.7.1 wheel not available, trying 3.7.0" && \
-         pip install --no-cache-dir --prefer-binary matplotlib==3.7.0) || \
-        (echo "No matplotlib wheels available, falling back to compilation" && \
-         pip install --no-cache-dir matplotlib==3.7.2); \
-    fi
-
-# Install scipy using architecture-specific wheel sources (PINNED to 1.11.x)
-# Pin to 1.11.x across all arch to avoid pulling NumPy 2.x wheels
-RUN if [ "$(uname -m)" = "armv7l" ]; then \
-        echo "ARM32 detected - using piwheels for scipy 1.11.x" && \
-        pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ scipy==1.11.4 || \
-        pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ scipy==1.11.3 || \
-        pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ scipy==1.11.2 || \
-        pip install --no-cache-dir --prefer-binary --index-url https://www.piwheels.org/simple/ scipy==1.11.1; \
-    else \
-        echo "ARM64/AMD64 detected - using official scipy wheels 1.11.x" && \
-        pip install --no-cache-dir --prefer-binary scipy==1.11.4 || \
-        pip install --no-cache-dir --prefer-binary scipy==1.11.3 || \
-        pip install --no-cache-dir --prefer-binary scipy==1.11.2 || \
-        pip install --no-cache-dir --prefer-binary scipy==1.11.1; \
-    fi
-
-# FINAL PIN: ensure NumPy remains at 1.24.x after scipy/matplotlib installs
-RUN pip install --no-cache-dir --prefer-binary numpy==1.24.3
-
-# Verify scipy installation with detailed error reporting
-RUN python3 -c "import numpy, pandas, scipy; print(f'numpy: {numpy.__version__}, pandas: {pandas.__version__}, scipy: {scipy.__version__}')"
-
-# Method 3: Skip contextily for now to speed up base image build (can be added later if needed)
-RUN echo "Contextily installation skipped for faster base image build"
+# Verify the runtime dependencies import cleanly
+RUN python3 -c "import flask, requests; print(f'flask: {flask.__version__}, requests: {requests.__version__}')"
 
 # Create app directory structure
 RUN mkdir -p /app/logs /app/static
@@ -111,4 +24,4 @@ WORKDIR /app
 EXPOSE 5420/tcp
 
 # This base image is ready for application code to be copied in
-# Trigger base image rebuild with NumPy/pandas compatibility fix 
+# Slimmed base image: contour/scientific dependencies removed for faster builds 
