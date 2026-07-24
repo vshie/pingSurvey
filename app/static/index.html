@@ -567,6 +567,12 @@
             font-size: 11px;
             animation: fadeIn 0.2s ease-in;
         }
+
+        .widget-url-hint {
+            color: #FFB74D;
+            font-size: 11px;
+            flex-basis: 100%;
+        }
         
         @keyframes fadeIn {
             from { opacity: 0; }
@@ -795,6 +801,9 @@
                         Copy
                     </v-btn>
                     <span v-if="urlCopied" class="copied-msg">Copied!</span>
+                    <span v-if="!widgetUrlDirect" class="widget-url-hint">
+                        Replace &lt;PORT&gt; with the Simple Ping Survey port from BlueOS &rarr; Pirate Mode &rarr; Available Services.
+                    </span>
                 </div>
             </div>
         </v-app>
@@ -902,6 +911,7 @@
                     
                     // Widget URL
                     widgetUrl: '',
+                    widgetUrlDirect: true,
                     urlCopied: false
                 }
             },
@@ -1819,27 +1829,64 @@
                     }
                 },
                 
-                copyWidgetUrl() {
-                    navigator.clipboard.writeText(this.widgetUrl).then(() => {
+                async copyWidgetUrl() {
+                    const text = this.widgetUrl;
+                    let ok = false;
+
+                    // The Clipboard API only exists in secure contexts (HTTPS/localhost).
+                    // BlueOS is served over plain HTTP on the LAN, where navigator.clipboard
+                    // is undefined and would throw synchronously, so guard before using it.
+                    if (navigator.clipboard && window.isSecureContext) {
+                        try {
+                            await navigator.clipboard.writeText(text);
+                            ok = true;
+                        } catch (e) {
+                            ok = false;
+                        }
+                    }
+
+                    // Fallback that works over HTTP when triggered by a user gesture.
+                    if (!ok) {
+                        try {
+                            const textArea = document.createElement('textarea');
+                            textArea.value = text;
+                            textArea.setAttribute('readonly', '');
+                            textArea.style.position = 'fixed';
+                            textArea.style.top = '0';
+                            textArea.style.left = '0';
+                            textArea.style.opacity = '0';
+                            document.body.appendChild(textArea);
+                            textArea.focus();
+                            textArea.select();
+                            ok = document.execCommand('copy');
+                            document.body.removeChild(textArea);
+                        } catch (e) {
+                            ok = false;
+                        }
+                    }
+
+                    if (ok) {
                         this.urlCopied = true;
                         setTimeout(() => { this.urlCopied = false; }, 2000);
-                    }).catch(() => {
-                        // Fallback for older browsers
-                        const textArea = document.createElement('textarea');
-                        textArea.value = this.widgetUrl;
-                        document.body.appendChild(textArea);
-                        textArea.select();
-                        document.execCommand('copy');
-                        document.body.removeChild(textArea);
-                        this.urlCopied = true;
-                        setTimeout(() => { this.urlCopied = false; }, 2000);
-                    });
+                    } else {
+                        this.status = 'Copy failed — select the URL and copy manually';
+                    }
                 }
             },
             mounted() {
-                // Set widget URL based on current location, preserving BlueOS path prefix
-                const pathPrefix = window.location.pathname.replace(/\/$/, '');
-                this.widgetUrl = window.location.origin + pathPrefix + '/widget';
+                // Cockpit needs the extension's direct service port, e.g. http://<ip>:<port>/widget.
+                // If this page was opened on that direct port, we can build the URL exactly.
+                // If it was opened through the BlueOS reverse proxy (/extension/...), the host port
+                // isn't knowable from here, so show a <PORT> placeholder plus a hint.
+                const loc = window.location;
+                const proxied = loc.pathname.includes('/extension/');
+                if (!proxied && loc.port) {
+                    this.widgetUrl = `${loc.origin}/widget`;
+                    this.widgetUrlDirect = true;
+                } else {
+                    this.widgetUrl = `${loc.protocol}//${loc.hostname}:<PORT>/widget`;
+                    this.widgetUrlDirect = false;
+                }
                 
                 this.$nextTick(() => {
                     console.log('Initializing map...');

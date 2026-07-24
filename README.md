@@ -49,22 +49,29 @@ Access the full interface by navigating to **Simple Ping Survey** in the BlueOS 
 
 ### Cockpit Widget Integration
 
-To add the compact widget to your Cockpit interface:
+The Cockpit IFrame widget must point at the extension's **direct service port**, not
+the reverse-proxy path. Find the port in BlueOS:
 
-1. Open Cockpit's edit interface
-2. Add a new IFrame widget
-3. Set the iframe URL to:
+1. Enable **Pirate Mode** in BlueOS (bottom of the main menu).
+2. Go to **Available Services** and locate the **Simple Ping Survey** service. Note
+   the port it is exposed on (for example `32772` — the port is assigned by BlueOS and
+   may change if the extension is reinstalled/updated).
+3. In Cockpit's edit interface, add a new **IFrame** widget and set its URL to:
 
 ```
-http://<vehicle-ip>/extension/simpleping2survey/widget
+http://<vehicle-ip>:<port>/widget
 ```
 
-The widget URL is also displayed at the bottom of the main interface with a copy button.
+For example: `http://192.168.1.68:32772/widget`
+
+> Tip: The widget URL shown at the bottom of the main extension interface is only
+> correct if you opened the extension via its direct port. If you reached it through
+> the BlueOS reverse proxy, use the Pirate Mode / Available Services port instead.
 
 The widget provides:
-- Mini-map with vehicle position and depth overlay
+- Beam width and depth as prominent readouts
+- Full sensor readings (confidence, heading, roll/pitch, altitude, position)
 - Start/Stop and Download controls
-- Live sensor readouts (depth, confidence, heading, position, altitude)
 - Recording status indicator
 
 ### Offline Map Caching
