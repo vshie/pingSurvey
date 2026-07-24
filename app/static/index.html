@@ -183,9 +183,12 @@
             justify-content: center;
             box-shadow: 0 3px 5px rgba(0, 0, 0, 0.3);
         }
-        
 
-        
+        .map-center-button--disabled {
+            opacity: 0.4;
+            pointer-events: none;
+        }
+
         /* Caching indicator overlay */
         .caching-indicator {
             position: absolute;
@@ -597,7 +600,7 @@
                     <div class="map-container">
                         <div id="map"></div>
                         <!-- Floating center map button for mobile -->
-                        <div class="map-center-button" @click="onCenterMapButtonClick">
+                        <div class="map-center-button" :class="{ 'map-center-button--disabled': !hasGpsLock }" @click="onCenterMapButtonClick">
                             <v-icon color="white">mdi-crosshairs-gps</v-icon>
                         </div>
                         <!-- Polygon Drawing Controls -->
@@ -670,7 +673,7 @@
                         </div>
                         <!-- Center section - Map Controls -->
                         <div class="controls-section">
-                            <v-btn color="info" dark rounded elevation="2" @click="onCenterMapButtonClick">
+                            <v-btn color="info" dark rounded elevation="2" @click="onCenterMapButtonClick" :disabled="!hasGpsLock">
                                 <v-icon left>mdi-crosshairs-gps</v-icon>
                                 Center
                             </v-btn>
@@ -678,19 +681,6 @@
                                 <v-icon left>mdi-delete</v-icon>
                                 Clear
                             </v-btn>
-                            <v-select
-                                v-model="selectedMapSource"
-                                :items="Object.keys(mapSources)"
-                                :item-text="key => mapSources[key].name"
-                                :item-value="key => key"
-                                label="Map Source"
-                                dark
-                                dense
-                                outlined
-                                hide-details
-                                style="min-width: 150px;"
-                                @change="changeMapSource"
-                            ></v-select>
                             <v-btn color="purple" dark rounded elevation="2" @click="cacheVisibleTiles" :loading="cacheLoading" :disabled="cacheProgress.active">
                                 <v-icon left>mdi-download-multiple</v-icon>
                                 Cache View
@@ -832,6 +822,7 @@
                 return {
                     status: "",
                     firstCoordinateReceived: false,
+                    hasGpsLock: false,
                     icon: 'mdi-play',
                     run: false,
                     map: null,
@@ -869,11 +860,6 @@
                         zoom: 10
                     },
                     mapSources: {
-                        google: {
-                            name: 'Google Maps',
-                            url: 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
-                            attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
-                        },
                         arcgis: {
                             name: 'Esri World Imagery',
                             url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -1024,13 +1010,18 @@
                         const lat = hasNewFormat ? data[8] : data[6];
                         const lon = hasNewFormat ? data[9] : data[7];
                         
-                        this.updateMarker(lat, lon, data[3], data[4], data[5]);
-                        
+                        // A valid GPS lock requires finite coordinates that aren't (0,0)/null island.
+                        const validFix = Number.isFinite(lat) && Number.isFinite(lon) &&
+                            (Math.abs(lat) > 0.0001 || Math.abs(lon) > 0.0001);
+                        this.hasGpsLock = validFix;
+
+                        if (validFix) {
+                            this.updateMarker(lat, lon, data[3], data[4], data[5]);
+                        }
+
                         // Center on GPS the first time we get a VALID fix.
                         // Ignore (0,0) / no-fix readings so the map doesn't jump to null island.
-                        if (!this.firstCoordinateReceived &&
-                            Number.isFinite(lat) && Number.isFinite(lon) &&
-                            (Math.abs(lat) > 0.0001 || Math.abs(lon) > 0.0001)) {
+                        if (!this.firstCoordinateReceived && validFix) {
                             this.firstCoordinateReceived = true;
                             this.map.setView([lat, lon], 18);
                         }
@@ -1082,19 +1073,14 @@
                     this.circleMarkers = [];
                 },
                 onCenterMapButtonClick() {
-                    this.firstCoordinateReceived = false;
-                    
-                    // If we have GPS data already, center on that
-                    if (this.tableItems.length > 0) {
-                        const item = this.tableItems[0];
-                        this.resetMap(item.latitude, item.longitude, 18);
-                    } else if (this.recentCachedArea.has_cached_tiles) {
-                        // If we have cached tiles, center on the recent area
-                        this.resetMap(this.recentCachedArea.center_lat, this.recentCachedArea.center_lon, this.recentCachedArea.zoom);
-                    } else {
-                        // Otherwise reset to default view
-                        this.resetMap(9.2, -133, 10);
+                    // Do nothing unless the system has a valid GPS lock.
+                    if (!this.hasGpsLock || this.tableItems.length === 0) {
+                        this.status = 'No GPS lock — cannot center on vehicle';
+                        return;
                     }
+
+                    const item = this.tableItems[0];
+                    this.resetMap(item.latitude, item.longitude, 18);
                 },
                 getColor(depth) {
                     const colorStops = [

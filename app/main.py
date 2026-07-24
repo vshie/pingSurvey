@@ -24,11 +24,6 @@ _CACHE_SIZE_CHECK_INTERVAL = 60  # Only recalculate cache size every 60 seconds
 
 # Map tile sources
 MAP_SOURCES = {
-    'google': {
-        'name': 'Google Maps',
-        'url': 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
-        'attribution': '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
-    },
     'arcgis': {
         'name': 'Esri World Imagery',
         'url': 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',

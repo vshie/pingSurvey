@@ -69,13 +69,39 @@ The widget provides:
 
 ### Offline Map Caching
 
-For operations without internet connectivity:
+Map imagery is served by **Esri World Imagery**. Before heading somewhere without
+internet (most survey sites), pre-cache the tiles for your area **while you still
+have a connection**. Cached tiles are then served locally, so the map keeps working
+fully offline.
 
-1. **Cache Current View**: Click "Cache View" to cache all tiles visible at the current zoom level and higher
-2. **Cache Region**: Click "Cache Region" to draw a polygon on the map, then cache all tiles within that area
-3. Tiles are cached from zoom level 10 to 19 for comprehensive offline coverage
-4. Cache is stored persistently in `/app/logs/offline_maps/` (5GB limit with automatic LRU eviction)
-5. Multiple map sources available: Google Maps and ArcGIS World Imagery
+**How to cache an area:**
+
+1. **Pan/zoom to your survey area** on the map while connected to the internet.
+2. Choose one of the two caching methods:
+   - **Cache View** — caches every tile currently visible on screen, plus all higher
+     zoom levels above it. Quick way to grab exactly what you're looking at.
+   - **Cache Region** — click it, draw a polygon on the map by tapping/clicking the
+     corners of the area you want, then confirm. All tiles inside that polygon are
+     cached. Best for large or irregularly-shaped sites.
+3. A progress bar shows the current zoom level, tiles processed, and how many were
+   newly downloaded vs. already cached. Caching runs zoom levels **10 through 19**
+   for full detail on the water.
+4. Use **Refresh** to update the cache statistics, and **Recent Area** to jump the
+   map back to the last region you cached.
+
+**Managing the cache:**
+
+- Cached tiles are stored persistently at `/app/logs/offline_maps/` (survives
+  extension restarts and updates).
+- The cache is capped at **5 GB** with automatic LRU (least-recently-used) eviction,
+  so the oldest tiles are dropped first once the limit is reached.
+- **Clear Cache** removes all cached tiles if you need to reclaim space or refresh
+  stale imagery.
+
+**Using cached tiles offline:** No action required — once tiles are cached, the map
+automatically serves them from local storage. Any tile not in the cache simply won't
+render until you reconnect and cache it. If the map is blank offline, it means that
+area/zoom level was never cached.
 
 ### Simulation Mode
 
