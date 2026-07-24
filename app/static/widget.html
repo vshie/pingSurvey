@@ -6,150 +6,231 @@
         * {
             box-sizing: border-box;
         }
-        
-        body {
+
+        html, body {
             margin: 0;
-            padding: 8px;
+            padding: 0;
             background-color: transparent;
-            color: white;
-            font-family: 'Roboto', Arial, sans-serif;
-            font-size: 12px;
         }
-        
+
+        body {
+            padding: 6px;
+            font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+            font-size: 13px;
+            color: #33322e;
+        }
+
+        /* Monospace for numeric readouts (ledger feel) */
+        .mono {
+            font-family: 'SF Mono', 'Roboto Mono', Menlo, Consolas, monospace;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Notebook paper card */
         .widget {
-            background-color: rgba(30, 30, 30, 0.95);
-            border-radius: 6px;
-            padding: 8px;
-            min-width: 280px;
+            position: relative;
             display: flex;
             flex-direction: column;
-            height: calc(100vh - 16px);
+            height: calc(100vh - 12px);
+            min-width: 240px;
+            padding: 10px 12px 10px 26px;
+            background-color: #f7f4ea;
+            background-image:
+                repeating-linear-gradient(
+                    to bottom,
+                    transparent 0,
+                    transparent 27px,
+                    #dfe6ef 27px,
+                    #dfe6ef 28px
+                );
+            border: 1px solid #e2ddce;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+            overflow: hidden;
         }
-        
-        .controls {
+
+        /* Red margin rule, like a paper notebook */
+        .widget::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 18px;
+            width: 1.5px;
+            background-color: #e6a9a0;
+            opacity: 0.8;
+        }
+
+        .nb-header {
             display: flex;
-            gap: 6px;
-            margin-bottom: 8px;
+            align-items: baseline;
+            justify-content: space-between;
             flex-shrink: 0;
+            margin-bottom: 8px;
         }
-        
-        .btn {
-            flex: 1;
-            padding: 6px 10px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
+
+        .nb-title {
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            color: #2c2b27;
+        }
+
+        .nb-title .sub {
+            font-weight: 400;
             font-size: 11px;
-            font-weight: 500;
+            color: #9a927f;
+            margin-left: 6px;
+        }
+
+        .rec-state {
             display: flex;
             align-items: center;
-            justify-content: center;
-            gap: 4px;
-            transition: opacity 0.2s;
-        }
-        
-        .btn:hover {
-            opacity: 0.85;
-        }
-        
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-        
-        .btn-start {
-            background-color: #4CAF50;
-            color: white;
-        }
-        
-        .btn-stop {
-            background-color: #f44336;
-            color: white;
-        }
-        
-        .btn-download {
-            background-color: #2196F3;
-            color: white;
-        }
-        
-        .mini-map-container {
-            width: 100%;
-            height: 150px;
-            border-radius: 4px;
-            overflow: hidden;
-            margin-bottom: 8px;
-            flex-shrink: 0;
-            position: relative;
-        }
-        
-        #mini-map {
-            width: 100%;
-            height: 100%;
-        }
-        
-        .data-table {
-            width: 100%;
-            border-collapse: collapse;
+            gap: 5px;
             font-size: 11px;
+            color: #9a927f;
         }
-        
-        .data-table td {
-            padding: 3px 6px;
-            border-bottom: 1px solid #333;
-        }
-        
-        .data-table td:first-child {
-            color: #888;
-            width: 45%;
-        }
-        
-        .data-table td:last-child {
-            text-align: right;
-            font-weight: 500;
-        }
-        
-        .confidence-high { color: #4CAF50; }
-        .confidence-medium { color: #FFC107; }
-        .confidence-low { color: #f44336; }
-        
-        .status-bar {
-            margin-top: 6px;
-            padding: 4px 6px;
-            background-color: rgba(0,0,0,0.3);
-            border-radius: 3px;
-            font-size: 10px;
-            color: #888;
-            text-align: center;
-            flex-shrink: 0;
-        }
-        
+
         .recording-indicator {
             display: inline-block;
             width: 8px;
             height: 8px;
-            background-color: #f44336;
+            background-color: #d64545;
             border-radius: 50%;
-            margin-right: 6px;
             animation: pulse 1s infinite;
         }
-        
+
         @keyframes pulse {
             0%, 100% { opacity: 1; }
-            50% { opacity: 0.4; }
+            50% { opacity: 0.3; }
         }
-        
-        /* Hide Leaflet attribution on small widget */
-        .leaflet-control-attribution {
-            display: none !important;
+
+        .controls {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+            flex-shrink: 0;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 7px 10px;
+            border: 1px solid transparent;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            transition: opacity 0.15s;
+        }
+
+        .btn:hover { opacity: 0.88; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .btn-start { background-color: #3f8f4f; color: #fff; }
+        .btn-stop { background-color: #c0392b; color: #fff; }
+        .btn-download {
+            background-color: transparent;
+            color: #2c5b8f;
+            border-color: #b9c6d8;
+        }
+
+        /* Hero readouts: the headline numbers */
+        .hero {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+            flex-shrink: 0;
+        }
+
+        .hero-card {
+            flex: 1;
+            background-color: rgba(255, 255, 255, 0.55);
+            border: 1px solid #e4dece;
+            border-radius: 5px;
+            padding: 7px 10px;
+        }
+
+        .hero-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #9a927f;
+        }
+
+        .hero-value {
+            font-size: 26px;
+            font-weight: 700;
+            line-height: 1.15;
+            color: #23405f;
+        }
+
+        .hero-unit {
+            font-size: 13px;
+            font-weight: 500;
+            color: #7d8ba0;
+            margin-left: 2px;
+        }
+
+        /* Ruled ledger rows for the remaining data */
+        .readings {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .reading {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 28px;
+            border-bottom: 1px solid rgba(180, 168, 140, 0.28);
+        }
+
+        .reading .k {
+            color: #8a8267;
+            font-size: 12px;
+        }
+
+        .reading .v {
+            font-weight: 600;
+            font-size: 13px;
+            color: #33322e;
+        }
+
+        .confidence-high { color: #2e7d32; }
+        .confidence-medium { color: #b8860b; }
+        .confidence-low { color: #c0392b; }
+
+        .status-bar {
+            margin-top: 8px;
+            padding: 5px 8px;
+            background-color: rgba(255, 255, 255, 0.5);
+            border: 1px solid #e4dece;
+            border-radius: 4px;
+            font-size: 10px;
+            color: #9a927f;
+            text-align: center;
+            flex-shrink: 0;
         }
     </style>
     <link href="/static/css/materialdesignicons.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/leaflet.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1">
 </head>
 <body>
     <div id="app">
         <div class="widget">
+            <div class="nb-header">
+                <div class="nb-title">Ping Survey<span class="sub">log</span></div>
+                <div class="rec-state">
+                    <span v-if="run" class="recording-indicator"></span>
+                    <span v-if="run">REC</span>
+                    <span v-else>idle</span>
+                </div>
+            </div>
+
             <div class="controls">
                 <button class="btn" :class="run ? 'btn-stop' : 'btn-start'" :disabled="isLoading" @click="toggleRun">
                     <span class="mdi" :class="run ? 'mdi-stop' : 'mdi-play'"></span>
@@ -160,52 +241,51 @@
                     Download
                 </button>
             </div>
-            
-            <div class="mini-map-container">
-                <div id="mini-map"></div>
+
+            <div class="hero">
+                <div class="hero-card">
+                    <div class="hero-label">Depth</div>
+                    <div class="hero-value mono">{{ depth }}<span class="hero-unit">m</span></div>
+                </div>
+                <div class="hero-card">
+                    <div class="hero-label">Beam Width</div>
+                    <div class="hero-value mono">{{ beamDiameter }}<span class="hero-unit">m</span></div>
+                </div>
             </div>
-            
-            <table class="data-table">
-                <tr>
-                    <td>Depth</td>
-                    <td>{{ depth }} m</td>
-                </tr>
-                <tr>
-                    <td>Confidence</td>
-                    <td :class="confidenceClass">{{ confidence }}%</td>
-                </tr>
-                <tr>
-                    <td>Beam Width</td>
-                    <td>{{ beamDiameter }} m</td>
-                </tr>
-                <tr>
-                    <td>Heading</td>
-                    <td>{{ yaw }}°</td>
-                </tr>
-                <tr>
-                    <td>Roll / Pitch</td>
-                    <td>{{ roll }}° / {{ pitch }}°</td>
-                </tr>
-                <tr>
-                    <td>Position</td>
-                    <td>{{ latitude }}, {{ longitude }}</td>
-                </tr>
-                <tr>
-                    <td>Altitude</td>
-                    <td>{{ altitude }} m</td>
-                </tr>
-            </table>
-            
-            <div class="status-bar">
-                <span v-if="run" class="recording-indicator"></span>
-                {{ status }}
+
+            <div class="readings">
+                <div class="reading">
+                    <span class="k">Confidence</span>
+                    <span class="v mono" :class="confidenceClass">{{ confidence }}<template v-if="confidence !== '--'">%</template></span>
+                </div>
+                <div class="reading">
+                    <span class="k">Heading</span>
+                    <span class="v mono">{{ yaw }}<template v-if="yaw !== '--'">&deg;</template></span>
+                </div>
+                <div class="reading">
+                    <span class="k">Roll / Pitch</span>
+                    <span class="v mono">{{ roll }}&deg; / {{ pitch }}&deg;</span>
+                </div>
+                <div class="reading">
+                    <span class="k">Altitude</span>
+                    <span class="v mono">{{ altitude }}<template v-if="altitude !== '--'">m</template></span>
+                </div>
+                <div class="reading">
+                    <span class="k">Latitude</span>
+                    <span class="v mono">{{ latitude }}</span>
+                </div>
+                <div class="reading">
+                    <span class="k">Longitude</span>
+                    <span class="v mono">{{ longitude }}</span>
+                </div>
             </div>
+
+            <div class="status-bar">{{ status }}</div>
         </div>
     </div>
 
     <script src="/static/js/vue.js"></script>
     <script src="/static/js/axios.min.js"></script>
-    <script src="/static/js/leaflet.js"></script>
     <script>
         new Vue({
             el: '#app',
@@ -223,11 +303,7 @@
                     longitude: '--',
                     altitude: '--',
                     status: 'Ready',
-                    intervalId: null,
-                    map: null,
-                    marker: null,
-                    circleMarkers: [],
-                    firstCoordinateReceived: false
+                    intervalId: null
                 }
             },
             computed: {
@@ -261,13 +337,13 @@
                         this.isLoading = false;
                     }
                 },
-                
+
                 async download() {
                     try {
                         this.status = 'Downloading...';
                         const response = await fetch('/download');
                         if (!response.ok) throw new Error('No data');
-                        
+
                         const blob = await response.blob();
                         const url = window.URL.createObjectURL(blob);
                         const timestamp = new Date().toISOString().slice(0,19).replace(/[T:]/g, '-');
@@ -276,94 +352,46 @@
                         link.download = `ping_survey_${timestamp}.csv`;
                         link.click();
                         window.URL.revokeObjectURL(url);
-                        
+
                         this.status = 'Downloaded';
                         setTimeout(() => { if (!this.run) this.status = 'Ready'; }, 2000);
                     } catch (error) {
                         this.status = 'Error: ' + error.message;
                     }
                 },
-                
-                getDepthColor(depth) {
-                    const maxDepth = 100;
-                    const ratio = Math.min(depth / maxDepth, 1);
-                    const r = Math.round(255 * (1 - ratio));
-                    const g = Math.round(255 * (1 - ratio * 0.5));
-                    const b = 255;
-                    return `rgb(${r}, ${g}, ${b})`;
-                },
-                
-                updateMap(lat, lon, depthCm, confidence) {
-                    if (!this.map) return;
-                    
-                    if (this.marker) {
-                        this.map.removeLayer(this.marker);
-                    }
-                    
-                    this.marker = L.circleMarker([lat, lon], {
-                        radius: 6,
-                        fillColor: '#FF5722',
-                        color: 'white',
-                        weight: 2,
-                        fillOpacity: 1
-                    }).addTo(this.map);
-                    
-                    if (confidence >= 90) {
-                        const depthM = depthCm / 100;
-                        const radiusInMeters = depthM * Math.tan(12.5 * Math.PI / 180);
-                        const circle = L.circle([lat, lon], {
-                            color: 'transparent',
-                            fillColor: this.getDepthColor(depthM),
-                            fillOpacity: 0.6,
-                            radius: radiusInMeters
-                        }).addTo(this.map);
-                        this.circleMarkers.push(circle);
-                        
-                        // Limit total circles for performance
-                        if (this.circleMarkers.length > 200) {
-                            const old = this.circleMarkers.shift();
-                            this.map.removeLayer(old);
-                        }
-                    }
-                    
-                    if (!this.firstCoordinateReceived) {
-                        this.firstCoordinateReceived = true;
-                        this.map.setView([lat, lon], 18);
-                    }
-                },
-                
+
                 async fetchData() {
                     try {
                         const response = await axios.get('/data');
                         const data = response.data;
-                        
+
                         if (data && Array.isArray(data) && data.length >= 8) {
                             const hasNewFormat = data.length >= 11;
                             const depthCm = data[3];
                             const depthM = depthCm / 100;
-                            
+
                             this.depth = depthM.toFixed(2);
                             this.confidence = data[4];
-                            this.yaw = data[5];
-                            this.roll = hasNewFormat ? data[6] : '--';
-                            this.pitch = hasNewFormat ? data[7] : '--';
-                            
+                            this.yaw = Number(data[5]).toFixed(1);
+                            this.roll = hasNewFormat ? Number(data[6]).toFixed(1) : '--';
+                            this.pitch = hasNewFormat ? Number(data[7]).toFixed(1) : '--';
+
                             const lat = hasNewFormat ? data[8] : data[6];
                             const lon = hasNewFormat ? data[9] : data[7];
-                            this.latitude = Number(lat).toFixed(6);
-                            this.longitude = Number(lon).toFixed(6);
+                            const validFix = Number.isFinite(Number(lat)) && Number.isFinite(Number(lon)) &&
+                                (Math.abs(lat) > 0.0001 || Math.abs(lon) > 0.0001);
+                            this.latitude = validFix ? Number(lat).toFixed(6) : '--';
+                            this.longitude = validFix ? Number(lon).toFixed(6) : '--';
                             this.altitude = hasNewFormat ? Number(data[10]).toFixed(1) : '--';
-                            
+
                             const angleRad = (12.5 * Math.PI) / 180;
                             this.beamDiameter = (2 * Math.tan(angleRad) * depthM).toFixed(2);
-                            
-                            this.updateMap(Number(lat), Number(lon), depthCm, data[4]);
                         }
                     } catch (error) {
                         // Silent fail during polling
                     }
                 },
-                
+
                 async checkStatus() {
                     try {
                         const response = await axios.get('/status');
@@ -379,31 +407,10 @@
                     } catch (error) {
                         // Silent fail
                     }
-                },
-                
-                initMap() {
-                    this.map = L.map('mini-map', {
-                        zoomControl: false,
-                        attributionControl: false,
-                        tap: true,
-                        dragging: true,
-                        touchZoom: 'center'
-                    }).setView([0, 0], 2);
-                    
-                    const tileUrl = `/tiles/{z}/{x}/{y}.png?source=google`;
-                    L.tileLayer(tileUrl, {
-                        maxZoom: 19,
-                        errorTileUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
-                    }).addTo(this.map);
                 }
             },
             mounted() {
-                this.$nextTick(() => {
-                    setTimeout(() => {
-                        this.initMap();
-                        this.checkStatus();
-                    }, 200);
-                });
+                this.checkStatus();
             },
             beforeDestroy() {
                 if (this.intervalId) clearInterval(this.intervalId);

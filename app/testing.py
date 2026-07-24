@@ -85,8 +85,9 @@ def cache_stats():
 @app.route('/map_sources')
 def map_sources():
     return jsonify({
-        'google': {'name': 'Google Maps', 'url': 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
-                    'attribution': '&copy; Google Maps'},
+        'arcgis': {'name': 'Esri World Imagery',
+                   'url': 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                   'attribution': '&copy; Esri, Maxar, Earthstar Geographics'},
     })
 
 
