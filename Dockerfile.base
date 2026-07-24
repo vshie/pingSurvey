@@ -1,0 +1,27 @@
+FROM python:3.11-slim
+
+# Minimal runtime dependencies.
+# The backend only needs Flask + requests (plus the Python standard library).
+# The heavy scientific/geo stack (numpy, pandas, scipy, matplotlib, shapely,
+# folium, etc.) and its build toolchain (gcc/gfortran/BLAS/GEOS/PROJ/GDAL) were
+# only required by the contour map generation feature, which has been deferred.
+# Removing them dramatically speeds up the base image build, especially on ARM.
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir --prefer-binary \
+    flask==2.3.3 \
+    requests==2.28.2
+
+# Verify the runtime dependencies import cleanly
+RUN python3 -c "import flask, requests; print(f'flask: {flask.__version__}, requests: {requests.__version__}')"
+
+# Create app directory structure
+RUN mkdir -p /app/logs /app/static
+
+# Set working directory
+WORKDIR /app
+
+# Expose port
+EXPOSE 5420/tcp
+
+# This base image is ready for application code to be copied in
+# Slimmed base image: contour/scientific dependencies removed for faster builds 

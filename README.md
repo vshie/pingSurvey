@@ -1,77 +1,249 @@
 # BlueOS Ping Survey Extension
 
-A simple extension for BlueOS that enables time-synchronized collection of sonar data from the Ping sonar, alongside GPS data. This extension provides both a full interface and a compact widget view for monitoring and recording survey data.
+A containerized BlueOS extension for collecting, logging, and visualizing bathymetric survey data from Ping sonar sensors. Runs locally on the vehicle to ensure continuous data collection regardless of communication link quality.
 
-## Features
+## Overview
 
-- Real-time sonar depth and confidence monitoring
-- GPS position tracking
-- Vessel heading display
-- Data logging at 2Hz
-- CSV data export
-- Compact widget view for Cockpit integration
-- Automatic system ID detection
-- Support for multiple autopilot types (ArduPilot, PX4, Generic)
+pingSurvey synchronizes and logs data from Ping sonar sensors and GPS/autopilot systems at 2Hz, providing real-time depth visualization and CSV data export. By running onboard via BlueOS, it eliminates the risk of data loss from poor communication links during survey operations.
+
+### Key Capabilities
+
+- **Real-time sonar depth and confidence monitoring** with color-coded visualization
+- **GPS position tracking** with vehicle heading, roll, pitch, and altitude
+- **Data logging at 2Hz** to timestamped CSV files
+- **Interactive map** with depth circles overlaid on satellite imagery
+- **Offline map tile caching** for operations without internet connectivity
+- **Cockpit widget** for compact monitoring within the Cockpit interface
+- **Simulation mode** for reviewing past surveys at 5x playback speed
+- **Automatic system ID detection** for ArduPilot, PX4, and generic autopilots
 
 ## Installation
 
-1. Install the extension through the BlueOS extension manager
-2. Follow the guide here: https://bluerobotics.com/learn/collecting-creating-bathymetry-blueboat-ping2/ 
+Install the extension through the BlueOS extension manager, or follow the guide at:
+https://bluerobotics.com/learn/collecting-creating-bathymetry-blueboat-ping2/
+
+### Requirements
+
+- BlueOS >= 1.1
+- Ping sonar connected to the vehicle
+- GPS-equipped vehicle with autopilot
 
 ## Usage
 
 ### Full Interface
-Access the full interface by navigating to the menu entry in BlueOS for Simple Ping Survey
 
-### Cockpit Widget Integration
-To add the compact widget to your Cockpit interface:
+Access the full interface by navigating to **Simple Ping Survey** in the BlueOS extensions menu. The interface provides:
 
-1. Open Cockpit's edit interface
-2. Add a new iframe widget
-3. Set the iframe URL to:
-```
-http://"your.vehicle.ip"/extension/simpleping2survey/widget?full_page=true
-```
+- **Map View**: Satellite imagery with real-time depth circles colored by depth
+- **Controls**: Start/Stop logging, Download CSV, Center map, Clear markers
+- **Status Console**: Live data table showing depth, confidence, heading, position, and attitude
+- **Offline Caching**: Cache map tiles for offline operation (see below)
 
 ### Data Collection
-1. Click the play button to start data collection
-2. The extension will automatically detect the correct system ID and begin logging
-3. Data is saved to a CSV file with timestamps
-4. Use the download button to retrieve the collected data
+
+1. Click **Start** to begin data collection
+2. The extension automatically detects the correct system ID and begins logging
+3. Depth readings appear as colored circles on the map (confidence >= 90% required)
+4. Data is saved to a timestamped CSV file in `/app/logs/`
+5. Click **Download** to retrieve the collected data
+
+### Cockpit Widget Integration
+
+The Cockpit IFrame widget must point at the extension's **direct service port**, not
+the reverse-proxy path. Find the port in BlueOS:
+
+1. Enable **Pirate Mode** in BlueOS (bottom of the main menu).
+2. Go to **Available Services** and locate the **Simple Ping Survey** service. Note
+   the port it is exposed on (for example `32772` — the port is assigned by BlueOS and
+   may change if the extension is reinstalled/updated).
+3. In Cockpit's edit interface, add a new **IFrame** widget and set its URL to:
+
+```
+http://<vehicle-ip>:<port>/widget
+```
+
+For example: `http://192.168.1.68:32772/widget`
+
+> Tip: The widget URL shown at the bottom of the main extension interface is only
+> correct if you opened the extension via its direct port. If you reached it through
+> the BlueOS reverse proxy, use the Pirate Mode / Available Services port instead.
+
+The widget provides:
+- Beam width and depth as prominent readouts
+- Full sensor readings (confidence, heading, roll/pitch, altitude, position)
+- Start/Stop and Download controls
+- Recording status indicator
+
+### Offline Map Caching
+
+Map imagery is served by **Esri World Imagery**. Before heading somewhere without
+internet (most survey sites), pre-cache the tiles for your area **while you still
+have a connection**. Cached tiles are then served locally, so the map keeps working
+fully offline.
+
+**How to cache an area:**
+
+1. **Pan/zoom to your survey area** on the map while connected to the internet.
+2. Choose one of the two caching methods:
+   - **Cache View** — caches every tile currently visible on screen, plus all higher
+     zoom levels above it. Quick way to grab exactly what you're looking at.
+   - **Cache Region** — click it, draw a polygon on the map by tapping/clicking the
+     corners of the area you want, then confirm. All tiles inside that polygon are
+     cached. Best for large or irregularly-shaped sites.
+3. A progress bar shows the current zoom level, tiles processed, and how many were
+   newly downloaded vs. already cached. Caching runs zoom levels **10 through 19**
+   for full detail on the water.
+4. Use **Refresh** to update the cache statistics, and **Recent Area** to jump the
+   map back to the last region you cached.
+
+**Managing the cache:**
+
+- Cached tiles are stored persistently at `/app/logs/offline_maps/` (survives
+  extension restarts and updates).
+- The cache is capped at **5 GB** with automatic LRU (least-recently-used) eviction,
+  so the oldest tiles are dropped first once the limit is reached.
+- **Clear Cache** removes all cached tiles if you need to reclaim space or refresh
+  stale imagery.
+
+**Using cached tiles offline:** No action required — once tiles are cached, the map
+automatically serves them from local storage. Any tile not in the cache simply won't
+render until you reconnect and cache it. If the map is blank offline, it means that
+area/zoom level was never cached.
+
+### Simulation Mode
+
+Review past survey data or test without hardware:
+
+1. Place a CSV file named `simulation.csv` in the `/app/logs/` directory
+2. Click the **Simulate** button in the interface
+3. Data plays back at 5x real-time speed with full map visualization
+4. Both old (8-column) and new (11-column) CSV formats are supported
+
+To create a simulation file, rename a previously downloaded survey CSV to `simulation.csv`.
 
 ## Data Format
-The CSV file includes:
-- Unix Timestamp
-- Date
-- Time
-- Depth (cm)
-- Confidence (%)
-- Vessel heading (degrees)
-- Latitude
-- Longitude
 
-## Simulation Mode
-You can test the interface without connecting to real hardware by using the simulation mode:
+### Current Format (12 columns)
 
-1. Create a file called `simulation.csv` in the `/app/logs/` directory
-2. Format it with the same columns as the regular data export (see Data Format section)
-3. Click the "Start Simulation" button in the interface
-4. The interface will play back the data from your CSV file at 5x real-time speed
+| Column | Description | Units |
+|--------|-------------|-------|
+| Unix Timestamp | Milliseconds since epoch | ms |
+| Date | Survey date | MM/DD/YY |
+| Time | Survey time | HH:MM:SS |
+| Depth (cm) | Sonar depth reading | centimeters |
+| Confidence (%) | Signal quality | percentage |
+| Vessel heading (deg) | Yaw angle | degrees (0-360) |
+| Roll (deg) | Roll angle | degrees |
+| Pitch (deg) | Pitch angle | degrees |
+| Latitude | GPS latitude | decimal degrees |
+| Longitude | GPS longitude | decimal degrees |
+| Altitude (m) | GPS altitude MSL | meters |
+| Pos/Depth Delta (ms) | Time delta between GPS and depth readings | milliseconds |
 
-This is useful for:
-- Testing the interface without hardware
-- Reviewing past survey data in the map view
-- Demonstrating the tool's capabilities
-- Development and testing
-- Quickly visualizing large datasets (5x speed playback)
+The Pos/Depth Delta column records how far apart in time the GPS position fix and depth measurement were received by mavlink2rest. Lower values indicate better temporal synchronization. A value of -1 means the distance sensor was unavailable or the delta could not be computed.
 
-To create a simulation file from a previous survey, simply rename a downloaded data file to `simulation.csv` and place it in the logs directory.
+### Legacy Formats
 
-## Future Features
-- Fix bar at top that scrolls down to hide
-- WP Survey speed parameter control on page
-- User controlled confidence filter on live and/or logged data
-- Better mobile experience - scaling corner logos
+Older log files may have 8 columns (without Roll, Pitch, Altitude, and Delta) or 11 columns (without Delta). The extension handles all formats automatically, padding missing fields with defaults.
+
+## API Reference
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/` | GET | Main interface |
+| `/widget` | GET | Cockpit widget interface |
+| `/start` | GET | Start data logging |
+| `/stop` | GET | Stop data logging |
+| `/status` | GET | Get logging and simulation status |
+| `/data` | GET | Get current sensor data point |
+| `/download` | GET | Download current CSV log file |
+| `/start_simulation` | GET | Start simulation playback |
+| `/stop_simulation` | GET | Stop simulation playback |
+| `/simulation_status` | GET | Get simulation state |
+| `/tiles/<z>/<x>/<y>.png` | GET | Serve map tiles (with offline caching) |
+| `/cache_stats` | GET | Get offline cache statistics |
+| `/clear_cache` | GET | Clear offline tile cache |
+| `/map_sources` | GET | Get available map tile sources |
+| `/tile_cached/<z>/<x>/<y>` | GET | Check if a tile is cached |
+| `/recent_cached_area` | GET | Get most recently cached area |
+| `/log_files` | GET | List available CSV log files |
+| `/register_service` | GET | BlueOS service registration metadata |
+
+## Architecture
+
+```
+pingSurvey/
+├── app/
+│   ├── main.py                 # Flask backend (data collection, tile proxy, API)
+│   ├── testing.py              # Development test server
+│   ├── pyproject.toml          # Python project metadata
+│   └── static/
+│       ├── index.html          # Main Vue.js + Leaflet interface
+│       ├── widget.html         # Compact Cockpit widget
+│       ├── css/                # Vuetify, Leaflet, MDI stylesheets
+│       └── js/                 # Vue.js, Vuetify, Axios, Leaflet scripts
+├── Dockerfile                  # Application container (copies app into base image)
+├── Dockerfile.base             # Base image with system + Python dependencies
+├── .github/workflows/          # CI/CD for Docker image builds
+├── BASE_IMAGE_SETUP.md         # Base image build documentation
+└── README.md
+```
+
+### Data Flow
+
+1. **MAVLink Data Collection**: Flask backend polls MAVLink2Rest at 2Hz for DISTANCE_SENSOR, GLOBAL_POSITION_INT, and ATTITUDE messages
+2. **CSV Logging**: Each data point is appended to a timestamped CSV file
+3. **Frontend Polling**: Vue.js frontend fetches `/data` at 1Hz (500ms for widget) and updates the map
+4. **Tile Proxy**: Map tiles are fetched through the backend, enabling server-side caching for offline use
+
+### MAVLink Data Sources
+
+| Source | MAVLink Message | Component ID | Purpose |
+|--------|----------------|-------------|---------|
+| Ping Sonar | DISTANCE_SENSOR | 194 | Depth and confidence |
+| GPS | GLOBAL_POSITION_INT | 1 | Latitude, longitude, altitude |
+| Attitude | ATTITUDE | 1 | Yaw, roll, pitch |
+
+## Development
+
+### Local Development
+
+```bash
+cd app
+python testing.py
+# Open http://localhost:8000
+```
+
+### Docker Build
+
+The project uses a two-stage Docker build:
+
+1. **Base image** (`Dockerfile.base`): Contains system libraries and Python scientific packages (numpy, scipy, matplotlib, etc.) with architecture-specific optimizations for ARM32/ARM64/AMD64
+2. **Application image** (`Dockerfile`): Copies application code into the base image
+
+See [BASE_IMAGE_SETUP.md](BASE_IMAGE_SETUP.md) for base image build instructions.
+
+### Container Details
+
+| Setting | Value |
+|---------|-------|
+| Port | 5420 |
+| Base Image | `vshie/simplepingsurvey-base:latest` |
+| MAVLink Host | `host.docker.internal` |
+| Log Volume | `/usr/blueos/extensions/ping-survey` -> `/app/logs/` |
+| Tile Cache | `/app/logs/offline_maps/` (5GB limit) |
+
+## Troubleshooting
+
+- **No depth readings**: Verify the Ping sonar is connected and detected. Check that DISTANCE_SENSOR messages are available in MAVLink2Rest.
+- **GPS data missing**: Ensure the vehicle has a GPS fix. The extension requires GLOBAL_POSITION_INT messages.
+- **Map tiles not loading**: Check internet connectivity. For offline use, pre-cache tiles using the Cache View or Cache Region buttons while connected.
+- **Simulation not starting**: Verify `simulation.csv` exists in `/app/logs/` with the correct CSV format.
 
 ## Discussion
-For more information and updates, visit the [Blue Robotics discussion thread](https://discuss.bluerobotics.com/t/alpha-release-simple-ping2-survey-extension/15794)
+
+For more information and updates, visit the [Blue Robotics discussion thread](https://discuss.bluerobotics.com/t/alpha-release-simple-ping2-survey-extension/15794).
+
+## License
+
+See [LICENSE](LICENSE) for details.

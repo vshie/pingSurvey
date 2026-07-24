@@ -1,23 +1,14 @@
-FROM python:3.11-slim
+FROM vshie/simplepingsurvey-base:latest
+# Using updated base image with multi-platform manifest and compatible package versions
 
-# RUN apt-get update && \
-#    apt-get -y install gcc && \
-#    rm -rf /var/lib/apt/lists/*
-
+# Copy application files (these change most frequently)
 COPY app /app
-RUN python -m pip install /app --extra-index-url https://www.piwheels.org/simple
+
+# No need to install /app as a package since we're copying files directly
 
 EXPOSE 5420/tcp
 
-LABEL version="1.2.1"
-LABEL name="simple_ping_survey"
-LABEL display_name="Simple Ping Survey"
-LABEL display_description="Record Ping sonar, GPS, and vehicle attitude data to survey CSV logs"
-LABEL display_category="Sensors"
-LABEL display_icon="mdi-map-plus"
-LABEL display_order="10"
-LABEL description="Simple Ping Survey records Ping sonar and navigation data to CSV logs"
-LABEL icon="mdi-map-plus"
+LABEL version="1.2.5"
 
 ARG IMAGE_NAME
 
@@ -32,11 +23,10 @@ LABEL permissions='\
     "PortBindings": {\
       "5420/tcp": [\
         {\
-          "HostPort": "5420"\
+          "HostPort": ""\
         }\
       ]\
-    },\
-    "NetworkMode": "host"\
+    }\
   }\
 }'
 
