@@ -875,12 +875,12 @@
                             attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
                         },
                         arcgis: {
-                            name: 'ArcGIS World Imagery',
+                            name: 'Esri World Imagery',
                             url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
                             attribution: '&copy; <a href="https://www.esri.com/">Esri</a> — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'
                         }
                     },
-                    selectedMapSource: 'google',
+                    selectedMapSource: 'arcgis',
 
                     customIcon: L.icon({
                         iconUrl: '/static/BB.png',
@@ -1026,8 +1026,11 @@
                         
                         this.updateMarker(lat, lon, data[3], data[4], data[5]);
                         
-                        // Always center on GPS data if we haven't received coordinates yet
-                        if (!this.firstCoordinateReceived) {
+                        // Center on GPS the first time we get a VALID fix.
+                        // Ignore (0,0) / no-fix readings so the map doesn't jump to null island.
+                        if (!this.firstCoordinateReceived &&
+                            Number.isFinite(lat) && Number.isFinite(lon) &&
+                            (Math.abs(lat) > 0.0001 || Math.abs(lon) > 0.0001)) {
                             this.firstCoordinateReceived = true;
                             this.map.setView([lat, lon], 18);
                         }

@@ -30,7 +30,7 @@ MAP_SOURCES = {
         'attribution': '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
     },
     'arcgis': {
-        'name': 'ArcGIS World Imagery',
+        'name': 'Esri World Imagery',
         'url': 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
         'attribution': '&copy; <a href="https://www.esri.com/">Esri</a> — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'
     }
@@ -607,10 +607,10 @@ def get_data():
 def serve_tile(z, x, y):
     """Serve map tiles with offline caching support."""
     try:
-        # Get the map source from query parameter, default to 'google'
-        map_source = request.args.get('source', 'google')
+        # Get the map source from query parameter, default to 'arcgis' (Esri)
+        map_source = request.args.get('source', 'arcgis')
         if map_source not in MAP_SOURCES:
-            map_source = 'google'  # Fallback to Google if invalid source
+            map_source = 'arcgis'  # Fallback to Esri if invalid source
         
         # First check if we have the tile cached (fast path)
         cached_tile = get_cached_tile(z, x, y)
