@@ -16,7 +16,7 @@ TILE_CACHE_SIZE_LIMIT = 5 * 1024 * 1024 * 1024  # 5GB cache limit
 # Performance optimization: Global state to avoid redundant operations
 _offline_maps_dir_verified = False
 _system_id_cache = None
-_distance_component_cache = None
+_distance_ids_cache = None
 _urls_cache = None
 _cache_size_bytes = 0
 _cache_size_last_check = 0
@@ -247,6 +247,32 @@ def get_cached_tile(z, x, y):
         print(f"Error reading cached tile: {e}")
         return None
 
+def _probe_system_id_via_gps(max_vehicle_id=100):
+    """Probe GLOBAL_POSITION_INT across vehicle IDs to find a live system ID."""
+    for candidate_id in range(1, max_vehicle_id + 1):
+        try:
+            r = requests.get(
+                f"{base_url}/vehicles/{candidate_id}/components/1/messages/GLOBAL_POSITION_INT",
+                timeout=0.75)
+            if r.status_code == 200:
+                payload = r.json()
+                if isinstance(payload, dict) and ("message" in payload or "time_boot_ms" in payload):
+                    print(f"Detected system ID by probing GPS: {candidate_id}")
+                    return candidate_id
+        except Exception:
+            pass
+    return None
+
+
+def _distance_payload_valid(payload):
+    """Basic plausibility check that a DISTANCE_SENSOR payload is real."""
+    if not isinstance(payload, dict):
+        return False
+    message = payload.get("message", {})
+    return isinstance(message, dict) and (
+        "current_distance" in message or "min_distance" in message or "max_distance" in message)
+
+
 def get_system_id():
     """Detect the correct system ID by checking available vehicles and their autopilot types."""
     global _system_id_cache
@@ -276,57 +302,98 @@ def get_system_id():
                             print(f"Found valid autopilot: {autopilot_type} with system ID: {vehicle_id}")
                             _system_id_cache = vehicle_id
                             return vehicle_id
-                print("Warning: No valid autopilot found, using default value of 1")
-                _system_id_cache = 1
-                return 1
+                print("Warning: No valid autopilot found; probing GLOBAL_POSITION_INT across vehicle IDs...")
+        # Fallback: probe GLOBAL_POSITION_INT across vehicle IDs. Handles setups where
+        # /vehicles/<id>/info does not report a recognized autopilot type.
+        probed = _probe_system_id_via_gps()
+        if probed is not None:
+            _system_id_cache = probed
+            return probed
         print("Warning: Could not detect system ID, using default value of 1")
         _system_id_cache = 1
         return 1
     except Exception as e:
-        print(f"Warning: Error detecting system ID: {e}, using default value of 1")
+        print(f"Warning: Error detecting system ID: {e}; probing GLOBAL_POSITION_INT as fallback...")
+        try:
+            probed = _probe_system_id_via_gps()
+            if probed is not None:
+                _system_id_cache = probed
+                return probed
+        except Exception:
+            pass
+        print("Using default system ID of 1")
         _system_id_cache = 1
         return 1
 
-def get_distance_sensor_component():
-    """Detect the correct component ID for the distance sensor."""
-    global _distance_component_cache
-    
+def get_distance_sensor_ids():
+    """Detect the (vehicle_id, component_id) that publishes DISTANCE_SENSOR.
+
+    Best-of-both detection:
+      1) Fast path: on the nav system ID, probe common component IDs (194-200) --
+         handles a Ping published under a non-standard component on the same vehicle.
+      2) Fallback: probe vehicle IDs 1-100 on component 194 -- handles a Ping
+         published under a different system ID than the autopilot.
+    """
+    global _distance_ids_cache
+
     # Return cached value if available
-    if _distance_component_cache is not None:
-        return _distance_component_cache
-    
+    if _distance_ids_cache is not None:
+        return _distance_ids_cache
+
     system_id = get_system_id()
+    common_components = [194, 195, 196, 197, 198, 199, 200]
+
     try:
-        # Try common component IDs for distance sensors
-        common_ids = [194, 195, 196, 197, 198, 199, 200]
-        for component_id in common_ids:
-            response = requests.get(f"{base_url}/vehicles/{system_id}/components/{component_id}/messages/DISTANCE_SENSOR", timeout=3)
-            if response.status_code == 200:
-                print(f"Found distance sensor at component ID: {component_id}")
-                _distance_component_cache = component_id
-                return component_id
-        print("Warning: No distance sensor found, using default component ID 194")
-        _distance_component_cache = 194
-        return 194
+        # 1) Same vehicle, varying component (fast: up to 7 probes)
+        for component_id in common_components:
+            try:
+                response = requests.get(
+                    f"{base_url}/vehicles/{system_id}/components/{component_id}/messages/DISTANCE_SENSOR",
+                    timeout=3)
+                if response.status_code == 200 and _distance_payload_valid(response.json()):
+                    print(f"Found distance sensor at vehicle {system_id}, component {component_id}")
+                    _distance_ids_cache = (system_id, component_id)
+                    return _distance_ids_cache
+            except Exception:
+                pass
+
+        # 2) Different vehicle ID, standard component 194
+        for candidate_id in range(1, 101):
+            if candidate_id == system_id:
+                continue
+            try:
+                response = requests.get(
+                    f"{base_url}/vehicles/{candidate_id}/components/194/messages/DISTANCE_SENSOR",
+                    timeout=0.75)
+                if response.status_code == 200 and _distance_payload_valid(response.json()):
+                    print(f"Found distance sensor at vehicle {candidate_id}, component 194")
+                    _distance_ids_cache = (candidate_id, 194)
+                    return _distance_ids_cache
+            except Exception:
+                pass
+
+        print("Warning: No distance sensor found, defaulting to nav system ID with component 194")
+        _distance_ids_cache = (system_id, 194)
+        return _distance_ids_cache
     except Exception as e:
-        print(f"Warning: Error detecting distance sensor component ID: {e}, using default value of 194")
-        _distance_component_cache = 194
-        return 194
+        print(f"Warning: Error detecting distance sensor: {e}, defaulting to component 194")
+        _distance_ids_cache = (system_id, 194)
+        return _distance_ids_cache
 
 def get_urls():
-    """Get the correct URLs based on the detected system ID."""
+    """Get the correct URLs based on the detected nav and distance-sensor IDs."""
     global _urls_cache
     
     # Return cached URLs if available
     if _urls_cache is not None:
         return _urls_cache
     
-    system_id = get_system_id()
-    distance_component = get_distance_sensor_component()
+    nav_id = get_system_id()
+    distance_vehicle, distance_component = get_distance_sensor_ids()
     _urls_cache = {
-        'distance': f"{base_url}/vehicles/{system_id}/components/{distance_component}/messages/DISTANCE_SENSOR",
-        'gps': f"{base_url}/vehicles/{system_id}/components/1/messages/GLOBAL_POSITION_INT",
-        'yaw': f"{base_url}/vehicles/{system_id}/components/1/messages/ATTITUDE"
+        'distance': f"{base_url}/vehicles/{distance_vehicle}/components/{distance_component}/messages/DISTANCE_SENSOR",
+        'gps': f"{base_url}/vehicles/{nav_id}/components/1/messages/GLOBAL_POSITION_INT",
+        'yaw': f"{base_url}/vehicles/{nav_id}/components/1/messages/ATTITUDE"
     }
     return _urls_cache
 
@@ -571,7 +638,7 @@ def servicenames():
     "description": "This extension makes it easy to record data from the Ping sonar and gps onboard the vehicle, keeping a poor communications link from interfering with the quality of collected survey data. When connected, the extension displays a data preview that is intended to aide in survey grid spacing determination while logging at 2Hz. Happy motoring!",
     "icon": "mdi-map-plus",
     "company": "Blue Robotics",
-    "version": "0.5",
+    "version": "1.2.5",
     "webpage": "https://github.com/vshie/pingSurvey",
     "api": "https://github.com/bluerobotics/BlueOS-docker"}
     '''
