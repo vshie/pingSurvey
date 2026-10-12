@@ -8,7 +8,7 @@ COPY app /app
 
 EXPOSE 5420/tcp
 
-LABEL version="1.2.5"
+LABEL version="1.3.0"
 
 ARG IMAGE_NAME
 

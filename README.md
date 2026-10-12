@@ -15,6 +15,7 @@ pingSurvey synchronizes and logs data from Ping sonar sensors and GPS/autopilot 
 - **Offline map tile caching** for operations without internet connectivity
 - **Cockpit widget** for compact monitoring within the Cockpit interface
 - **Simulation mode** for reviewing past surveys at 5x playback speed
+- **Post-mission processing** that turns one or more survey logs into a transparent contour GeoTIFF for use as a Cockpit map background, with no QGIS needed
 - **Automatic system ID detection** for ArduPilot, PX4, and generic autopilots
 
 ## Installation
@@ -110,6 +111,17 @@ automatically serves them from local storage. Any tile not in the cache simply w
 render until you reconnect and cache it. If the map is blank offline, it means that
 area/zoom level was never cached.
 
+### Post-Mission Processing
+
+The **Post-Mission Processing** tab turns recorded survey logs into a contour map you can load as a background layer in Cockpit.
+
+1. **Survey logs**: tick one or more logs to combine them. Their soundings appear on the map, coloured by depth. Soundings below the **minimum confidence** (default 95%) show in grey and are left out of processing.
+2. **Processing area**: click **Draw area** and click on the map to place polygon vertices, then **Finish**. Drag a vertex to adjust it. **Fit to data** draws a polygon around all accepted soundings. If no polygon is drawn, every accepted sounding is used.
+3. **Contours**: set the minor and major intervals in metres (the major interval must be a whole multiple of the minor one). For each line type you can set the width in pixels, the colour, the opacity and whether it is labelled. Labels have their own size, colour, halo and spacing. The **Advanced** section covers surface smoothing, the maximum mesh triangle edge, and the GeoTIFF pixel size.
+4. **Generate contours**: a preview is drawn on the map. **Download GeoTIFF** saves the file.
+
+How it works: accepted soundings are triangulated into a TIN mesh. Triangles with an edge longer than the maximum (default 30 m) are dropped, so unsurveyed gaps stay blank. The mesh is interpolated onto a 0.5 m grid, lightly smoothed and contoured. The GeoTIFF is RGBA with a fully transparent background, georeferenced in the survey's WGS 84 / UTM zone, and contains only the contour lines and labels. Only the latest output is kept, in `/app/logs/processed/`, and generating again replaces it. It is named after the survey and its settings, for example `ping_survey_2026-10-01_16-10-00_contours_0.5m-2m_conf95.tif`, where `_plus1` means one extra log was combined. Reopening the tab restores the latest output along with the logs, area and settings that produced it. If any of those change, a warning appears until you generate again.
+
 ### Simulation Mode
 
 Review past survey data or test without hardware:
@@ -167,6 +179,11 @@ Older log files may have 8 columns (without Roll, Pitch, Altitude, and Delta) or
 | `/tile_cached/<z>/<x>/<y>` | GET | Check if a tile is cached |
 | `/recent_cached_area` | GET | Get most recently cached area |
 | `/log_files` | GET | List available CSV log files |
+| `/log_file/<filename>` | GET | Download a survey CSV log |
+| `/log_points?files=a.csv,b.csv` | GET | Soundings (`[lat, lon, depth_m, confidence]`) for the selected logs |
+| `/process_contours` | POST | Generate a contour GeoTIFF. JSON body: `{files, polygon: [[lat, lon], ...] or null, settings}` |
+| `/processed_files` | GET | The most recent contour GeoTIFF (only the latest is kept) |
+| `/processed/<filename>` | GET | Download the GeoTIFF or its preview PNG |
 | `/register_service` | GET | BlueOS service registration metadata |
 
 ## Architecture
@@ -175,6 +192,7 @@ Older log files may have 8 columns (without Roll, Pitch, Altitude, and Delta) or
 pingSurvey/
 ├── app/
 │   ├── main.py                 # Flask backend (data collection, tile proxy, API)
+│   ├── contour_processing.py   # Post-mission processing: TIN mesh -> contour GeoTIFF
 │   ├── testing.py              # Development test server
 │   ├── pyproject.toml          # Python project metadata
 │   └── static/
@@ -214,11 +232,25 @@ python testing.py
 # Open http://localhost:8000
 ```
 
+### Running locally in Docker
+
+Post-mission processing doesn't need a vehicle, so it can be tested on a laptop:
+
+```bash
+docker build -f Dockerfile.base -t vshie/simplepingsurvey-base:latest .
+docker build -t pingsurvey:dev .
+mkdir -p devlogs && cp /path/to/survey.csv devlogs/
+docker run --rm -p 5420:5420 -v "$PWD/devlogs:/app/logs" pingsurvey:dev
+# Open http://localhost:5420 -> Post-Mission Processing
+```
+
+Add `-v "$PWD/app:/app"` to pick up source changes without rebuilding. The logs directory can also be set with the `PING_SURVEY_LOGS_DIR` environment variable.
+
 ### Docker Build
 
 The project uses a two-stage Docker build:
 
-1. **Base image** (`Dockerfile.base`): Contains system libraries and Python scientific packages (numpy, scipy, matplotlib, etc.) with architecture-specific optimizations for ARM32/ARM64/AMD64
+1. **Base image** (`Dockerfile.base`): Python 3.11 with Flask, requests, numpy, scipy, contourpy and Pillow. amd64 and arm64 use PyPI wheels; armv7 uses prebuilt wheels from piwheels
 2. **Application image** (`Dockerfile`): Copies application code into the base image
 
 See [BASE_IMAGE_SETUP.md](BASE_IMAGE_SETUP.md) for base image build instructions.

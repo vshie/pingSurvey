@@ -1,18 +1,39 @@
 FROM python:3.11-slim
 
-# Minimal runtime dependencies.
-# The backend only needs Flask + requests (plus the Python standard library).
-# The heavy scientific/geo stack (numpy, pandas, scipy, matplotlib, shapely,
-# folium, etc.) and its build toolchain (gcc/gfortran/BLAS/GEOS/PROJ/GDAL) were
-# only required by the contour map generation feature, which has been deferred.
-# Removing them dramatically speeds up the base image build, especially on ARM.
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir --prefer-binary \
-    flask==2.3.3 \
-    requests==2.28.2
+# Runtime dependencies.
+# - flask + requests: web backend and BlueOS/mavlink2rest access
+# - numpy + scipy + contourpy + Pillow: post-mission processing (TIN mesh,
+#   contour tracing, and rendering the transparent contour GeoTIFF). GeoTIFF tags
+#   are written by hand with Pillow, so no GDAL/PROJ is needed.
+#
+# amd64/arm64 install prebuilt wheels from PyPI. armv7 (32-bit Raspberry Pi OS)
+# has no PyPI wheels for the scientific stack, so it pulls prebuilt wheels from
+# piwheels instead, which link against these system runtime libraries.
+RUN if [ "$(uname -m)" = "armv7l" ]; then \
+        apt-get update && \
+        apt-get install -y --no-install-recommends \
+            libopenblas0 libgfortran5 \
+            libjpeg62-turbo libtiff6 libopenjp2-7 libwebp7 libwebpdemux2 libwebpmux3 \
+            libfreetype6 liblcms2-2 libxcb1 zlib1g && \
+        rm -rf /var/lib/apt/lists/*; \
+    fi
 
-# Verify the runtime dependencies import cleanly
-RUN python3 -c "import flask, requests; print(f'flask: {flask.__version__}, requests: {requests.__version__}')"
+RUN if [ "$(uname -m)" = "armv7l" ]; then \
+        export PIP_EXTRA_INDEX_URL=https://www.piwheels.org/simple; \
+    fi && \
+    pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir --prefer-binary --only-binary=numpy,scipy,contourpy,Pillow \
+        flask==2.3.3 \
+        requests==2.28.2 \
+        numpy==1.26.4 \
+        scipy==1.13.1 \
+        contourpy==1.2.1 \
+        Pillow==10.4.0
+
+# Verify the runtime dependencies import cleanly (and Pillow has FreeType for labels)
+RUN python3 -c "import flask, requests, numpy, scipy, contourpy, PIL; from PIL import features; \
+assert features.check('freetype2'), 'Pillow built without FreeType'; \
+print(f'flask {flask.__version__}, numpy {numpy.__version__}, scipy {scipy.__version__}, contourpy {contourpy.__version__}, Pillow {PIL.__version__}')"
 
 # Create app directory structure
 RUN mkdir -p /app/logs /app/static
@@ -24,4 +45,3 @@ WORKDIR /app
 EXPOSE 5420/tcp
 
 # This base image is ready for application code to be copied in
-# Slimmed base image: contour/scientific dependencies removed for faster builds 

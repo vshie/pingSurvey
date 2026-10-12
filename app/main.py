@@ -8,9 +8,25 @@ from datetime import datetime, timezone
 import json
 import os
 import hashlib
+import re
+from werkzeug.utils import secure_filename
+
+# Post-mission processing needs numpy/scipy/contourpy/Pillow from the base image. Import it
+# defensively so live surveying still works on an image built without them.
+try:
+    import contour_processing
+    _contour_import_error = None
+except ImportError as e:
+    contour_processing = None
+    _contour_import_error = str(e)
+    print(f"Post-mission processing unavailable: {e}")
+
+# Logs live on the BlueOS host bind mount; overridable for local development.
+LOGS_DIR = os.environ.get('PING_SURVEY_LOGS_DIR', '/app/logs')
+PROCESSED_DIR = os.path.join(LOGS_DIR, 'processed')
 
 # Offline map tile caching - store in external file system alongside logs
-OFFLINE_MAPS_DIR = '/app/logs/offline_maps'
+OFFLINE_MAPS_DIR = os.path.join(LOGS_DIR, 'offline_maps')
 TILE_CACHE_SIZE_LIMIT = 5 * 1024 * 1024 * 1024  # 5GB cache limit
 
 # Performance optimization: Global state to avoid redundant operations
@@ -45,7 +61,7 @@ simulation_data = []
 base_url = 'http://host.docker.internal/mavlink2rest/mavlink'
 log_rate = 2  # Desired rate in Hz
 simulation_speed = 5  # Playback speed multiplier
-simulation_file = '/app/logs/simulation.csv'
+simulation_file = os.path.join(LOGS_DIR, 'simulation.csv')
 
 data = []
 row_counter = 0
@@ -54,7 +70,7 @@ current_log_file = None  # Will be set when logging starts
 
 def ensure_logs_dir():
     """Ensure the logs directory exists."""
-    logs_dir = '/app/logs'
+    logs_dir = LOGS_DIR
     print(f"Ensuring logs directory exists: {logs_dir}")
     
     try:
@@ -89,7 +105,7 @@ def generate_log_filename():
     timestamp = datetime.now()
     date_str = timestamp.strftime('%Y-%m-%d')
     time_str = timestamp.strftime('%H-%M-%S')
-    return f'/app/logs/ping_survey_{date_str}_{time_str}.csv'
+    return os.path.join(LOGS_DIR, f'ping_survey_{date_str}_{time_str}.csv')
 
 def ensure_offline_maps_dir():
     """Ensure the offline maps directory exists."""
@@ -638,7 +654,7 @@ def servicenames():
     "description": "This extension makes it easy to record data from the Ping sonar and gps onboard the vehicle, keeping a poor communications link from interfering with the quality of collected survey data. When connected, the extension displays a data preview that is intended to aide in survey grid spacing determination while logging at 2Hz. Happy motoring!",
     "icon": "mdi-map-plus",
     "company": "Blue Robotics",
-    "version": "1.2.5",
+    "version": "1.3.0",
     "webpage": "https://github.com/vshie/pingSurvey",
     "api": "https://github.com/bluerobotics/BlueOS-docker"}
     '''
@@ -851,7 +867,7 @@ def status():
 @app.route('/log_files')
 def list_log_files():
     """List available CSV log files."""
-    logs_dir = '/app/logs'
+    logs_dir = LOGS_DIR
     if not os.path.exists(logs_dir):
         return jsonify({'files': []})
     
@@ -868,13 +884,171 @@ def list_log_files():
     files.sort(key=lambda f: f['modified'], reverse=True)
     return jsonify({'files': files})
 
+
+# ---------------------------------------------------------------------------
+# Post-mission processing
+# ---------------------------------------------------------------------------
+
+MAX_PREVIEW_POINTS = 20000
+
+
+def _safe_path(directory, filename, extensions):
+    """Resolve filename inside directory, rejecting traversal and unexpected types."""
+    name = secure_filename(os.path.basename(filename or ''))
+    if not name or not name.lower().endswith(extensions):
+        return None
+    path = os.path.join(directory, name)
+    if os.path.dirname(os.path.realpath(path)) != os.path.realpath(directory):
+        return None
+    return path if os.path.isfile(path) else None
+
+
+def _processing_unavailable():
+    return jsonify({'error': f'Post-mission processing is unavailable on this image: {_contour_import_error}'}), 503
+
+
+def _resolve_log_files(names):
+    paths = []
+    for n in names:
+        p = _safe_path(LOGS_DIR, n, ('.csv',))
+        if p is None:
+            raise ValueError(f"Log file not found: {n}")
+        paths.append(p)
+    if not paths:
+        raise ValueError("Select at least one survey log file")
+    return paths
+
+
+@app.route('/log_file/<path:filename>')
+def download_log_file(filename):
+    """Download a raw survey CSV by name."""
+    path = _safe_path(LOGS_DIR, filename, ('.csv',))
+    if path is None:
+        return jsonify({'error': 'File not found'}), 404
+    return send_file(path, as_attachment=True, max_age=0)
+
+
+@app.route('/log_points')
+def log_points():
+    """Soundings for the selected files as [lat, lon, depth_m, confidence] rows."""
+    if contour_processing is None:
+        return _processing_unavailable()
+    names = [n for n in request.args.get('files', '').split(',') if n]
+    try:
+        points = contour_processing.load_points(_resolve_log_files(names))
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    total = int(points.shape[0])
+    stride = max(1, math.ceil(total / MAX_PREVIEW_POINTS))
+    sample = points[::stride]
+    rows = [[round(float(r[0]), 7), round(float(r[1]), 7), round(float(r[2]), 2), int(r[3])] for r in sample]
+    bounds = None
+    if total:
+        bounds = [[float(points[:, 0].min()), float(points[:, 1].min())],
+                  [float(points[:, 0].max()), float(points[:, 1].max())]]
+    return jsonify({'points': rows, 'total': total, 'stride': stride, 'bounds': bounds})
+
+
+def _output_basename(paths, settings):
+    """Name outputs after the survey and the settings a user is likely to vary.
+
+    e.g. ping_survey_2026-10-01_16-10-00_contours_0.5m-2m_conf95
+    """
+    stem = os.path.splitext(os.path.basename(paths[0]))[0]
+    if len(paths) > 1:
+        stem += f"_plus{len(paths) - 1}"
+    stem = re.sub(r'[^A-Za-z0-9_.-]+', '_', stem)[:80]
+    return f"{stem}_contours_{settings.minor_m:g}m-{settings.major_m:g}m_conf{settings.min_conf:g}"
+
+
+def _remove_other_outputs(keep_base):
+    """Only the latest output is kept, so the files on disk always match what the UI shows."""
+    for f in os.listdir(PROCESSED_DIR):
+        if f.startswith(keep_base + '.') or f.startswith(keep_base + '_preview.'):
+            continue
+        try:
+            os.remove(os.path.join(PROCESSED_DIR, f))
+        except OSError as e:
+            print(f"Could not remove old output {f}: {e}")
+
+
+@app.route('/process_contours', methods=['POST'])
+def process_contours():
+    """Build a TIN mesh from the selected logs and write a transparent contour GeoTIFF."""
+    if contour_processing is None:
+        return _processing_unavailable()
+    body = request.get_json(silent=True) or {}
+    try:
+        paths = _resolve_log_files(body.get('files') or [])
+        settings = contour_processing.ContourSettings.from_dict(body.get('settings') or {})
+        polygon = body.get('polygon') or None
+
+        os.makedirs(PROCESSED_DIR, exist_ok=True)
+        base = _output_basename(paths, settings)
+        tif = os.path.join(PROCESSED_DIR, base + '.tif')
+        preview = os.path.join(PROCESSED_DIR, base + '_preview.png')
+
+        started = time.time()
+        summary = contour_processing.process(paths, polygon, settings, tif, preview)
+    except ValueError as e:  # includes ProcessingError
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Contour processing failed: {e}")
+        return jsonify({'error': f'Processing failed: {e}'}), 500
+
+    summary.update({
+        'tif': os.path.basename(tif),
+        'preview': os.path.basename(preview),
+        'source_files': [os.path.basename(p) for p in paths],
+        'polygon': polygon,
+        'settings': settings.__dict__,
+        'created': time.time(),
+        'elapsed_s': round(time.time() - started, 2),
+        'size_mb': round(os.path.getsize(tif) / (1024 * 1024), 2),
+    })
+    with open(os.path.join(PROCESSED_DIR, base + '.json'), 'w') as f:
+        json.dump(summary, f)
+    _remove_other_outputs(base)
+    print(f"Generated {summary['tif']} in {summary['elapsed_s']}s")
+    return jsonify(summary)
+
+
+@app.route('/processed_files')
+def processed_files():
+    """Return the most recently generated contour GeoTIFF (only one is kept)."""
+    latest = None
+    if os.path.isdir(PROCESSED_DIR):
+        for f in os.listdir(PROCESSED_DIR):
+            if not f.endswith('.json'):
+                continue
+            try:
+                with open(os.path.join(PROCESSED_DIR, f)) as fh:
+                    meta = json.load(fh)
+            except (OSError, ValueError):
+                continue
+            if not os.path.isfile(os.path.join(PROCESSED_DIR, meta.get('tif', ''))):
+                continue
+            if latest is None or meta.get('created', 0) > latest.get('created', 0):
+                latest = meta
+    return jsonify({'files': [latest] if latest else []})
+
+
+@app.route('/processed/<path:filename>')
+def download_processed(filename):
+    """Serve a generated GeoTIFF (as a download) or its PNG preview."""
+    path = _safe_path(PROCESSED_DIR, filename, ('.tif', '.png'))
+    if path is None:
+        return jsonify({'error': 'File not found'}), 404
+    return send_file(path, as_attachment=path.endswith('.tif'), max_age=0)
+
+
 if __name__ == '__main__':
     # Ensure logs directory exists at startup
     ensure_logs_dir()
     ensure_offline_maps_dir()
     
     print("Starting Ping Survey Extension...")
-    print(f"Logs directory: /app/logs")
+    print(f"Logs directory: {LOGS_DIR}")
     print(f"Offline maps directory: {OFFLINE_MAPS_DIR}")
     print(f"Cache size limit: {TILE_CACHE_SIZE_LIMIT / (1024**3):.1f} GB")
     
