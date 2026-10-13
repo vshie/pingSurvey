@@ -9,7 +9,6 @@ import json
 import os
 import hashlib
 import re
-from werkzeug.utils import secure_filename
 
 # Post-mission processing needs numpy/scipy/contourpy/Pillow from the base image. Import it
 # defensively so live surveying still works on an image built without them.
@@ -24,6 +23,9 @@ except ImportError as e:
 # Logs live on the BlueOS host bind mount; overridable for local development.
 LOGS_DIR = os.environ.get('PING_SURVEY_LOGS_DIR', '/app/logs')
 PROCESSED_DIR = os.path.join(LOGS_DIR, 'processed')
+
+import tides
+tide_service = tides.TideService(os.path.join(LOGS_DIR, 'tides'))
 
 # Offline map tile caching - store in external file system alongside logs
 OFFLINE_MAPS_DIR = os.path.join(LOGS_DIR, 'offline_maps')
@@ -893,9 +895,14 @@ MAX_PREVIEW_POINTS = 20000
 
 
 def _safe_path(directory, filename, extensions):
-    """Resolve filename inside directory, rejecting traversal and unexpected types."""
-    name = secure_filename(os.path.basename(filename or ''))
-    if not name or not name.lower().endswith(extensions):
+    """Resolve filename inside directory, rejecting traversal and unexpected types.
+
+    Names are matched as-is (logs downloaded from older versions contain spaces), but
+    must be a bare file name that resolves to a file directly inside directory.
+    """
+    name = filename or ''
+    if (not name or name != os.path.basename(name) or '\\' in name or name.startswith('.')
+            or '\x00' in name or not name.lower().endswith(extensions)):
         return None
     path = os.path.join(directory, name)
     if os.path.dirname(os.path.realpath(path)) != os.path.realpath(directory):
@@ -930,23 +937,87 @@ def download_log_file(filename):
 
 @app.route('/log_points')
 def log_points():
-    """Soundings for the selected files as [lat, lon, depth_m, confidence] rows."""
+    """Soundings for the selected files as [lat, lon, measured depth m, confidence, unix ms, file index]
+    rows, plus per-file metadata (start/end time, altitude availability) for tide entry."""
     if contour_processing is None:
         return _processing_unavailable()
     names = [n for n in request.args.get('files', '').split(',') if n]
     try:
-        points = contour_processing.load_points(_resolve_log_files(names))
+        points, files = contour_processing.load_survey(_resolve_log_files(names))
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
+    cp = contour_processing
     total = int(points.shape[0])
     stride = max(1, math.ceil(total / MAX_PREVIEW_POINTS))
     sample = points[::stride]
-    rows = [[round(float(r[0]), 7), round(float(r[1]), 7), round(float(r[2]), 2), int(r[3])] for r in sample]
+    rows = [[round(float(r[cp.LAT]), 7), round(float(r[cp.LON]), 7), round(float(r[cp.DEPTH]), 2),
+             int(r[cp.CONF]), int(round(r[cp.TIME] * 1000)), int(r[cp.FILE])] for r in sample]
     bounds = None
     if total:
-        bounds = [[float(points[:, 0].min()), float(points[:, 1].min())],
-                  [float(points[:, 0].max()), float(points[:, 1].max())]]
-    return jsonify({'points': rows, 'total': total, 'stride': stride, 'bounds': bounds})
+        bounds = [[float(points[:, cp.LAT].min()), float(points[:, cp.LON].min())],
+                  [float(points[:, cp.LAT].max()), float(points[:, cp.LON].max())]]
+    return jsonify({'points': rows, 'files': files, 'total': total, 'stride': stride, 'bounds': bounds})
+
+
+def _online_tides(paths, settings, refresh=False):
+    """Fetch (or load cached) online tide series for each log when online tides are selected.
+
+    Returns {file name: series} or None. Raises ValueError with a user-facing message.
+    """
+    if settings.vertical_reference != 'tide' or settings.tide_source != 'online':
+        return None
+    points, files = contour_processing.load_survey(paths)
+    series = {}
+    for log in contour_processing.log_summaries(points, files):
+        try:
+            series[log['name']] = tide_service.series_for_log(
+                log['name'], log['lat'], log['lon'], log['start'], log['end'],
+                settings.prefer_measured, settings.max_station_km, refresh)
+        except tides.TideError as e:
+            raise ValueError(f"{log['name']}: {e}")
+    return series
+
+
+def _tide_summary(series, settings):
+    """What went into the depth reduction, for the output record and UI."""
+    if not series:
+        return None
+    out = {}
+    for name, s in series.items():
+        st = s.get('station') or {}
+        out[name] = {
+            'provider': s['provider'], 'station_id': st.get('id'), 'station_name': st.get('name'),
+            'station_type': st.get('type'), 'distance_km': st.get('distance_km'), 'product': s['product'],
+            'datum': settings.tide_datum.upper(), 'msl_above_datum_m': s['datums'].get(settings.tide_datum),
+            'approximate': s.get('approximate', False), 'attribution': s.get('attribution'),
+        }
+    return out
+
+
+def _processing_inputs(body):
+    """Common request fields for /log_qc and /process_contours."""
+    paths = _resolve_log_files(body.get('files') or [])
+    settings = contour_processing.ContourSettings.from_dict(body.get('settings') or {})
+    tides = body.get('tides') or {}
+    if not isinstance(tides, dict):
+        raise ValueError("tides must be an object keyed by file name")
+    overlaps = body.get('exclude_overlaps') or []
+    if not isinstance(overlaps, list) or not all(isinstance(r, dict) for r in overlaps):
+        raise ValueError("exclude_overlaps must be a list of {file, other} objects")
+    return paths, settings, body.get('polygon') or None, tides, body.get('exclude') or [], overlaps
+
+
+@app.route('/log_qc', methods=['POST'])
+def log_qc():
+    """Data-quality report for the soundings that would be meshed with these inputs."""
+    if contour_processing is None:
+        return _processing_unavailable()
+    try:
+        paths, settings, polygon, manual_tides, exclude, overlaps = _processing_inputs(request.get_json(silent=True) or {})
+        series = _online_tides(paths, settings)
+        return jsonify(contour_processing.analyse(paths, polygon, settings, manual_tides, exclude, overlaps, series))
+    except ValueError as e:  # includes ProcessingError
+        return jsonify({'error': str(e)}), 400
 
 
 def _output_basename(paths, settings):
@@ -958,7 +1029,13 @@ def _output_basename(paths, settings):
     if len(paths) > 1:
         stem += f"_plus{len(paths) - 1}"
     stem = re.sub(r'[^A-Za-z0-9_.-]+', '_', stem)[:80]
-    return f"{stem}_contours_{settings.minor_m:g}m-{settings.major_m:g}m_conf{settings.min_conf:g}"
+    if settings.vertical_reference == 'gps':
+        ref = '_gps'
+    elif settings.tide_source == 'online':
+        ref = '_' + settings.tide_datum      # depths below LAT / MLLW / MSL
+    else:
+        ref = ''
+    return f"{stem}_contours_{settings.minor_m:g}m-{settings.major_m:g}m_conf{settings.min_conf:g}{ref}"
 
 
 def _remove_other_outputs(keep_base):
@@ -979,17 +1056,22 @@ def process_contours():
         return _processing_unavailable()
     body = request.get_json(silent=True) or {}
     try:
-        paths = _resolve_log_files(body.get('files') or [])
-        settings = contour_processing.ContourSettings.from_dict(body.get('settings') or {})
-        polygon = body.get('polygon') or None
+        paths, settings, polygon, manual_tides, exclude, overlaps = _processing_inputs(body)
+        series = _online_tides(paths, settings)
 
         os.makedirs(PROCESSED_DIR, exist_ok=True)
-        base = _output_basename(paths, settings)
+        # Write under a temporary name: with auto-tune the intervals in the final name are only
+        # known once processing has run.
+        tmp = os.path.join(PROCESSED_DIR, f".processing_{os.getpid()}_{threading.get_ident()}")
+        started = time.time()
+        summary = contour_processing.process(paths, polygon, settings, tmp + '.tif', tmp + '.png',
+                                             manual_tides, exclude, overlaps, series)
+        effective = contour_processing.ContourSettings.from_dict(summary['settings'])
+        base = _output_basename(paths, effective)
         tif = os.path.join(PROCESSED_DIR, base + '.tif')
         preview = os.path.join(PROCESSED_DIR, base + '_preview.png')
-
-        started = time.time()
-        summary = contour_processing.process(paths, polygon, settings, tif, preview)
+        os.replace(tmp + '.tif', tif)
+        os.replace(tmp + '.png', preview)
     except ValueError as e:  # includes ProcessingError
         return jsonify({'error': str(e)}), 400
     except Exception as e:
@@ -1001,7 +1083,11 @@ def process_contours():
         'preview': os.path.basename(preview),
         'source_files': [os.path.basename(p) for p in paths],
         'polygon': polygon,
-        'settings': settings.__dict__,
+        'tides': manual_tides,
+        'tide_sources': _tide_summary(series, settings),
+        'exclude': exclude,
+        'exclude_overlaps': overlaps,
+        'ignored': body.get('ignored') or [],
         'created': time.time(),
         'elapsed_s': round(time.time() - started, 2),
         'size_mb': round(os.path.getsize(tif) / (1024 * 1024), 2),
@@ -1011,6 +1097,83 @@ def process_contours():
     _remove_other_outputs(base)
     print(f"Generated {summary['tif']} in {summary['elapsed_s']}s")
     return jsonify(summary)
+
+
+@app.route('/tide_fetch', methods=['POST'])
+def tide_fetch():
+    """Online tide series for each selected log, shown in the UI before processing."""
+    if contour_processing is None:
+        return _processing_unavailable()
+    body = request.get_json(silent=True) or {}
+    try:
+        paths = _resolve_log_files(body.get('files') or [])
+        settings = contour_processing.ContourSettings.from_dict(body.get('settings') or {})
+        points, files = contour_processing.load_survey(paths)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    datum = settings.tide_datum
+    results = {}
+    for log in contour_processing.log_summaries(points, files):
+        try:
+            s = tide_service.series_for_log(log['name'], log['lat'], log['lon'], log['start'], log['end'],
+                                            settings.prefer_measured, settings.max_station_km,
+                                            bool(body.get('refresh')))
+        except tides.TideError as e:
+            results[log['name']] = {'error': str(e)}
+            continue
+        offset = s['datums'].get(datum)
+        times, heights = s['times'], s['heights']
+        in_log = [(t, h) for t, h in zip(times, heights) if log['start'] - 60 <= t <= log['end'] + 60]
+        step = max(1, len(in_log) // 60)
+        spark = in_log[::step]
+        level = lambda t: round(float(_interp(t, times, heights)) + (offset or 0), 3)
+        results[log['name']] = {
+            'provider': s['provider'], 'station': s.get('station'), 'product': s['product'],
+            'approximate': s.get('approximate', False), 'warnings': s.get('warnings', []),
+            'attribution': s.get('attribution'), 'cached': s.get('cached', False), 'fetched_at': s.get('fetched_at'),
+            'datums': s['datums'], 'datum': datum, 'datum_available': offset is not None,
+            'start': log['start'], 'end': log['end'],
+            'start_m': level(log['start']) if offset is not None else None,
+            'end_m': level(log['end']) if offset is not None else None,
+            'min_m': round(min([h + offset for _, h in in_log] + [level(log['start']), level(log['end'])]), 3)
+            if offset is not None else None,
+            'max_m': round(max([h + offset for _, h in in_log] + [level(log['start']), level(log['end'])]), 3)
+            if offset is not None else None,
+            'series': [[t, round(h + (offset or 0), 3)] for t, h in spark],
+        }
+    return jsonify({'files': results})
+
+
+def _interp(t, times, heights):
+    import bisect
+    i = bisect.bisect_left(times, t)
+    if i <= 0:
+        return heights[0]
+    if i >= len(times):
+        return heights[-1]
+    t0, t1 = times[i - 1], times[i]
+    return heights[i - 1] + (heights[i] - heights[i - 1]) * (t - t0) / (t1 - t0)
+
+
+@app.route('/tide_config', methods=['GET', 'POST'])
+def tide_config():
+    """WorldTides API key (stored on the vehicle; only a masked form is ever returned)."""
+    if request.method == 'POST':
+        body = request.get_json(silent=True) or {}
+        tide_service.set_worldtides_key(str(body.get('worldtides_key') or ''))
+    return jsonify(tide_service.public_config())
+
+
+@app.route('/tide_config/test', methods=['POST'])
+def tide_config_test():
+    body = request.get_json(silent=True) or {}
+    key = str(body.get('worldtides_key') or '') or tide_service.worldtides_key()
+    if not key:
+        return jsonify({'error': 'Enter a WorldTides API key first'}), 400
+    try:
+        return jsonify(tide_service.test_worldtides_key(key))
+    except tides.TideError as e:
+        return jsonify({'error': str(e)}), 400
 
 
 @app.route('/processed_files')

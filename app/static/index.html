@@ -633,7 +633,7 @@
             padding: 8px 16px 12px;
         }
         .pm-file-list {
-            max-height: 220px;
+            max-height: 360px;
             overflow-y: auto;
         }
         .pm-file-row {
@@ -728,6 +728,16 @@
             max-width: calc(100% - 20px);
             text-align: center;
         }
+        .pm-map-toggle {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+        }
+        .pm-tuned-notes {
+            margin: 4px 0 0;
+            padding-left: 18px;
+        }
         .pm-legend {
             position: absolute;
             bottom: 28px;
@@ -752,6 +762,122 @@
         .pm-vertex {
             cursor: move;
             touch-action: none;
+        }
+        .pm-tide {
+            margin: -2px 0 8px 32px;
+            padding: 6px 8px;
+            border-left: 2px solid #2196F3;
+            background: rgba(33, 150, 243, 0.06);
+        }
+        .pm-tide-label {
+            font-size: 0.78rem;
+            color: #ccc;
+        }
+        .pm-tide-input {
+            max-width: 120px;
+            margin-bottom: 4px;
+        }
+        .pm-spark {
+            width: 100%;
+            max-width: 240px;
+            height: 44px;
+            display: block;
+            margin: 4px 0;
+            background: rgba(79, 195, 247, 0.06);
+        }
+        .pm-tide-actions {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 4px;
+        }
+        .pm-steps {
+            padding-left: 18px;
+            margin: 4px 0;
+        }
+        .pm-hint a {
+            color: #64B5F6;
+        }
+        .pm-qc-ok {
+            font-size: 0.85rem;
+            color: #ccc;
+        }
+        .pm-qc-alert {
+            border-left: 3px solid #FF9800;
+            padding: 6px 0 6px 10px;
+            margin-bottom: 10px;
+        }
+        .pm-qc-title {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: white;
+        }
+        .pm-qc-text {
+            font-size: 0.8rem;
+            color: #ccc;
+            margin: 2px 0 4px;
+        }
+        .pm-qc-list {
+            margin: 4px 0;
+        }
+        .pm-qc-item {
+            font-size: 0.78rem;
+            color: #ddd;
+            cursor: pointer;
+            padding: 2px 0;
+        }
+        .pm-qc-item:hover {
+            color: #4CAF50;
+        }
+        .pm-qc-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 4px;
+        }
+        .pm-qc-actions .v-btn {
+            text-transform: none;
+            letter-spacing: normal;
+            max-width: 100%;
+            height: auto !important;
+            min-height: 20px;
+            padding-top: 3px !important;
+            padding-bottom: 3px !important;
+        }
+        .pm-qc-actions .v-btn__content {
+            white-space: normal;
+            word-break: break-all;
+            text-align: left;
+            flex: 1 1 auto;
+        }
+        .pm-popup {
+            font-size: 12px;
+            line-height: 1.45;
+            min-width: 230px;
+        }
+        .pm-popup h4 {
+            margin: 4px 0 2px;
+            font-size: 12px;
+        }
+        .pm-popup .pm-popup-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 6px;
+        }
+        .pm-popup button {
+            background: #1976D2;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            padding: 3px 8px;
+            cursor: pointer;
+            font-size: 11px;
+        }
+        .pm-popup .pm-note {
+            color: #666;
+            font-size: 11px;
+            margin-top: 4px;
         }
         .pm-output {
             border-top: 1px solid #333;
@@ -826,8 +952,101 @@
                                             <v-btn icon x-small :href="'/log_file/' + encodeURIComponent(f.filename)" title="Download raw CSV"><v-icon small>mdi-download</v-icon></v-btn>
                                         </div>
                                         <div class="pm-file-meta">{{ pmFormatDate(f.modified) }} · {{ f.size_mb }} MB</div>
+                                        <div v-if="pm.settings.vertical_reference === 'tide' && pm.settings.tide_source === 'online' && pm.selectedFiles.includes(f.filename) && pmFileMeta(f.filename)" class="pm-tide">
+                                            <template v-if="pm.tideInfo[f.filename] && !pm.tideInfo[f.filename].error">
+                                                <div class="pm-tide-label">
+                                                    <b>{{ pm.tideInfo[f.filename].provider }}</b>
+                                                    <template v-if="pm.tideInfo[f.filename].station && pm.tideInfo[f.filename].station.id">
+                                                        {{ pm.tideInfo[f.filename].station.id }} {{ pm.tideInfo[f.filename].station.name }}
+                                                        ({{ pm.tideInfo[f.filename].station.type === 'R' ? 'reference station' : 'subordinate station' }}, {{ pm.tideInfo[f.filename].station.distance_km }} km away)
+                                                    </template>
+                                                    · {{ pm.tideInfo[f.filename].product }}
+                                                </div>
+                                                <template v-if="pm.tideInfo[f.filename].datum_available">
+                                                    <div class="pm-tide-label" v-for="slot in pmTideSlots(f.filename, true)" :key="slot.which">
+                                                        Water level at survey {{ slot.which }}, {{ slot.local }} ({{ slot.utc }}): <b>{{ pmSigned(pm.tideInfo[f.filename][slot.which + '_m']) }} m</b> above {{ pm.settings.tide_datum.toUpperCase() }}
+                                                    </div>
+                                                    <div class="pm-tide-label">Range during the log: {{ pmSigned(pm.tideInfo[f.filename].min_m) }} to {{ pmSigned(pm.tideInfo[f.filename].max_m) }} m</div>
+                                                    <svg v-if="pm.tideInfo[f.filename].series.length > 1" class="pm-spark" viewBox="0 0 220 44" preserveAspectRatio="none">
+                                                        <path :d="pmSparkPath(pm.tideInfo[f.filename].series)" fill="none" stroke="#4FC3F7" stroke-width="1.5"></path>
+                                                    </svg>
+                                                </template>
+                                                <div v-else class="pm-tide-label" style="color: #FFB74D;">This station has no {{ pm.settings.tide_datum.toUpperCase() }} datum; choose another datum below.</div>
+                                                <div class="pm-hint" v-for="(w, k) in pm.tideInfo[f.filename].warnings" :key="k" style="color: #FFB74D;">{{ w }}</div>
+                                                <div class="pm-tide-actions">
+                                                    <span class="pm-hint">{{ pm.tideInfo[f.filename].cached ? 'Cached' : 'Fetched' }} {{ pmFormatDate(pm.tideInfo[f.filename].fetched_at) }}</span>
+                                                    <v-btn x-small text @click="pmFetchTides(true)" :loading="pm.tideLoading">Refresh</v-btn>
+                                                    <v-btn x-small text @click="pmUseTidesAsManual(f.filename)" :disabled="!pm.tideInfo[f.filename].datum_available">Use as manual values</v-btn>
+                                                </div>
+                                            </template>
+                                            <div v-else-if="pm.tideInfo[f.filename] && pm.tideInfo[f.filename].error" class="pm-tide-label" style="color: #FFB74D;">
+                                                {{ pm.tideInfo[f.filename].error }}
+                                            </div>
+                                            <div v-else class="pm-tide-label">{{ pm.tideLoading ? 'Fetching tides…' : 'Tides not fetched yet' }}</div>
+                                        </div>
+                                        <div v-if="pm.settings.vertical_reference === 'tide' && pm.settings.tide_source === 'manual' && pm.selectedFiles.includes(f.filename) && pmFileMeta(f.filename)" class="pm-tide">
+                                            <div v-for="slot in pmTideSlots(f.filename)" :key="slot.which" class="pm-tide-row">
+                                                <div class="pm-tide-label">Tide height at survey {{ slot.which }}, <b>{{ slot.local }}</b> ({{ slot.utc }})</div>
+                                                <v-text-field type="number" step="0.01" suffix="m" dense hide-details placeholder="0.00" class="pm-tide-input mt-0 pt-0"
+                                                    :value="pmTideValue(f.filename, slot.which)" @input="pmSetTide(f.filename, slot.which, $event)"></v-text-field>
+                                            </div>
+                                            <div class="pm-hint" v-if="!pmNeedsEndTide(f.filename)">Survey lasted {{ pmDurationMin(f.filename) }} min, so one tide height is used for the whole log.</div>
+                                        </div>
                                     </div>
                                 </div>
+                                <template v-if="pm.settings.vertical_reference === 'tide'">
+                                    <div class="pm-section-label">Tide source</div>
+                                    <v-radio-group v-model="pm.settings.tide_source" dense row hide-details class="mt-0 pt-0">
+                                        <v-radio label="Online tide service" value="online"></v-radio>
+                                        <v-radio label="Manual (tide table)" value="manual"></v-radio>
+                                    </v-radio-group>
+                                    <template v-if="pm.settings.tide_source === 'online'">
+                                        <v-chip x-small color="blue darken-2" dark class="mt-1"><v-icon x-small left>mdi-web</v-icon>Internet required (results are cached)</v-chip>
+                                        <div class="pm-style-grid mt-2">
+                                            <v-select v-model="pm.settings.tide_datum" :items="pmTideDatums" label="Depths below datum" dense hide-details></v-select>
+                                            <v-text-field v-model.number="pm.settings.max_station_km" type="number" min="1" step="5" label="Max NOAA station distance (km)" dense hide-details></v-text-field>
+                                        </div>
+                                        <div class="pm-hint mt-1" v-if="pmDatumNote">{{ pmDatumNote }}</div>
+                                        <v-checkbox v-model="pm.settings.prefer_measured" label="Prefer measured water level (includes surge and weather) when NOAA has it" dense hide-details class="mt-1"></v-checkbox>
+                                        <v-alert v-if="pm.tideError" type="warning" dense text class="mt-2 mb-0">
+                                            {{ pm.tideError }}
+                                            <v-btn x-small text @click="pm.settings.tide_source = 'manual'">Enter tides manually</v-btn>
+                                        </v-alert>
+                                        <v-expansion-panels flat class="mt-1" v-model="pm.worldTidesPanel">
+                                            <v-expansion-panel style="background: transparent;">
+                                                <v-expansion-panel-header class="px-0">
+                                                    Outside the US: WorldTides API key {{ pm.tideConfig.worldtides_key_set ? '(saved)' : '(not set)' }}
+                                                </v-expansion-panel-header>
+                                                <v-expansion-panel-content>
+                                                    <div class="pm-hint">
+                                                        US waters use <a href="https://tidesandcurrents.noaa.gov/" target="_blank" rel="noopener">NOAA CO-OPS</a> (free, no account needed).
+                                                        Elsewhere, tides come from <a href="https://www.worldtides.info/" target="_blank" rel="noopener">WorldTides</a>, which needs your own API key:
+                                                    </div>
+                                                    <ol class="pm-hint pm-steps">
+                                                        <li>Create a free account at <a href="https://www.worldtides.info/register" target="_blank" rel="noopener">worldtides.info/register</a>. New accounts get 100 free credits.</li>
+                                                        <li>Log in and open <a href="https://www.worldtides.info/developer" target="_blank" rel="noopener">worldtides.info/developer</a> (Developer Access). Copy your API key from there, and buy prepaid credits or a monthly plan if you need more (from $4.99/month for 20,000 credits).</li>
+                                                        <li>Paste the key below, then press <b>Save</b> and <b>Test key</b>.</li>
+                                                    </ol>
+                                                    <div class="pm-hint">
+                                                        Each survey log uses about 1–2 credits; fetched tides are cached, so reprocessing is free.
+                                                        <a href="https://www.worldtides.info/apidocs" target="_blank" rel="noopener">API docs</a>.
+                                                    </div>
+                                                    <v-text-field v-model="pm.worldTidesKeyInput" type="password" autocomplete="off" dense hide-details class="mt-2"
+                                                        :placeholder="pm.tideConfig.worldtides_key_masked || 'WorldTides API key'"></v-text-field>
+                                                    <div class="pm-tide-actions mt-1">
+                                                        <v-btn x-small color="primary" @click="pmSaveWorldTidesKey" :disabled="!pm.worldTidesKeyInput">Save</v-btn>
+                                                        <v-btn x-small @click="pmTestWorldTidesKey" :loading="pm.worldTidesTesting" :disabled="!pm.worldTidesKeyInput && !pm.tideConfig.worldtides_key_set">Test key</v-btn>
+                                                        <v-btn x-small text v-if="pm.tideConfig.worldtides_key_set" @click="pmClearWorldTidesKey">Remove</v-btn>
+                                                    </div>
+                                                    <div class="pm-hint mt-1" v-if="pm.worldTidesStatus">{{ pm.worldTidesStatus }}</div>
+                                                </v-expansion-panel-content>
+                                            </v-expansion-panel>
+                                        </v-expansion-panels>
+                                    </template>
+                                    <div class="pm-hint mt-1" v-else-if="pm.selectedFiles.length">
+                                        Tide heights are metres above chart datum from a tide table for the survey site (blank = 0). Logs over an hour are interpolated linearly between their start and end heights.
+                                    </div>
+                                </template>
                                 <div class="pm-section-label">Minimum confidence: {{ pm.settings.min_conf }}%</div>
                                 <v-slider v-model="pm.settings.min_conf" min="0" max="100" step="1" dense hide-details color="#4CAF50" @end="pmRedrawPoints"></v-slider>
                                 <v-checkbox v-if="pm.pointsTotal" v-model="pm.showPoints" label="Show soundings on map" dense hide-details class="mt-2" @change="pmRedrawPoints"></v-checkbox>
@@ -840,9 +1059,119 @@
                             </v-card-text>
                         </v-card>
 
-                        <!-- 2. Area -->
+                        <!-- 2. Data quality -->
+                        <v-card class="pm-card" outlined v-if="pm.selectedFiles.length">
+                            <v-card-title>
+                                2. Data quality
+                                <v-spacer></v-spacer>
+                                <v-progress-circular v-if="pm.qcLoading" indeterminate size="16" width="2" color="#4CAF50"></v-progress-circular>
+                            </v-card-title>
+                            <v-card-text>
+                                <v-alert v-if="pm.qcError" type="info" dense text class="mb-0">{{ pm.qcError }}</v-alert>
+                                <template v-else-if="pm.qc">
+                                    <div v-if="!pmQcActiveCount" class="pm-qc-ok">
+                                        <v-icon small color="#4CAF50">mdi-check-circle</v-icon>
+                                        No disagreements found in {{ pm.qc.points }} soundings (overlaps within {{ pm.settings.qc_radius_m }} m checked against {{ pmDepthTolText }}).
+                                    </div>
+
+                                    <div v-for="o in pmQcOffsets" :key="pmOffsetId(o)" class="pm-qc-alert">
+                                        <div class="pm-qc-title"><v-icon small color="orange">mdi-alert</v-icon> Logs disagree by {{ Math.abs(o.median_m).toFixed(2) }} m</div>
+                                        <div class="pm-qc-text">
+                                            Where they overlap ({{ o.pairs }} sounding pairs within {{ pm.settings.qc_radius_m }} m), <b>{{ o.file_b }}</b> reads
+                                            {{ Math.abs(o.median_m).toFixed(2) }} m {{ o.median_m < 0 ? 'shallower' : 'deeper' }} than <b>{{ o.file_a }}</b>.
+                                            This is usually a tide or water-level difference between the surveys, or a position offset.
+                                            Removing overlapping soundings drops one log's soundings within {{ pm.settings.overlap_buffer_m }} m of the other.
+                                        </div>
+                                        <div class="pm-qc-actions">
+                                            <v-btn x-small color="primary" v-if="pm.settings.vertical_reference === 'tide'" @click="pmApplyOffset(o)">Apply as tide difference</v-btn>
+                                            <v-btn x-small @click="pmAddOverlapRule(o.file_a, o.file_b)" :disabled="!o.remove_a_count">Remove {{ o.remove_a_count }} overlapping soundings from {{ o.file_a }}</v-btn>
+                                            <v-btn x-small @click="pmAddOverlapRule(o.file_b, o.file_a)" :disabled="!o.remove_b_count">Remove {{ o.remove_b_count }} overlapping soundings from {{ o.file_b }}</v-btn>
+                                            <v-btn x-small @click="pmDeselect(o.file_b)">Deselect {{ o.file_b }}</v-btn>
+                                            <v-btn x-small text @click="pmIgnore(pmOffsetId(o))">Ignore</v-btn>
+                                        </div>
+                                    </div>
+
+                                    <div v-for="a in pmQcAltWarnings" :key="'alt:' + a.file" class="pm-qc-alert">
+                                        <div class="pm-qc-title"><v-icon small color="orange">mdi-alert</v-icon> GPS altitude isn't RTK quality</div>
+                                        <div class="pm-qc-text">
+                                            GPS altitude in <b>{{ a.file }}</b> varies by {{ a.spread_m }} m (σ {{ a.std_m }} m) during the log; an RTK antenna on a boat should stay within a few decimetres.
+                                            Contours from GPS altitude will be unreliable.
+                                        </div>
+                                        <div class="pm-qc-actions">
+                                            <v-btn x-small color="primary" @click="pm.settings.vertical_reference = 'tide'">Use depth + tide</v-btn>
+                                            <v-btn x-small text @click="pmIgnore('alt:' + a.file)">Ignore</v-btn>
+                                        </div>
+                                    </div>
+
+                                    <div v-if="pm.qc.conflict_count && !pmIsIgnored('conflicts')" class="pm-qc-alert">
+                                        <div class="pm-qc-title"><v-icon small color="#ff5252">mdi-alert</v-icon> {{ pm.qc.conflict_count }} overlapping sounding pairs disagree</div>
+                                        <div class="pm-qc-text">
+                                            Soundings from different passes within {{ pm.settings.qc_radius_m }} m of each other differ by more than {{ pmDepthTolText }}
+                                            (median {{ pm.qc.conflict_median_dz_m }} m vertically, {{ pm.qc.conflict_median_h_m }} m apart horizontally). Causes include a steep or uneven
+                                            seabed within the sonar's {{ pmBeamWidth }}° beam footprint, a position error, or a bad return.
+                                        </div>
+                                        <div class="pm-qc-list">
+                                            <div v-for="(c, k) in pm.qc.conflicts.slice(0, 5)" :key="k" class="pm-qc-item" @click="pmZoomTo(c.a)">
+                                                <v-icon x-small>mdi-crosshairs</v-icon>
+                                                {{ c.h_m }} m apart · {{ c.dz_m }} m depth difference · {{ c.slope_pct }}% slope · confidence {{ c.a.conf }}% / {{ c.b.conf }}%
+                                            </div>
+                                        </div>
+                                        <div class="pm-hint">Click a red marker on the map to compare the two soundings and exclude the wrong one.</div>
+                                        <div class="pm-qc-actions">
+                                            <v-btn x-small text @click="pmIgnore('conflicts')">Ignore</v-btn>
+                                        </div>
+                                    </div>
+
+                                    <div v-if="pm.qc.spike_count && !pmIsIgnored('spikes')" class="pm-qc-alert">
+                                        <div class="pm-qc-title">
+                                            <v-icon small :color="pm.settings.exclude_spikes ? '#4CAF50' : 'orange'">{{ pm.settings.exclude_spikes ? 'mdi-check-circle' : 'mdi-alert' }}</v-icon>
+                                            {{ pm.qc.spike_count }} spike{{ pm.qc.spike_count > 1 ? 's' : '' }} along track{{ pm.settings.exclude_spikes ? ' (excluded from the mesh)' : '' }}
+                                        </div>
+                                        <div class="pm-qc-text">
+                                            Soundings further from the median of their neighbours on the same pass than {{ pm.settings.qc_spike_k }}× those neighbours' scatter (and at least {{ pm.settings.qc_spike_tol_m }} m); typically fish, bubbles, wake or multipath. Rough seabed raises the threshold locally so it isn't reported as spikes.
+                                        </div>
+                                        <div class="pm-qc-list">
+                                            <div v-for="(sp, k) in pm.qc.spikes.slice(0, 3)" :key="k" class="pm-qc-item" @click="pmZoomTo(sp)">
+                                                <v-icon x-small>mdi-crosshairs</v-icon>
+                                                {{ sp.deviation_m > 0 ? '+' : '' }}{{ sp.deviation_m }} m vs neighbours ({{ sp.depth_m }} m vs {{ sp.neighbour_median_m }} m) · confidence {{ sp.conf }}%
+                                            </div>
+                                        </div>
+                                        <v-checkbox v-model="pm.settings.exclude_spikes" label="Exclude spikes from the mesh" dense hide-details class="mt-1"></v-checkbox>
+                                        <div class="pm-qc-actions">
+                                            <v-btn x-small text @click="pmIgnore('spikes')">Ignore</v-btn>
+                                        </div>
+                                    </div>
+
+                                    <div v-if="pmConfidenceHint" class="pm-hint mt-2">
+                                        <v-icon x-small>mdi-information-outline</v-icon> {{ pmConfidenceHint.text }}
+                                        <v-btn v-if="pmConfidenceHint.threshold" x-small text color="primary" @click="pmSetMinConf(pmConfidenceHint.threshold)">Set to {{ pmConfidenceHint.threshold }}%</v-btn>
+                                    </div>
+                                </template>
+
+                                <div v-if="pm.exclude.length || pm.excludeOverlaps.length" class="mt-2">
+                                    <div class="pm-section-label">Excluded soundings
+                                        <v-btn x-small text @click="pmRestoreAllExcluded">Restore all</v-btn>
+                                    </div>
+                                    <div v-for="r in pm.excludeOverlaps" :key="'ov:' + r.file + '|' + r.other" class="pm-qc-item">
+                                        <span>Overlap with {{ r.other }} removed from {{ r.file }}<template v-if="pmOverlapCount(r) !== null"> ({{ pmOverlapCount(r) }} soundings)</template></span>
+                                        <v-btn x-small text @click="pmRemoveOverlapRule(r)">Restore</v-btn>
+                                    </div>
+                                    <div v-for="e in pm.exclude.slice(0, 20)" :key="e.key.join('|')" class="pm-qc-item">
+                                        <span @click="pmZoomTo(e)">{{ e.depth_m }} m · {{ e.conf }}% · {{ pmFormatTime(e.time).local }}</span>
+                                        <v-btn x-small text @click="pmRestoreExcluded(e)">Restore</v-btn>
+                                    </div>
+                                    <div v-if="pm.exclude.length > 20" class="pm-hint">…and {{ pm.exclude.length - 20 }} more</div>
+                                </div>
+                                <div v-if="pm.ignored.length" class="mt-2">
+                                    <div class="pm-section-label">Ignored ({{ pm.ignored.length }})</div>
+                                    <v-chip v-for="id in pm.ignored" :key="id" x-small close class="mr-1 mb-1" @click:close="pmUnignore(id)">{{ pmIgnoredLabel(id) }}</v-chip>
+                                </div>
+                            </v-card-text>
+                        </v-card>
+
+                        <!-- 3. Area -->
                         <v-card class="pm-card" outlined>
-                            <v-card-title>2. Processing area</v-card-title>
+                            <v-card-title>3. Processing area</v-card-title>
                             <v-card-text>
                                 <div class="pm-hint mb-2">
                                     Draw a polygon around the soundings to include in the mesh. Vertices can be dragged. Without a polygon, all accepted soundings are used.
@@ -861,11 +1190,34 @@
 
                         <!-- 3. Contour style -->
                         <v-card class="pm-card" outlined>
-                            <v-card-title>3. Contours</v-card-title>
+                            <v-card-title>4. Contours</v-card-title>
                             <v-card-text>
+                                <v-switch v-model="pm.settings.auto_tune" label="Auto-tune settings from the data" dense hide-details color="#4CAF50" class="mt-0 pt-0"></v-switch>
+                                <div class="pm-hint mb-2">
+                                    <template v-if="pm.settings.auto_tune">
+                                        Contour intervals, mesh edge, line and label sizes and the data-quality tolerances follow the selected soundings. Editing any of them switches auto-tune off.
+                                        <ul v-if="pm.qc && pm.qc.tuned" class="pm-tuned-notes">
+                                            <li v-for="(n, k) in pm.qc.tuned.notes" :key="k">{{ n }}</li>
+                                        </ul>
+                                    </template>
+                                    <template v-else>Using your own values. Switch on to recalculate them from the data.</template>
+                                </div>
+                                <div class="pm-section-label mt-0">Vertical reference</div>
+                                <v-radio-group v-model="pm.settings.vertical_reference" dense row hide-details class="mt-0 pt-0">
+                                    <v-radio label="Depth + tide" value="tide"></v-radio>
+                                    <v-radio label="GPS altitude (RTK)" value="gps" :disabled="!!pmAltitudeMissing.length"></v-radio>
+                                </v-radio-group>
+                                <div class="pm-hint mb-3" v-if="pmAltitudeMissing.length">GPS altitude unavailable: {{ pmAltitudeMissing.join(', ') }} has no altitude column.</div>
+                                <div class="pm-hint mb-3" v-else-if="pm.settings.vertical_reference === 'tide'">Contour depths are the measured depth minus the tide heights entered for each log.</div>
+                                <template v-else>
+                                    <v-text-field v-model.number="pm.settings.antenna_height_m" type="number" step="0.01" label="GPS antenna height above sonar transducer (m)" dense class="mt-2"
+                                        :error-messages="pmAntennaError"></v-text-field>
+                                    <div class="pm-hint mb-3">Depth below the GPS vertical datum (MSL) = measured depth + antenna height − GPS altitude. Use only with RTK or another accurate vertical source.</div>
+                                </template>
+
                                 <div class="pm-style-grid">
-                                    <v-text-field v-model.number="pm.settings.minor_m" type="number" min="0.1" step="0.1" label="Minor interval (m)" dense></v-text-field>
-                                    <v-text-field v-model.number="pm.settings.major_m" type="number" min="0.1" step="0.5" label="Major interval (m)" dense
+                                    <v-text-field v-model.number="pm.settings.minor_m" @input="pmManualEdit" type="number" min="0.1" step="0.1" label="Minor interval (m)" dense></v-text-field>
+                                    <v-text-field v-model.number="pm.settings.major_m" @input="pmManualEdit" type="number" min="0.1" step="0.5" label="Major interval (m)" dense
                                         :error-messages="pmIntervalError"></v-text-field>
                                 </div>
 
@@ -873,7 +1225,7 @@
                                 <div class="pm-style-row">
                                     <label>Colour</label>
                                     <input type="color" class="pm-color" v-model="pm.settings.minor_color">
-                                    <v-text-field v-model.number="pm.settings.minor_width_px" type="number" min="0.5" step="0.5" label="Width (px)" dense hide-details style="max-width: 90px"></v-text-field>
+                                    <v-text-field v-model.number="pm.settings.minor_width_px" @input="pmManualEdit" type="number" min="0.5" step="0.5" label="Width (px)" dense hide-details style="max-width: 90px"></v-text-field>
                                 </div>
                                 <div class="pm-style-row">
                                     <label>Opacity</label>
@@ -886,7 +1238,7 @@
                                 <div class="pm-style-row">
                                     <label>Colour</label>
                                     <input type="color" class="pm-color" v-model="pm.settings.major_color">
-                                    <v-text-field v-model.number="pm.settings.major_width_px" type="number" min="0.5" step="0.5" label="Width (px)" dense hide-details style="max-width: 90px"></v-text-field>
+                                    <v-text-field v-model.number="pm.settings.major_width_px" @input="pmManualEdit" type="number" min="0.5" step="0.5" label="Width (px)" dense hide-details style="max-width: 90px"></v-text-field>
                                 </div>
                                 <div class="pm-style-row">
                                     <label>Opacity</label>
@@ -899,7 +1251,7 @@
                                 <div class="pm-style-row">
                                     <label>Text</label>
                                     <input type="color" class="pm-color" v-model="pm.settings.label_color">
-                                    <v-text-field v-model.number="pm.settings.label_size_px" type="number" min="8" step="1" label="Size (px)" dense hide-details style="max-width: 90px"></v-text-field>
+                                    <v-text-field v-model.number="pm.settings.label_size_px" @input="pmManualEdit" type="number" min="8" step="1" label="Size (px)" dense hide-details style="max-width: 90px"></v-text-field>
                                 </div>
                                 <div class="pm-style-row">
                                     <label>Halo</label>
@@ -911,17 +1263,29 @@
                                     <v-slider v-model="pm.settings.label_opacity" min="0" max="1" step="0.05" dense hide-details color="#4CAF50"></v-slider>
                                     <span class="pm-stat">{{ Math.round(pm.settings.label_opacity * 100) }}%</span>
                                 </div>
-                                <v-text-field v-model.number="pm.settings.label_spacing_m" type="number" min="5" step="5" label="Label spacing along line (m)" dense class="mt-2"></v-text-field>
+                                <v-text-field v-model.number="pm.settings.label_spacing_m" @input="pmManualEdit" type="number" min="5" step="5" label="Label spacing along line (m)" dense class="mt-2"></v-text-field>
 
                                 <v-expansion-panels flat class="mt-1">
                                     <v-expansion-panel style="background: transparent;">
                                         <v-expansion-panel-header class="px-0">Advanced</v-expansion-panel-header>
                                         <v-expansion-panel-content>
                                             <v-select v-model="pm.settings.smoothing" :items="['none', 'light', 'medium', 'strong']" label="Surface smoothing" dense></v-select>
-                                            <v-text-field v-model.number="pm.settings.max_edge_m" type="number" min="1" step="1" label="Max mesh triangle edge (m)" dense
+                                            <v-text-field v-model.number="pm.settings.max_edge_m" @input="pmManualEdit" type="number" min="1" step="1" label="Max mesh triangle edge (m)" dense
                                                 hint="Gaps between soundings wider than this are left blank" persistent-hint></v-text-field>
                                             <v-text-field v-model.number="pm.settings.pixel_size_m" type="number" min="0.02" step="0.05" label="GeoTIFF pixel size (m)" dense class="mt-3"
                                                 hint="Smaller = sharper lines and larger file" persistent-hint></v-text-field>
+                                            <div class="pm-section-label mt-3">Data-quality checks</div>
+                                            <v-text-field v-model.number="pm.settings.qc_radius_m" @input="pmManualEdit" type="number" min="0.5" step="0.5" label="Overlap search radius (m)" dense></v-text-field>
+                                            <div class="pm-style-grid">
+                                                <v-text-field v-model.number="pm.settings.qc_depth_tol_pct" @input="pmManualEdit" type="number" min="0" step="0.5" label="Overlap tolerance (% depth)" dense></v-text-field>
+                                                <v-text-field v-model.number="pm.settings.qc_depth_tol_m" @input="pmManualEdit" type="number" min="0.1" step="0.1" label="…but at least (m)" dense></v-text-field>
+                                            </div>
+                                            <div class="pm-style-grid">
+                                                <v-text-field v-model.number="pm.settings.qc_spike_k" @input="pmManualEdit" type="number" min="1" step="0.5" label="Spike: × local scatter" dense></v-text-field>
+                                                <v-text-field v-model.number="pm.settings.qc_spike_tol_m" @input="pmManualEdit" type="number" min="0.1" step="0.1" label="…but at least (m)" dense></v-text-field>
+                                            </div>
+                                            <v-text-field v-model.number="pm.settings.overlap_buffer_m" @input="pmManualEdit" type="number" min="0.5" step="0.5" label="Overlap removal distance (m)" dense
+                                                hint="Removing a log's overlap drops its soundings within this distance of the other log" persistent-hint></v-text-field>
                                             <v-btn small text class="mt-3 px-0" @click="pmResetSettings"><v-icon left small>mdi-restore</v-icon>Reset to defaults</v-btn>
                                         </v-expansion-panel-content>
                                     </v-expansion-panel>
@@ -931,9 +1295,9 @@
 
                         <!-- 4. Generate -->
                         <v-card class="pm-card" outlined>
-                            <v-card-title>4. Generate GeoTIFF</v-card-title>
+                            <v-card-title>5. Generate GeoTIFF</v-card-title>
                             <v-card-text>
-                                <v-btn block color="success" :loading="pm.processing" :disabled="!pm.selectedFiles.length || !!pmIntervalError" @click="pmGenerate">
+                                <v-btn block color="success" :loading="pm.processing" :disabled="!pm.selectedFiles.length || !!pmIntervalError || !!pmAntennaError" @click="pmGenerate">
                                     <v-icon left>mdi-layers-triple</v-icon>Generate contours
                                 </v-btn>
                                 <v-alert v-if="pm.error" type="error" dense text class="mt-3 mb-0">{{ pm.error }}</v-alert>
@@ -949,6 +1313,11 @@
                                         {{ pm.result.width_px }}×{{ pm.result.height_px }} px @ {{ pm.result.pixel_size_m }} m ·
                                         EPSG:{{ pm.result.epsg }} · {{ pmFormatDate(pm.result.created) }}
                                     </div>
+                                    <div class="pm-stat">
+                                        Vertical reference: {{ pm.result.settings.vertical_reference === 'gps' ? 'GPS altitude (antenna ' + pm.result.settings.antenna_height_m + ' m above transducer)' : 'depth + tide' }}
+                                    </div>
+                                    <div class="pm-stat" v-if="pmResultTideNote">{{ pmResultTideNote }}</div>
+                                    <div class="pm-stat" v-if="pmResultQualityNote">{{ pmResultQualityNote }}</div>
                                     <v-btn block color="primary" class="mt-2" :href="'/processed/' + encodeURIComponent(pm.result.tif)">
                                         <v-icon left>mdi-download</v-icon>Download GeoTIFF ({{ pm.result.size_mb }} MB)
                                     </v-btn>
@@ -961,6 +1330,11 @@
 
                     <div class="pm-map-wrap">
                         <div id="pm-map"></div>
+                        <div class="pm-map-toggle" v-if="pm.result">
+                            <v-btn small :color="pm.showContours ? 'success' : ''" @click="pmToggleContours">
+                                <v-icon left small>{{ pm.showContours ? 'mdi-eye-off' : 'mdi-eye' }}</v-icon>{{ pm.showContours ? 'Hide contours' : 'Show contours' }}
+                            </v-btn>
+                        </div>
                         <div class="pm-map-hint" v-if="pm.drawing">
                             Click to add vertices ({{ pm.polygon.length }}{{ pm.polygon.length < 3 ? ', need 3+' : '' }}). Drag to adjust. Press Finish when done.
                         </div>
@@ -970,6 +1344,7 @@
                             <div class="pm-legend-bar"></div>
                             <div class="pm-legend-labels"><span>{{ pmDepthRange[0].toFixed(1) }}</span><span>{{ pmDepthRange[1].toFixed(1) }}</span></div>
                             <div style="color: #888;">● grey = below {{ pm.settings.min_conf }}% confidence</div>
+                            <div style="color: #888;">◯ disc = sonar footprint ({{ pmBeamWidth }}° beam),<br>thinned along track for display</div>
                         </div>
                     </div>
                 </div>
@@ -1215,16 +1590,47 @@
             label_spacing_m: 40,
             max_edge_m: 30,
             smoothing: 'light',
-            pixel_size_m: 0.1
+            pixel_size_m: 0.1,
+            vertical_reference: 'tide',
+            antenna_height_m: null,
+            exclude_spikes: false,
+            qc_radius_m: 2,
+            qc_depth_tol_m: 0.5,
+            qc_depth_tol_pct: 0,
+            qc_spike_tol_m: 0.5,
+            qc_spike_k: 5,
+            overlap_buffer_m: 5,
+            auto_tune: true,
+            tide_source: 'online',
+            tide_datum: 'lat',
+            prefer_measured: true,
+            max_station_km: 30
         };
+        // Settings auto-tune may change (mirrors suggest_settings in contour_processing.py)
+        const PM_TUNED_KEYS = ['minor_m', 'major_m', 'max_edge_m', 'label_size_px', 'major_width_px', 'minor_width_px',
+            'label_spacing_m', 'qc_radius_m', 'qc_depth_tol_m', 'qc_depth_tol_pct', 'qc_spike_tol_m', 'qc_spike_k', 'overlap_buffer_m'];
         const PM_SETTINGS_KEY = 'pingSurvey.pmSettings';
+        const PM_TIDES_KEY = 'pingSurvey.pmTides';
+        const PM_TIDE_END_REQUIRED_S = 3600;   // mirrors TIDE_END_REQUIRED_S in contour_processing.py
+        const PM_BEAM_WIDTH_DEG = 25;
+
+        function pmLoadSavedTides() {
+            try {
+                const saved = JSON.parse(localStorage.getItem(PM_TIDES_KEY) || '{}');
+                return saved && typeof saved === 'object' ? saved : {};
+            } catch (e) {
+                return {};
+            }
+        }
 
         function pmLoadSavedSettings() {
             try {
                 const saved = JSON.parse(localStorage.getItem(PM_SETTINGS_KEY) || '{}');
                 const merged = Object.assign({}, PM_DEFAULT_SETTINGS);
                 Object.keys(PM_DEFAULT_SETTINGS).forEach(k => {
-                    if (saved[k] !== undefined && typeof saved[k] === typeof PM_DEFAULT_SETTINGS[k]) merged[k] = saved[k];
+                    const def = PM_DEFAULT_SETTINGS[k];
+                    if (saved[k] === undefined) return;
+                    if (typeof saved[k] === typeof def || (def === null && (saved[k] === null || typeof saved[k] === 'number'))) merged[k] = saved[k];
                 });
                 return merged;
             } catch (e) {
@@ -1369,12 +1775,30 @@
                         pointsTotal: 0,
                         pointsStride: 1,
                         showPoints: true,
+                        showContours: true,
                         drawing: false,
                         polygon: [],
                         settings: pmLoadSavedSettings(),
                         processing: false,
                         error: '',
-                        result: null
+                        result: null,
+                        // Data quality / corrections
+                        files: [],                   // per-file metadata from /log_points
+                        tides: pmLoadSavedTides(),   // file name -> {start, end} tide heights (m)
+                        exclude: [],                 // excluded soundings: {key: [file, unix ms], lat, lon, ...}
+                        excludeOverlaps: [],         // rules: {file, other} = drop file's soundings near other
+                        ignored: [],                 // ignored alert ids
+                        tideInfo: {},                // file name -> online tide summary from /tide_fetch
+                        tideLoading: false,
+                        tideError: '',
+                        tideConfig: { worldtides_key_set: false, worldtides_key_masked: '' },
+                        worldTidesKeyInput: '',
+                        worldTidesTesting: false,
+                        worldTidesStatus: '',
+                        worldTidesPanel: null,
+                        qc: null,
+                        qcLoading: false,
+                        qcError: ''
                     }
                 }
             },
@@ -1408,8 +1832,147 @@
                     if (!r) return false;
                     const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
                     const polygon = this.pm.polygon.length >= 3 ? this.pm.polygon : null;
-                    const settingsChanged = Object.keys(PM_DEFAULT_SETTINGS).some(k => r.settings[k] !== this.pm.settings[k]);
-                    return settingsChanged || !same(r.source_files.slice().sort(), this.pm.selectedFiles.slice().sort()) || !same(r.polygon || null, polygon);
+                    const norm = v => (v === '' || v === undefined ? null : v);
+                    const settingsChanged = Object.keys(PM_DEFAULT_SETTINGS).some(k => norm(r.settings[k]) !== norm(this.pm.settings[k]));
+                    const keys = list => (list || []).map(e => (e.key || e).join('|')).sort();
+                    return settingsChanged
+                        || !same(r.source_files.slice().sort(), this.pm.selectedFiles.slice().sort())
+                        || !same(r.polygon || null, polygon)
+                        || !same(this.pmNormTides(r.tides, r.source_files), this.pmNormTides(this.pmSelectedTides, this.pm.selectedFiles))
+                        || !same(keys(r.exclude), keys(this.pm.exclude))
+                        || !same(this.pmRuleIds(r.exclude_overlaps), this.pmRuleIds(this.pm.excludeOverlaps));
+                },
+                pmSelectedTides() {
+                    const out = {};
+                    this.pm.selectedFiles.forEach(n => {
+                        const t = this.pm.tides[n];
+                        if (t && (t.start !== null && t.start !== undefined || t.end !== null && t.end !== undefined)) {
+                            out[n] = { start: t.start === undefined ? null : t.start, end: this.pmNeedsEndTide(n) && t.end !== undefined ? t.end : null };
+                        }
+                    });
+                    return out;
+                },
+                pmAltitudeMissing() {
+                    return this.pm.files.filter(f => !f.has_altitude).map(f => f.name);
+                },
+                pmAntennaError() {
+                    if (this.pm.settings.vertical_reference !== 'gps') return '';
+                    const v = this.pm.settings.antenna_height_m;
+                    return v === null || v === '' || isNaN(Number(v)) ? 'Required for GPS altitude' : '';
+                },
+                pmTideDatums() {
+                    return [
+                        { text: 'LAT (lowest astronomical tide)', value: 'lat' },
+                        { text: 'MLLW (mean lower low water)', value: 'mllw' },
+                        { text: 'MSL (mean sea level)', value: 'msl' }
+                    ];
+                },
+                pmTideRequest() {
+                    const s = this.pm.settings;
+                    if (s.vertical_reference !== 'tide' || s.tide_source !== 'online' || !this.pm.selectedFiles.length) return '';
+                    return JSON.stringify({
+                        files: this.pm.selectedFiles,
+                        settings: { tide_source: 'online', tide_datum: s.tide_datum, prefer_measured: s.prefer_measured, max_station_km: s.max_station_km }
+                    });
+                },
+                pmDatumNote() {
+                    const d = this.pm.settings.tide_datum;
+                    if (d === 'msl') return '';
+                    const notes = [];
+                    Object.entries(this.pm.tideInfo).forEach(([name, t]) => {
+                        if (!t || t.error || !t.datums || t.datums[d] === undefined) return;
+                        const where = t.station && t.station.id ? `station ${t.station.id}` : name;
+                        const line = `${d.toUpperCase()} is ${t.datums[d].toFixed(2)} m below MSL at ${where}${t.approximate ? ' (approximate)' : ''}`;
+                        if (!notes.includes(line)) notes.push(line);
+                    });
+                    return notes.join('; ');
+                },
+                pmResultTideNote() {
+                    const r = this.pm.result;
+                    if (!r || !r.settings || r.settings.vertical_reference !== 'tide') return '';
+                    if (r.settings.tide_source !== 'online' || !r.tide_sources) return 'Tide: manual tide-table heights.';
+                    const parts = Object.values(r.tide_sources).map(t =>
+                        `${t.provider}${t.station_id ? ' ' + t.station_id : ''} ${t.product}`);
+                    const first = Object.values(r.tide_sources)[0];
+                    const datum = !first ? '' : first.datum === 'MSL' ? 'MSL' : `${first.datum} (${first.msl_above_datum_m} m below MSL)`;
+                    return `Tide: ${Array.from(new Set(parts)).join('; ')}; depths below ${datum}.`;
+                },
+                pmDepthTolText() {
+                    const s = this.pm.settings;
+                    return Number(s.qc_depth_tol_pct) > 0 ? `${s.qc_depth_tol_pct}% of depth (at least ${s.qc_depth_tol_m} m)` : `${s.qc_depth_tol_m} m`;
+                },
+                pmBeamWidth() {
+                    return PM_BEAM_WIDTH_DEG;
+                },
+                pmQcRequest() {
+                    // Everything that changes which soundings are meshed (and their corrected depths).
+                    if (!this.pm.selectedFiles.length) return '';
+                    const s = this.pm.settings;
+                    return JSON.stringify({
+                        files: this.pm.selectedFiles,
+                        polygon: this.pm.polygon.length >= 3 ? this.pm.polygon : null,
+                        settings: Object.assign(
+                            {
+                                min_conf: s.min_conf, vertical_reference: s.vertical_reference, antenna_height_m: s.antenna_height_m, auto_tune: s.auto_tune,
+                                tide_source: s.tide_source, tide_datum: s.tide_datum, prefer_measured: s.prefer_measured, max_station_km: s.max_station_km
+                            },
+                            // While auto-tuning, the server derives these, so local copies must not re-trigger the check.
+                            s.auto_tune ? {} : {
+                                qc_radius_m: s.qc_radius_m, qc_depth_tol_m: s.qc_depth_tol_m, qc_depth_tol_pct: s.qc_depth_tol_pct,
+                                qc_spike_tol_m: s.qc_spike_tol_m, qc_spike_k: s.qc_spike_k, overlap_buffer_m: s.overlap_buffer_m
+                            }
+                        ),
+                        tides: this.pmSelectedTides,
+                        exclude: this.pm.exclude.map(e => e.key),
+                        exclude_overlaps: this.pm.excludeOverlaps
+                    });
+                },
+                pmQcOffsets() {
+                    return this.pm.qc ? this.pm.qc.file_offsets.filter(o => !this.pmIsIgnored(this.pmOffsetId(o))) : [];
+                },
+                pmQcAltWarnings() {
+                    return this.pm.qc ? this.pm.qc.altitude_warnings.filter(a => !this.pmIsIgnored('alt:' + a.file)) : [];
+                },
+                pmQcActiveCount() {
+                    const qc = this.pm.qc;
+                    if (!qc) return 0;
+                    return this.pmQcOffsets.length + this.pmQcAltWarnings.length
+                        + (qc.conflict_count && !this.pmIsIgnored('conflicts') ? 1 : 0)
+                        + (qc.spike_count && !this.pmIsIgnored('spikes') ? 1 : 0);
+                },
+                pmConfidenceHint() {
+                    // Would raising the confidence filter remove the flagged soundings?
+                    const qc = this.pm.qc;
+                    if (!qc) return null;
+                    const flagged = new Map();
+                    if (!this.pmIsIgnored('conflicts')) qc.conflicts.forEach(c => { flagged.set(c.a.key.join('|'), c.a.conf); flagged.set(c.b.key.join('|'), c.b.conf); });
+                    if (!this.pmIsIgnored('spikes') && !this.pm.settings.exclude_spikes) qc.spikes.forEach(s => flagged.set(s.key.join('|'), s.conf));
+                    if (!flagged.size) return null;
+                    const confs = Array.from(flagged.values());
+                    const below = confs.filter(c => c < 100);
+                    if (!below.length) {
+                        return { text: `All ${qc.conflict_count > qc.conflicts.length ? 'of the worst ' : ''}${confs.length} flagged soundings have 100% confidence, so the confidence filter won't remove them.` };
+                    }
+                    const threshold = Math.min(...below) + 1;
+                    const removedFlagged = confs.filter(c => c < threshold).length;
+                    const minConf = this.pm.settings.min_conf;
+                    const removedAll = this.pm.points.filter(p => p[3] >= minConf && p[3] < threshold).length * this.pm.pointsStride;
+                    const partial = qc.conflict_count > qc.conflicts.length ? ' among the worst' : '';
+                    return {
+                        threshold,
+                        text: `Raising minimum confidence to ${threshold}% would remove ${removedFlagged} of${partial} ${confs.length} flagged soundings (${removedAll} soundings overall).`
+                    };
+                },
+                pmResultQualityNote() {
+                    const r = this.pm.result;
+                    if (!r) return '';
+                    const parts = [];
+                    const ign = (r.ignored || []).length;
+                    if (ign) parts.push(`${ign} ignored warning${ign > 1 ? 's' : ''}`);
+                    if (r.points_excluded) parts.push(`${r.points_excluded} excluded sounding${r.points_excluded > 1 ? 's' : ''}`);
+                    if (r.spikes_excluded) parts.push(`${r.spikes_excluded} spike${r.spikes_excluded > 1 ? 's' : ''} excluded`);
+                    (r.overlap_removed || []).forEach(o => parts.push(`${o.count} overlapping soundings removed from ${o.file}`));
+                    return parts.length ? 'Generated with ' + parts.join(', ') + '.' : '';
                 },
                 pmIntervalError() {
                     const minor = Number(this.pm.settings.minor_m), major = Number(this.pm.settings.major_m);
@@ -1420,6 +1983,35 @@
                 }
             },
             watch: {
+                pmTideRequest(req) {
+                    clearTimeout(this.pmLeaflet.tideTimer);
+                    if (!req) {
+                        this.pm.tideError = '';
+                        return;
+                    }
+                    this.pmLeaflet.tideTimer = setTimeout(() => this.pmFetchTides(false), 300);
+                },
+                pmQcRequest(req) {
+                    clearTimeout(this.pmLeaflet.qcTimer);
+                    if (!req) {
+                        this.pm.qc = null;
+                        this.pm.qcError = '';
+                        return;
+                    }
+                    this.pmLeaflet.qcTimer = setTimeout(() => this.pmRunQc(req), 400);
+                },
+                'pm.qc'() {
+                    this.pmRenderFlags();
+                },
+                'pm.ignored'() {
+                    this.pmRenderFlags();
+                },
+                'pm.exclude'() {
+                    this.pmRedrawPoints();
+                },
+                'pm.excludeOverlaps'() {
+                    this.pmRedrawPoints();
+                },
                 'pm.settings': {
                     deep: true,
                     handler(s) {
@@ -1431,7 +2023,7 @@
             },
             created() {
                 // Leaflet objects for the processing map; kept out of data() so Vue doesn't observe them.
-                this.pmLeaflet = { map: null, pointsLayer: null, polygonLayer: null, overlay: null, renderer: null, suppressClickUntil: 0 };
+                this.pmLeaflet = { map: null, pointsLayer: null, flagsLayer: null, polygonLayer: null, overlay: null, renderer: null, suppressClickUntil: 0, qcTimer: null, tideTimer: null };
             },
             methods: {
                 // ---------- Tabs ----------
@@ -1444,6 +2036,7 @@
                                 this.pmLeaflet.map.invalidateSize();
                             }
                             this.pmLoadLogFiles().then(() => this.pmLoadLatestOutput());
+                            this.pmLoadTideConfig();
                         } else if (this.map) {
                             this.map.invalidateSize();
                         }
@@ -1461,6 +2054,7 @@
                     this.pmLeaflet.map = map;
                     this.pmLeaflet.renderer = L.canvas({ padding: 0.5 });
                     this.pmLeaflet.pointsLayer = L.layerGroup().addTo(map);
+                    this.pmLeaflet.flagsLayer = L.layerGroup().addTo(map);
                     this.pmLeaflet.polygonLayer = L.layerGroup().addTo(map);
                     map.on('click', this.pmAddVertex);
                     setTimeout(() => map.invalidateSize(), 100);
@@ -1494,6 +2088,7 @@
                 async pmLoadPoints(fit = true) {
                     this.pm.error = '';
                     if (!this.pm.selectedFiles.length) {
+                        this.pm.files = [];
                         this.pm.points = Object.freeze([]);
                         this.pm.pointsTotal = 0;
                         this.pm.pointsStride = 1;
@@ -1503,8 +2098,17 @@
                     try {
                         const response = await axios.get('/log_points', { params: { files: this.pm.selectedFiles.join(',') } });
                         this.pm.points = Object.freeze(response.data.points);
+                        this.pm.files = response.data.files || [];
                         this.pm.pointsTotal = response.data.total;
                         this.pm.pointsStride = response.data.stride;
+                        // Exclusions and ignored alerts belong to the current set of logs.
+                        const selected = new Set(this.pm.selectedFiles);
+                        this.pm.exclude = this.pm.exclude.filter(e => selected.has(e.key[0]));
+                        this.pm.excludeOverlaps = this.pm.excludeOverlaps.filter(r => selected.has(r.file) && selected.has(r.other));
+                        this.pm.ignored = [];
+                        if (this.pm.settings.vertical_reference === 'gps' && this.pmAltitudeMissing.length) {
+                            this.pm.settings.vertical_reference = 'tide';
+                        }
                         this.pmRedrawPoints();
                         if (fit !== false && response.data.bounds && this.pmLeaflet.map) {
                             this.pmLeaflet.map.fitBounds(response.data.bounds, { padding: [30, 30] });
@@ -1537,10 +2141,38 @@
                         }).addTo(L_.pointsLayer);
                     }
                     if (!range) return;
-                    for (const p of this.pm.points) {
+                    const files = this.pm.files;
+                    const excluded = new Set(this.pm.exclude.map(e => e.key.join('|')));
+                    const trimmed = this.pmOverlapTrimmed();
+                    // Like the live survey map: each sounding is a disc the size of the sonar's
+                    // footprint on the seabed (radius = depth * tan(half beam width)), in metres.
+                    // Soundings are ~0.5 m apart but footprints are metres wide, so drawing every one
+                    // stacks dozens of rings into a solid band. Along each log, only draw a disc once
+                    // the boat has moved 3/4 of a footprint radius from the last one drawn; each spot
+                    // is then covered by a few distinct rings and overlap between lines is visible.
+                    // (Display only: processing always uses every sounding.)
+                    const halfBeam = Math.tan((PM_BEAM_WIDTH_DEG / 2) * Math.PI / 180);
+                    const mLat = 111320;
+                    const mLon = this.pm.points.length ? 111320 * Math.cos(this.pm.points[0][0] * Math.PI / 180) : mLat;
+                    const lastDrawn = {};
+                    for (const [idx, p] of this.pm.points.entries()) {
                         if (p[3] < minConf) continue;
-                        L.circleMarker([p[0], p[1]], {
-                            renderer: L_.renderer, radius: 3, stroke: false, fillColor: this.pmDepthColor(p[2], range), fillOpacity: 0.9, interactive: false
+                        const radius = p[2] * halfBeam;
+                        const last = lastDrawn[p[5]];
+                        if (last && Math.hypot((p[0] - last[0]) * mLat, (p[1] - last[1]) * mLon) < radius * 0.75) continue;
+                        lastDrawn[p[5]] = p;
+                        if (trimmed.has(idx) || (excluded.size && files[p[5]] && excluded.has(files[p[5]].name + '|' + p[4]))) {
+                            L.circle([p[0], p[1]], {
+                                renderer: L_.renderer, radius, color: '#bdbdbd', weight: 1, opacity: 0.6, fill: false, interactive: false
+                            }).addTo(L_.pointsLayer);
+                            continue;
+                        }
+                        // Outline in the depth colour with only a faint fill, so each footprint's
+                        // edge stays visible and the degree of overlap can be judged.
+                        const color = this.pmDepthColor(p[2], range);
+                        L.circle([p[0], p[1]], {
+                            renderer: L_.renderer, radius, color, weight: 1.5, opacity: 0.9,
+                            fillColor: color, fillOpacity: 0.12, interactive: false
                         }).addTo(L_.pointsLayer);
                     }
                 },
@@ -1630,9 +2262,14 @@
                         const response = await axios.post('/process_contours', {
                             files: this.pm.selectedFiles,
                             polygon: this.pm.polygon.length >= 3 ? this.pm.polygon : null,
-                            settings: this.pm.settings
+                            settings: this.pm.settings,
+                            tides: this.pmSelectedTides,
+                            exclude: this.pm.exclude,
+                            exclude_overlaps: this.pm.excludeOverlaps,
+                            ignored: this.pm.ignored
                         });
                         this.pm.result = response.data;
+                        this.pm.showContours = true;
                         this.pmShowOverlay(response.data);
                     } catch (e) {
                         this.pm.error = (e.response && e.response.data && e.response.data.error) || ('Processing failed: ' + e.message);
@@ -1646,7 +2283,7 @@
                         L_.map.removeLayer(L_.overlay);
                         L_.overlay = null;
                     }
-                    if (!o || !L_.map) return;
+                    if (!o || !L_.map || !this.pm.showContours) return;
                     L_.overlay = L.imageOverlay('/processed/' + encodeURIComponent(o.preview) + '?t=' + o.created, o.bounds, { interactive: false }).addTo(L_.map);
                 },
                 async pmRestoreFrom(o) {
@@ -1656,10 +2293,330 @@
                     this.pm.settings = Object.assign({}, PM_DEFAULT_SETTINGS, o.settings);
                     this.pm.polygon = (o.polygon || []).map(v => [v[0], v[1]]);
                     this.pm.drawing = false;
+                    Object.entries(o.tides || {}).forEach(([n, t]) => this.$set(this.pm.tides, n, Object.assign({}, this.pm.tides[n], t)));
                     this.pmRenderPolygon();
                     await this.pmLoadPoints(false);
+                    this.pm.exclude = (o.exclude || []).filter(e => e && e.key);
+                    this.pm.excludeOverlaps = (o.exclude_overlaps || []).map(r => ({ file: r.file, other: r.other }));
+                    this.pm.ignored = (o.ignored || []).slice();
                     this.pmShowOverlay(o);
                     if (this.pmLeaflet.map) this.pmLeaflet.map.fitBounds(o.bounds, { padding: [30, 30] });
+                },
+                // ---------- Tides ----------
+                pmFileMeta(name) {
+                    return this.pm.files.find(f => f.name === name);
+                },
+                pmNeedsEndTide(name) {
+                    const m = this.pmFileMeta(name);
+                    return !!m && m.end - m.start > PM_TIDE_END_REQUIRED_S;
+                },
+                pmDurationMin(name) {
+                    const m = this.pmFileMeta(name);
+                    return m ? Math.max(1, Math.round((m.end - m.start) / 60)) : 0;
+                },
+                pmTideSlots(name, always) {
+                    const m = this.pmFileMeta(name);
+                    if (!m || m.start === null) return [];
+                    const slots = [Object.assign({ which: 'start' }, this.pmFormatTime(m.start))];
+                    if (always || this.pmNeedsEndTide(name)) slots.push(Object.assign({ which: 'end' }, this.pmFormatTime(m.end)));
+                    return slots;
+                },
+                pmTideValue(name, which) {
+                    const t = this.pm.tides[name];
+                    return t && t[which] !== null && t[which] !== undefined ? t[which] : '';
+                },
+                pmSetTide(name, which, value) {
+                    const v = value === '' || value === null || isNaN(Number(value)) ? null : Number(value);
+                    this.$set(this.pm.tides, name, Object.assign({ start: null, end: null }, this.pm.tides[name], { [which]: v }));
+                    try {
+                        localStorage.setItem(PM_TIDES_KEY, JSON.stringify(this.pm.tides));
+                    } catch (e) { /* storage unavailable */ }
+                },
+                pmNormTides(tides, files) {
+                    const out = {};
+                    (files || []).slice().sort().forEach(n => {
+                        const t = (tides || {})[n] || {};
+                        const v = x => (x === undefined || x === '' ? null : x);
+                        if (v(t.start) !== null || v(t.end) !== null) out[n] = [v(t.start), v(t.end)];
+                    });
+                    return out;
+                },
+                pmFormatTime(ts) {
+                    const d = new Date(ts * 1000);
+                    const local = d.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
+                    const utc = d.toLocaleString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC' }) + ' UTC'
+                        + (d.toISOString().slice(0, 10) !== new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10)
+                            ? ' ' + d.toLocaleString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' }) : '');
+                    return { local, utc };
+                },
+
+                // ---------- Data quality ----------
+                async pmRunQc(req) {
+                    this.pm.qcLoading = true;
+                    try {
+                        const response = await axios.post('/log_qc', JSON.parse(req));
+                        if (req !== this.pmQcRequest) return;   // inputs changed while running
+                        const tuned = response.data.tuned;
+                        if (tuned && this.pm.settings.auto_tune) {
+                            PM_TUNED_KEYS.forEach(k => {
+                                if (tuned.values[k] !== undefined) this.pm.settings[k] = tuned.values[k];
+                            });
+                        }
+                        this.pm.qc = response.data;
+                        this.pm.qcError = '';
+                    } catch (e) {
+                        if (req !== this.pmQcRequest) return;
+                        this.pm.qc = null;
+                        this.pm.qcError = (e.response && e.response.data && e.response.data.error) || ('Data-quality check failed: ' + e.message);
+                    } finally {
+                        this.pm.qcLoading = false;
+                    }
+                },
+                pmOffsetId(o) {
+                    return 'offset:' + o.file_a + '|' + o.file_b;
+                },
+                pmIsIgnored(id) {
+                    return this.pm.ignored.includes(id);
+                },
+                pmIgnore(id) {
+                    if (!this.pmIsIgnored(id)) this.pm.ignored.push(id);
+                },
+                pmUnignore(id) {
+                    this.pm.ignored = this.pm.ignored.filter(x => x !== id);
+                },
+                pmIgnoredLabel(id) {
+                    if (id === 'conflicts') return 'Overlap disagreements';
+                    if (id === 'spikes') return 'Spikes';
+                    if (id.startsWith('alt:')) return 'GPS altitude: ' + id.slice(4);
+                    if (id.startsWith('offset:')) return 'Log offset: ' + id.slice(7).split('|')[1];
+                    return id;
+                },
+                pmApplyOffset(o) {
+                    // Residual difference b - a (m): raising log b's tide by it brings b onto a's datum.
+                    const name = o.file_b;
+                    const t = Object.assign({ start: null, end: null }, this.pm.tides[name]);
+                    const add = x => Math.round(((x || 0) + o.median_m) * 100) / 100;
+                    this.pmSetTide(name, 'start', add(t.start));
+                    if (this.pmNeedsEndTide(name)) this.pmSetTide(name, 'end', add(t.end));
+                },
+                pmDeselect(name) {
+                    this.pm.selectedFiles = this.pm.selectedFiles.filter(n => n !== name);
+                    this.pmLoadPoints(false);
+                },
+                pmSetMinConf(v) {
+                    this.pm.settings.min_conf = v;
+                    this.pmRedrawPoints();
+                },
+                pmZoomTo(item) {
+                    const map = this.pmLeaflet.map;
+                    if (map) map.setView([item.lat, item.lon], Math.max(map.getZoom(), 20));
+                },
+                pmExclude(item) {
+                    const id = item.key.join('|');
+                    if (this.pm.exclude.some(e => e.key.join('|') === id)) return;
+                    this.pm.exclude.push({
+                        key: item.key, lat: item.lat, lon: item.lon, depth_m: item.depth_m, measured_m: item.measured_m,
+                        conf: item.conf, time: item.time, file: item.file
+                    });
+                    if (this.pmLeaflet.map) this.pmLeaflet.map.closePopup();
+                },
+                pmRestoreExcluded(item) {
+                    const id = item.key.join('|');
+                    this.pm.exclude = this.pm.exclude.filter(e => e.key.join('|') !== id);
+                },
+                pmRestoreAllExcluded() {
+                    this.pm.exclude = [];
+                    this.pm.excludeOverlaps = [];
+                },
+                pmRuleIds(rules) {
+                    return (rules || []).map(r => r.file + '>' + r.other).sort();
+                },
+                pmAddOverlapRule(file, other) {
+                    if (this.pm.excludeOverlaps.some(r => r.file === file && r.other === other)) return;
+                    this.pm.excludeOverlaps.push({ file, other });
+                },
+                pmRemoveOverlapRule(rule) {
+                    this.pm.excludeOverlaps = this.pm.excludeOverlaps.filter(r => !(r.file === rule.file && r.other === rule.other));
+                },
+                pmOverlapCount(rule) {
+                    const applied = this.pm.qc && (this.pm.qc.overlap_removed || []).find(r => r.file === rule.file && r.other === rule.other);
+                    return applied ? applied.count : null;
+                },
+                pmOverlapTrimmed() {
+                    // Display-only approximation of the server's overlap rules on the (sampled) map points.
+                    const out = new Set();
+                    const rules = this.pm.excludeOverlaps;
+                    if (!rules.length || !this.pm.points.length) return out;
+                    const minConf = this.pm.settings.min_conf;
+                    const buf = Number(this.pm.settings.overlap_buffer_m) || 5;
+                    const mLat = 111320, mLon = 111320 * Math.cos(this.pm.points[0][0] * Math.PI / 180);
+                    const nameIdx = {};
+                    this.pm.files.forEach((f, i) => { nameIdx[f.name] = i; });
+                    rules.forEach(r => {
+                        const f = nameIdx[r.file], o = nameIdx[r.other];
+                        if (f === undefined || o === undefined) return;
+                        const grid = new Map();
+                        const cell = (lat, lon) => [Math.floor(lat * mLat / buf), Math.floor(lon * mLon / buf)];
+                        this.pm.points.forEach(p => {
+                            if (p[5] !== o || p[3] < minConf) return;
+                            const [cy, cx] = cell(p[0], p[1]);
+                            const k = cy + ',' + cx;
+                            if (!grid.has(k)) grid.set(k, []);
+                            grid.get(k).push(p);
+                        });
+                        this.pm.points.forEach((p, idx) => {
+                            if (p[5] !== f || p[3] < minConf) return;
+                            const [cy, cx] = cell(p[0], p[1]);
+                            for (let dy = -1; dy <= 1; dy++) {
+                                for (let dx = -1; dx <= 1; dx++) {
+                                    for (const q of grid.get((cy + dy) + ',' + (cx + dx)) || []) {
+                                        if (Math.hypot((p[0] - q[0]) * mLat, (p[1] - q[1]) * mLon) <= buf) {
+                                            out.add(idx);
+                                            return;
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                    });
+                    return out;
+                },
+                pmSoundingHtml(item, title) {
+                    const t = this.pmFormatTime(item.time);
+                    const measured = item.measured_m !== item.depth_m ? ` (measured ${item.measured_m} m)` : '';
+                    return `<h4>${title}</h4>Depth ${item.depth_m} m${measured} · confidence ${item.conf}%<br>${t.local}<br><span class="pm-note">${item.file}</span>`;
+                },
+                pmPopup(html, buttons) {
+                    const el = document.createElement('div');
+                    el.className = 'pm-popup';
+                    el.innerHTML = html;
+                    const actions = document.createElement('div');
+                    actions.className = 'pm-popup-actions';
+                    buttons.forEach(([label, fn]) => {
+                        const b = document.createElement('button');
+                        b.textContent = label;
+                        b.addEventListener('click', fn);
+                        actions.appendChild(b);
+                    });
+                    el.appendChild(actions);
+                    return el;
+                },
+                pmRenderFlags() {
+                    const layer = this.pmLeaflet.flagsLayer;
+                    if (!layer) return;
+                    layer.clearLayers();
+                    const qc = this.pm.qc;
+                    if (!qc) return;
+                    const ring = color => ({ radius: 7, color, weight: 2, fill: true, fillOpacity: 0, bubblingMouseEvents: false });
+                    if (!this.pmIsIgnored('conflicts')) {
+                        qc.conflicts.forEach(c => {
+                            const html = this.pmSoundingHtml(c.a, 'Sounding A') + this.pmSoundingHtml(c.b, 'Sounding B')
+                                + `<h4>Difference</h4>${c.h_m} m apart horizontally · ${c.dz_m} m vertically · ${c.slope_pct}% slope`
+                                + `<div class="pm-note">Beam footprint at this depth is about ${c.a.footprint_m} m wide; on a sloping seabed, soundings within one footprint can legitimately differ.</div>`;
+                            const popup = () => this.pmPopup(html, [
+                                [`Exclude A (${c.a.depth_m} m)`, () => this.pmExclude(c.a)],
+                                [`Exclude B (${c.b.depth_m} m)`, () => this.pmExclude(c.b)]
+                            ]);
+                            L.polyline([[c.a.lat, c.a.lon], [c.b.lat, c.b.lon]], { color: '#ff1744', weight: 2, bubblingMouseEvents: false })
+                                .bindPopup(popup).addTo(layer);
+                            L.circleMarker([c.a.lat, c.a.lon], ring('#ff1744')).bindPopup(popup).addTo(layer);
+                            L.circleMarker([c.b.lat, c.b.lon], ring('#ff1744')).bindPopup(popup).addTo(layer);
+                        });
+                    }
+                    if (!this.pmIsIgnored('spikes')) {
+                        const color = this.pm.settings.exclude_spikes ? '#9e9e9e' : '#ff9100';
+                        qc.spikes.forEach(sp => {
+                            const html = this.pmSoundingHtml(sp, 'Spike along track')
+                                + `<h4>Neighbours</h4>Median of neighbours on this pass: ${sp.neighbour_median_m} m (${sp.deviation_m > 0 ? '+' : ''}${sp.deviation_m} m)`
+                                + `<div class="pm-note">Beam footprint at this depth is about ${sp.footprint_m} m wide.${this.pm.settings.exclude_spikes ? ' Spikes are currently excluded from the mesh.' : ''}</div>`;
+                            L.circleMarker([sp.lat, sp.lon], ring(color))
+                                .bindPopup(() => this.pmPopup(html, [['Exclude this sounding', () => this.pmExclude(sp)]]))
+                                .addTo(layer);
+                        });
+                    }
+                    this.pm.exclude.forEach(e => {
+                        L.circleMarker([e.lat, e.lon], { radius: 6, color: '#bdbdbd', weight: 2, dashArray: '3 3', fill: true, fillOpacity: 0, bubblingMouseEvents: false })
+                            .bindPopup(() => this.pmPopup(this.pmSoundingHtml(e, 'Excluded from processing'), [['Restore', () => {
+                                this.pmRestoreExcluded(e);
+                                this.pmLeaflet.map.closePopup();
+                            }]]))
+                            .addTo(layer);
+                    });
+                },
+                // ---------- Online tides ----------
+                async pmFetchTides(refresh) {
+                    const req = this.pmTideRequest;
+                    if (!req) return;
+                    this.pm.tideLoading = true;
+                    try {
+                        const response = await axios.post('/tide_fetch', Object.assign(JSON.parse(req), { refresh: !!refresh }));
+                        if (req !== this.pmTideRequest) return;
+                        this.pm.tideInfo = response.data.files || {};
+                        const errors = Object.values(this.pm.tideInfo).filter(t => t.error);
+                        this.pm.tideError = errors.length ? errors.map(t => t.error).join(' ') : '';
+                        // Point users outside NOAA coverage to the WorldTides key instructions.
+                        if (errors.some(t => /WorldTides/.test(t.error))) this.pm.worldTidesPanel = 0;
+                        if (refresh) this.pmRunQc(this.pmQcRequest);
+                    } catch (e) {
+                        this.pm.tideError = (e.response && e.response.data && e.response.data.error) || ('Could not fetch tides: ' + e.message);
+                    } finally {
+                        this.pm.tideLoading = false;
+                    }
+                },
+                pmSigned(v) {
+                    return v === null || v === undefined ? '–' : (v >= 0 ? '+' : '') + Number(v).toFixed(2);
+                },
+                pmSparkPath(series) {
+                    const ts = series.map(p => p[0]), vs = series.map(p => p[1]);
+                    const t0 = Math.min(...ts), t1 = Math.max(...ts), v0 = Math.min(...vs), v1 = Math.max(...vs);
+                    const x = t => 2 + (t1 > t0 ? (t - t0) / (t1 - t0) : 0.5) * 216;
+                    const y = v => 40 - (v1 > v0 ? (v - v0) / (v1 - v0) : 0.5) * 36;
+                    return series.map((p, i) => (i ? 'L' : 'M') + x(p[0]).toFixed(1) + ' ' + y(p[1]).toFixed(1)).join(' ');
+                },
+                pmUseTidesAsManual(name) {
+                    const t = this.pm.tideInfo[name];
+                    if (!t || !t.datum_available) return;
+                    this.pmSetTide(name, 'start', t.start_m);
+                    if (this.pmNeedsEndTide(name)) this.pmSetTide(name, 'end', t.end_m);
+                    this.pm.settings.tide_source = 'manual';
+                },
+                async pmLoadTideConfig() {
+                    try {
+                        const response = await axios.get('/tide_config');
+                        this.pm.tideConfig = response.data;
+                    } catch (e) { /* older backend */ }
+                },
+                async pmSaveWorldTidesKey() {
+                    const response = await axios.post('/tide_config', { worldtides_key: this.pm.worldTidesKeyInput });
+                    this.pm.tideConfig = response.data;
+                    this.pm.worldTidesKeyInput = '';
+                    this.pm.worldTidesStatus = 'Key saved on the vehicle.';
+                    this.pmFetchTides(true);
+                },
+                async pmClearWorldTidesKey() {
+                    const response = await axios.post('/tide_config', { worldtides_key: '' });
+                    this.pm.tideConfig = response.data;
+                    this.pm.worldTidesStatus = 'Key removed.';
+                },
+                async pmTestWorldTidesKey() {
+                    this.pm.worldTidesTesting = true;
+                    try {
+                        const response = await axios.post('/tide_config/test', { worldtides_key: this.pm.worldTidesKeyInput });
+                        const n = response.data.call_count;
+                        this.pm.worldTidesStatus = 'Key works' + (n !== undefined && n !== null ? ` (this test used ${n} credit${n === 1 ? '' : 's'}).` : '.');
+                    } catch (e) {
+                        this.pm.worldTidesStatus = (e.response && e.response.data && e.response.data.error) || ('Test failed: ' + e.message);
+                    } finally {
+                        this.pm.worldTidesTesting = false;
+                    }
+                },
+                pmManualEdit() {
+                    // Typing in an auto-tuned field means the user wants their own value.
+                    if (this.pm.settings.auto_tune) this.pm.settings.auto_tune = false;
+                },
+                pmToggleContours() {
+                    this.pm.showContours = !this.pm.showContours;
+                    this.pmShowOverlay(this.pm.result);
                 },
                 pmResetSettings() {
                     this.pm.settings = Object.assign({}, PM_DEFAULT_SETTINGS);

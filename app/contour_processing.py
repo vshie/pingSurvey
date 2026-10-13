@@ -15,6 +15,7 @@ import csv
 import math
 from dataclasses import dataclass, fields
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 
@@ -47,16 +48,37 @@ class ContourSettings:
     max_edge_m: float = 30.0
     smoothing: str = "light"
     pixel_size_m: float = 0.1
+    # Vertical reference: "tide" = measured depth minus interpolated tide height;
+    # "gps" = depth below the GPS vertical datum using the logged altitude (RTK).
+    vertical_reference: str = "tide"
+    antenna_height_m: Optional[float] = None   # GPS antenna height above the transducer (gps mode)
+    # Tide (vertical_reference == "tide"): "manual" heights per log, or "online" (NOAA / WorldTides)
+    tide_source: str = "manual"
+    tide_datum: str = "lat"           # online: depths below LAT, MLLW or MSL
+    prefer_measured: bool = True      # online: NOAA measured water level when available
+    max_station_km: float = 30.0      # online: furthest NOAA station to use
+    # Data-quality checks
+    exclude_spikes: bool = False
+    qc_radius_m: float = 2.0
+    qc_depth_tol_m: float = 0.5     # overlap tolerance: max(this, qc_depth_tol_pct % of depth)
+    qc_depth_tol_pct: float = 0.0
+    qc_spike_tol_m: float = 0.5     # spike: further than max(this, qc_spike_k x local scatter) from neighbours
+    qc_spike_k: float = 5.0
+    overlap_buffer_m: float = 5.0   # "remove overlapping soundings" trims within this distance of the other log
+    # Derive intervals, mesh edge, label/line sizes and quality tolerances from the data.
+    auto_tune: bool = True
 
     @classmethod
     def from_dict(cls, d):
         """Build settings from a (partial) JSON dict, coercing types and ignoring unknown keys."""
         s = cls()
         for f in fields(cls):
-            if d is None or f.name not in d or d[f.name] is None:
+            if d is None or f.name not in d or d[f.name] is None or d[f.name] == "":
                 continue
             v = d[f.name]
-            if f.type is bool or isinstance(getattr(s, f.name), bool):
+            if f.type == Optional[float]:
+                v = float(v)
+            elif f.type is bool or isinstance(getattr(s, f.name), bool):
                 v = v if isinstance(v, bool) else str(v).lower() in ("1", "true", "yes", "on")
             elif isinstance(getattr(s, f.name), int):
                 v = int(round(float(v)))
@@ -83,6 +105,19 @@ class ContourSettings:
             raise ValueError("Pixel size and max triangle edge must be greater than 0")
         for name in ("minor_color", "major_color", "label_color", "label_halo_color"):
             _rgb_from_hex(getattr(self, name))
+        if self.vertical_reference not in ("tide", "gps"):
+            raise ValueError(f"Unknown vertical reference: {self.vertical_reference}")
+        if self.tide_source not in ("manual", "online"):
+            raise ValueError(f"Unknown tide source: {self.tide_source}")
+        if self.tide_datum not in ("lat", "mllw", "msl"):
+            raise ValueError(f"Unknown tide datum: {self.tide_datum}")
+        if self.max_station_km <= 0:
+            raise ValueError("Maximum tide station distance must be greater than 0")
+        if self.vertical_reference == "gps" and self.antenna_height_m is None:
+            raise ValueError("Enter the GPS antenna height above the sonar transducer to use GPS altitude")
+        if min(self.qc_radius_m, self.qc_depth_tol_m, self.qc_spike_tol_m, self.qc_spike_k, self.overlap_buffer_m) <= 0 \
+                or self.qc_depth_tol_pct < 0:
+            raise ValueError("Data-quality tolerances must be greater than 0")
 
 
 class ProcessingError(ValueError):
@@ -93,49 +128,413 @@ class ProcessingError(ValueError):
 # CSV loading
 # ---------------------------------------------------------------------------
 
-def load_points(paths, min_conf=95.0):
+# Columns of the soundings array returned by load_survey()
+LAT, LON, DEPTH, CONF, TIME, FILE, ALT = range(7)
+
+# Minimum log duration that needs a second (end) tide height.
+TIDE_END_REQUIRED_S = 3600
+# Soundings further apart in time than this belong to different passes.
+PASS_GAP_S = 30.0
+# Ping sonar beam width (degrees); footprint diameter = 2 tan(width / 2) * depth.
+BEAM_WIDTH_DEG = 25.0
+
+
+def beam_footprint_m(depth_m):
+    return 2 * math.tan(math.radians(BEAM_WIDTH_DEG / 2)) * depth_m
+
+
+def load_survey(paths):
     """Load soundings from one or more survey CSVs.
 
-    Returns (points, counts) where points is an (n, 4) float array of
-    [lat, lon, depth_m, confidence] for every row with a valid fix and a
-    non-zero depth, and counts summarises totals. Confidence filtering is left
-    to the caller via the returned confidence column so the UI can show
-    rejected points too; use `accepted_mask` to apply it.
+    Returns (points, files). points is an (n, 7) array with columns
+    LAT, LON, DEPTH (measured, m), CONF (%), TIME (unix s), FILE (index into
+    files) and ALT (GPS altitude m, NaN when the log has no altitude column),
+    for every row with a valid fix and a non-zero depth. Confidence filtering
+    is left to the caller so the UI can show rejected soundings too.
+    files is a list of {name, start, end, count, has_altitude}.
     """
     rows = []
-    for path in paths:
+    files = []
+    for file_idx, path in enumerate(paths):
+        name = Path(path).name
         with open(path, newline="") as f:
             reader = csv.reader(f)
-            header = next(reader, None)
-            if header is None:
-                continue
-            idx = {name.strip(): i for i, name in enumerate(header)}
+            header = next(reader, None) or []
+            idx = {h.strip(): i for i, h in enumerate(header)}
             try:
-                i_depth = idx["Depth (cm)"]
+                i_time = idx["Unix Timestamp"]
+                # Early (8-column) logs called the depth column "Distance (cm)".
+                i_depth = idx["Depth (cm)"] if "Depth (cm)" in idx else idx["Distance (cm)"]
                 i_conf = idx["Confidence (%)"]
                 i_lat = idx["Latitude"]
                 i_lon = idx["Longitude"]
             except KeyError:
-                raise ProcessingError(f"{Path(path).name} is not a Ping Survey log (missing columns)")
+                raise ProcessingError(f"{name} is not a Ping Survey log (missing columns)")
+            i_alt = idx.get("Altitude (m)")
+            n_before = len(rows)
             for r in reader:
                 try:
+                    t = float(r[i_time]) / 1000.0
                     depth_cm = float(r[i_depth])
                     conf = float(r[i_conf])
                     lat = float(r[i_lat])
                     lon = float(r[i_lon])
+                    alt = float(r[i_alt]) if i_alt is not None else math.nan
                 except (ValueError, IndexError):
                     continue
                 if depth_cm <= 0 or (lat == 0 and lon == 0):
                     continue
                 if not (-90 <= lat <= 90 and -180 <= lon <= 180):
                     continue
-                rows.append((lat, lon, depth_cm / 100.0, conf))
-    pts = np.array(rows, dtype=np.float64).reshape(-1, 4)
-    return pts
+                rows.append((lat, lon, depth_cm / 100.0, conf, t, file_idx, alt))
+        times = [r[TIME] for r in rows[n_before:]]
+        files.append({
+            "name": name,
+            "start": min(times) if times else None,
+            "end": max(times) if times else None,
+            "count": len(times),
+            "has_altitude": i_alt is not None,
+        })
+    return np.array(rows, dtype=np.float64).reshape(-1, 7), files
+
+
+def load_points(paths):
+    """Soundings only (see load_survey)."""
+    return load_survey(paths)[0]
 
 
 def accepted_mask(points, min_conf):
-    return points[:, 3] >= min_conf
+    return points[:, CONF] >= min_conf
+
+
+def tide_at(points, files, tides):
+    """Tide height (m above datum) for each sounding.
+
+    tides maps file name -> {"start": m, "end": m}. A log longer than an hour
+    is linearly interpolated between its start and end heights; shorter logs
+    (or a missing end) use the start height throughout. Missing values are 0.
+    """
+    tides = tides or {}
+    out = np.zeros(points.shape[0])
+    for i, meta in enumerate(files):
+        sel = points[:, FILE] == i
+        if not sel.any():
+            continue
+        entry = tides.get(meta["name"]) or {}
+        start = entry.get("start")
+        end = entry.get("end")
+        start = float(start) if start not in (None, "") else 0.0
+        duration = (meta["end"] or 0) - (meta["start"] or 0)
+        if end not in (None, "") and duration > TIDE_END_REQUIRED_S:
+            frac = (points[sel, TIME] - meta["start"]) / duration
+            out[sel] = start + (float(end) - start) * frac
+        else:
+            out[sel] = start
+    return out
+
+
+def log_summaries(points, files):
+    """Per log: centroid and time span of its soundings (used to fetch online tides)."""
+    out = []
+    for i, meta in enumerate(files):
+        sel = points[:, FILE] == i
+        if not sel.any():
+            continue
+        out.append({"name": meta["name"], "lat": float(np.mean(points[sel, LAT])),
+                    "lon": float(np.mean(points[sel, LON])), "start": meta["start"], "end": meta["end"]})
+    return out
+
+
+def online_tide_at(points, files, settings, tide_series):
+    """Water level above the chosen datum for each sounding, from fetched online series.
+
+    tide_series maps file name -> {"times": [...], "heights": [... m above MSL], "datums": {...}}.
+    """
+    out = np.zeros(points.shape[0])
+    for i, meta in enumerate(files):
+        sel = points[:, FILE] == i
+        if not sel.any():
+            continue
+        series = (tide_series or {}).get(meta["name"])
+        if not series:
+            raise ProcessingError(f"No online tide data for {meta['name']}")
+        offset = series["datums"].get(settings.tide_datum)
+        if offset is None:
+            raise ProcessingError(
+                f"The tide station for {meta['name']} has no {settings.tide_datum.upper()} datum; choose another datum"
+            )
+        times = np.asarray(series["times"], dtype=np.float64)
+        heights = np.asarray(series["heights"], dtype=np.float64)
+        t = points[sel, TIME]
+        if t.min() < times[0] - 60 or t.max() > times[-1] + 60:
+            raise ProcessingError(f"Online tide data doesn't cover all of {meta['name']}; refresh it")
+        out[sel] = np.interp(t, times, heights) + offset
+    return out
+
+
+def corrected_depth(points, files, settings, tides=None, tide_series=None):
+    """Depth below the chosen vertical datum (positive down) for each sounding."""
+    if settings.vertical_reference == "gps":
+        missing = [files[int(i)]["name"] for i in np.unique(points[:, FILE])
+                   if not files[int(i)]["has_altitude"]]
+        if missing:
+            raise ProcessingError(
+                f"{', '.join(missing)} has no GPS altitude column; use tide-corrected depth instead"
+            )
+        # seabed elevation = antenna altitude - antenna height above transducer - depth
+        return points[:, DEPTH] + settings.antenna_height_m - points[:, ALT]
+    if settings.tide_source == "online":
+        # water level above datum = level above MSL + height of MSL above the datum
+        return points[:, DEPTH] - online_tide_at(points, files, settings, tide_series)
+    return points[:, DEPTH] - tide_at(points, files, tides)
+
+
+@dataclass
+class Prepared:
+    """Soundings ready for meshing: accepted, not excluded, inside the area, datum-corrected."""
+    rows: np.ndarray     # (n, 7) source rows (measured depth in DEPTH)
+    xy: np.ndarray       # (n, 2) UTM
+    z: np.ndarray        # (n,) corrected depth
+    epsg: int
+    poly_utm: Optional[np.ndarray]
+    n_excluded: int
+    overlap_removed: list   # [{file, other, count}] for each applied overlap-removal rule
+
+
+def exclusion_mask(points, files, exclude):
+    """True for soundings listed in exclude: [file name, unix ms] keys, or objects with such a "key"."""
+    mask = np.zeros(points.shape[0], dtype=bool)
+    if not exclude:
+        return mask
+    by_file = {}
+    for key in exclude:
+        if isinstance(key, dict):
+            key = key.get("key")
+        try:
+            by_file.setdefault(str(key[0]), []).append(int(key[1]))
+        except (TypeError, ValueError, IndexError):
+            continue
+    t_ms = np.round(points[:, TIME] * 1000).astype(np.int64)
+    for i, meta in enumerate(files):
+        if meta["name"] in by_file:
+            sel = points[:, FILE] == i
+            mask[sel] = np.isin(t_ms[sel], np.array(by_file[meta["name"]], dtype=np.int64))
+    return mask
+
+
+def _near_other_log(xy, file_col, f, other, buffer_m):
+    """Soundings of log f within buffer_m of any sounding of log other."""
+    from scipy.spatial import cKDTree
+
+    mask = np.zeros(xy.shape[0], dtype=bool)
+    sel_f = np.flatnonzero(file_col == f)
+    sel_o = file_col == other
+    if not sel_f.size or not sel_o.any():
+        return mask
+    dist, _ = cKDTree(xy[sel_o]).query(xy[sel_f], k=1, distance_upper_bound=buffer_m)
+    mask[sel_f] = np.isfinite(dist)
+    return mask
+
+
+def prepare(points, files, polygon_latlon, settings, tides=None, exclude=None, exclude_overlaps=None,
+            tide_series=None):
+    excluded = exclusion_mask(points, files, exclude)
+    pts = points[accepted_mask(points, settings.min_conf) & ~excluded]
+    if pts.shape[0] < 3:
+        raise ProcessingError(
+            f"Only {pts.shape[0]} soundings meet the {settings.min_conf:g}% confidence threshold"
+        )
+    poly = np.asarray(polygon_latlon, dtype=np.float64).reshape(-1, 2) if polygon_latlon else None
+    if poly is not None and poly.shape[0] < 3:
+        raise ProcessingError("The processing area needs at least 3 vertices")
+
+    epsg = utm_epsg_for(float(np.mean(pts[:, LAT])), float(np.mean(pts[:, LON])))
+    e, n = to_utm(pts[:, LAT], pts[:, LON], epsg)
+    xy = np.column_stack([e, n])
+    z = corrected_depth(pts, files, settings, tides, tide_series)
+    poly_utm = None
+    if poly is not None:
+        pe, pn = to_utm(poly[:, 0], poly[:, 1], epsg)
+        poly_utm = np.column_stack([pe, pn])
+        keep = _points_in_polygon(xy[:, 0], xy[:, 1], poly_utm)
+        pts, xy, z = pts[keep], xy[keep], z[keep]
+
+    # Overlap-removal rules: drop log `file`'s soundings near log `other` (both evaluated
+    # against the same pre-rule set, so the order of rules doesn't matter).
+    index = {meta["name"]: i for i, meta in enumerate(files)}
+    drop = np.zeros(pts.shape[0], dtype=bool)
+    overlap_removed = []
+    for rule in exclude_overlaps or []:
+        f, other = index.get(str(rule.get("file"))), index.get(str(rule.get("other")))
+        if f is None or other is None or f == other:
+            continue
+        near = _near_other_log(xy, pts[:, FILE], f, other, settings.overlap_buffer_m)
+        drop |= near
+        overlap_removed.append({"file": files[f]["name"], "other": files[other]["name"], "count": int(near.sum())})
+    if drop.any():
+        pts, xy, z = pts[~drop], xy[~drop], z[~drop]
+
+    if pts.shape[0] < 3:
+        raise ProcessingError("Fewer than 3 accepted soundings fall inside the processing area")
+    return Prepared(rows=pts, xy=xy, z=z, epsg=epsg, poly_utm=poly_utm,
+                    n_excluded=int(excluded.sum()), overlap_removed=overlap_removed)
+
+
+# ---------------------------------------------------------------------------
+# Data-quality checks
+# ---------------------------------------------------------------------------
+
+MAX_QC_ITEMS = 300
+MIN_OFFSET_PAIRS = 20
+
+
+def _qc_item(prep, files, i):
+    r = prep.rows[i]
+    return {
+        "key": [files[int(r[FILE])]["name"], int(round(r[TIME] * 1000))],
+        "lat": round(float(r[LAT]), 7),
+        "lon": round(float(r[LON]), 7),
+        "depth_m": round(float(prep.z[i]), 2),
+        "measured_m": round(float(r[DEPTH]), 2),
+        "conf": int(r[CONF]),
+        "time": float(r[TIME]),
+        "file": files[int(r[FILE])]["name"],
+        "footprint_m": round(beam_footprint_m(float(r[DEPTH])), 1),
+    }
+
+
+def _spike_mask(prep, tol, k=5.0, half_window=7):
+    """Along-track spikes (a Hampel filter).
+
+    A sounding is a spike when it differs from the median of its neighbours on the
+    same pass by more than max(tol, k x their robust scatter). Scaling by the local
+    scatter keeps a rough seabed (reef, rubble) from being reported as spikes while
+    still catching isolated bad returns on a smooth one.
+    """
+    from numpy.lib.stride_tricks import sliding_window_view
+
+    n = prep.rows.shape[0]
+    deviation = np.zeros(n)
+    median = np.full(n, np.nan)
+    threshold = np.full(n, np.inf)
+    order = np.lexsort((prep.rows[:, TIME], prep.rows[:, FILE]))
+    f = prep.rows[order, FILE]
+    t = prep.rows[order, TIME]
+    breaks = np.flatnonzero((np.diff(f) != 0) | (np.diff(t) > PASS_GAP_S)) + 1
+    for seg in np.split(np.arange(n), breaks):
+        if seg.size < half_window + 1:
+            continue
+        z = prep.z[order[seg]]
+        padded = np.concatenate([np.full(half_window, np.nan), z, np.full(half_window, np.nan)])
+        windows = sliding_window_view(padded, 2 * half_window + 1)
+        med = np.nanmedian(windows, axis=1)
+        scatter = 1.4826 * np.nanmedian(np.abs(windows - med[:, None]), axis=1)
+        median[order[seg]] = med
+        deviation[order[seg]] = z - med
+        threshold[order[seg]] = np.maximum(tol, k * scatter)
+    return np.abs(deviation) > threshold, deviation, median
+
+
+def quality_check(prep, files, settings):
+    """Find soundings that disagree with their neighbours.
+
+    Returns (report, spike_mask). The report is JSON-serialisable and bounded
+    in size; spike_mask flags every along-track spike in prep.
+    """
+    from scipy.spatial import cKDTree
+
+    report = {
+        "points": int(prep.rows.shape[0]),
+        "excluded": prep.n_excluded,
+        "overlap_removed": prep.overlap_removed,
+        "file_offsets": [],
+        "altitude_warnings": [],
+        "conflicts": [],
+        "conflict_count": 0,
+        "spikes": [],
+        "spike_count": 0,
+    }
+
+    # 1. Overlapping soundings from different passes (or different files).
+    pairs = cKDTree(prep.xy).query_pairs(settings.qc_radius_m, output_type="ndarray")
+    if pairs.size:
+        i, j = pairs[:, 0], pairs[:, 1]
+        fi, fj = prep.rows[i, FILE], prep.rows[j, FILE]
+        other_pass = (fi != fj) | (np.abs(prep.rows[i, TIME] - prep.rows[j, TIME]) > PASS_GAP_S)
+        i, j, fi, fj = i[other_pass], j[other_pass], fi[other_pass], fj[other_pass]
+    else:
+        i = j = fi = fj = np.array([], dtype=int)
+
+    # 2. Constant offset between two logs where they overlap.
+    explained = np.zeros(i.size, dtype=bool)
+    for a in range(len(files)):
+        for b in range(a + 1, len(files)):
+            sel = ((fi == a) & (fj == b)) | ((fi == b) & (fj == a))
+            if sel.sum() < MIN_OFFSET_PAIRS:
+                continue
+            ia = np.where(fi[sel] == a, i[sel], j[sel])
+            ib = np.where(fi[sel] == a, j[sel], i[sel])
+            diff = prep.z[ib] - prep.z[ia]          # + means log b reads deeper
+            med = float(np.median(diff))
+            if abs(med) > settings.qc_depth_tol_m:
+                buf = settings.overlap_buffer_m
+                report["file_offsets"].append({
+                    "file_a": files[a]["name"],
+                    "file_b": files[b]["name"],
+                    "median_m": round(med, 2),
+                    "pairs": int(sel.sum()),
+                    # soundings each "remove overlapping soundings" choice would drop
+                    "remove_a_count": int(_near_other_log(prep.xy, prep.rows[:, FILE], a, b, buf).sum()),
+                    "remove_b_count": int(_near_other_log(prep.xy, prep.rows[:, FILE], b, a, buf).sum()),
+                })
+                explained |= sel
+
+    # 3. Along-track spikes (computed first: pairs involving a spike are reported as the spike).
+    spikes, deviation, median = _spike_mask(prep, settings.qc_spike_tol_m, settings.qc_spike_k)
+    explained |= spikes[i] | spikes[j]
+
+    # 4. Scattered disagreements not explained by a file offset or a spike.
+    dz = np.abs(prep.z[i] - prep.z[j])
+    pair_tol = np.maximum(settings.qc_depth_tol_m,
+                          settings.qc_depth_tol_pct / 100 * (prep.z[i] + prep.z[j]) / 2)
+    conflict = (dz > pair_tol) & ~explained
+    report["conflict_count"] = int(conflict.sum())
+    if conflict.any():
+        ci, cj, cdz = i[conflict], j[conflict], dz[conflict]
+        h = np.hypot(*(prep.xy[ci] - prep.xy[cj]).T)
+        report["conflict_median_dz_m"] = round(float(np.median(cdz)), 2)
+        report["conflict_median_h_m"] = round(float(np.median(h)), 2)
+        for k in np.argsort(-cdz)[:MAX_QC_ITEMS]:
+            report["conflicts"].append({
+                "a": _qc_item(prep, files, ci[k]),
+                "b": _qc_item(prep, files, cj[k]),
+                "h_m": round(float(h[k]), 2),
+                "dz_m": round(float(cdz[k]), 2),
+                "slope_pct": round(float(cdz[k] / max(h[k], 0.05) * 100)),
+            })
+
+    report["spike_count"] = int(spikes.sum())
+    for k in np.flatnonzero(spikes)[np.argsort(-np.abs(deviation[spikes]))][:MAX_QC_ITEMS]:
+        item = _qc_item(prep, files, k)
+        item["neighbour_median_m"] = round(float(median[k]), 2)
+        item["deviation_m"] = round(float(deviation[k]), 2)
+        report["spikes"].append(item)
+
+    # 5. GPS altitude should be steady when it is the vertical reference.
+    if settings.vertical_reference == "gps":
+        for idx, meta in enumerate(files):
+            alt = prep.rows[prep.rows[:, FILE] == idx, ALT]
+            alt = alt[np.isfinite(alt)]
+            if alt.size < 10:
+                continue
+            spread = float(np.percentile(alt, 95) - np.percentile(alt, 5))
+            if spread > 0.5:
+                report["altitude_warnings"].append({
+                    "file": meta["name"],
+                    "spread_m": round(spread, 2),
+                    "std_m": round(float(np.std(alt)), 2),
+                })
+    return report, spikes
 
 
 # ---------------------------------------------------------------------------
@@ -275,38 +674,17 @@ class Surface:
         return self.y0 + self.cell * np.arange(self.depth.shape[0])
 
 
-def build_surface(points, polygon_latlon, settings, max_grid_cells=4_000_000):
-    """Triangulate accepted soundings and interpolate a depth grid inside the polygon."""
+def build_surface(prep, settings, keep=None, max_grid_cells=4_000_000):
+    """Triangulate the prepared soundings and interpolate a depth grid inside the area."""
     from scipy.interpolate import LinearNDInterpolator
     from scipy.spatial import Delaunay, QhullError
 
-    pts = points[accepted_mask(points, settings.min_conf)]
-    if pts.shape[0] < 3:
-        raise ProcessingError(
-            f"Only {pts.shape[0]} soundings meet the {settings.min_conf:g}% confidence threshold"
-        )
-
-    poly = np.asarray(polygon_latlon, dtype=np.float64).reshape(-1, 2) if polygon_latlon else None
-    if poly is not None and poly.shape[0] < 3:
-        raise ProcessingError("The processing area needs at least 3 vertices")
-
-    lat_c, lon_c = float(np.mean(pts[:, 0])), float(np.mean(pts[:, 1]))
-    epsg = utm_epsg_for(lat_c, lon_c)
-    ex, ny_ = to_utm(pts[:, 0], pts[:, 1], epsg)
-    xy = np.column_stack([ex, ny_])
-    z = pts[:, 2]
-
-    if poly is not None:
-        pe, pn = to_utm(poly[:, 0], poly[:, 1], epsg)
-        poly_utm = np.column_stack([pe, pn])
-        keep = _points_in_polygon(xy[:, 0], xy[:, 1], poly_utm)
+    xy, z = prep.xy, prep.z
+    if keep is not None:
         xy, z = xy[keep], z[keep]
-    else:
-        poly_utm = None
-
     xy, z = _dedupe(xy, z)
     if xy.shape[0] < 3:
-        raise ProcessingError("Fewer than 3 accepted soundings fall inside the processing area")
+        raise ProcessingError("Fewer than 3 soundings remain after exclusions")
 
     try:
         tri = Delaunay(xy)
@@ -342,8 +720,8 @@ def build_surface(points, polygon_latlon, settings, max_grid_cells=4_000_000):
     simplex = tri.find_simplex(q)
     in_mesh = simplex >= 0
     in_mesh[in_mesh] = good_simplex[simplex[in_mesh]]
-    if poly_utm is not None:
-        in_mesh &= _points_in_polygon(q[:, 0], q[:, 1], poly_utm)
+    if prep.poly_utm is not None:
+        in_mesh &= _points_in_polygon(q[:, 0], q[:, 1], prep.poly_utm)
 
     depth = np.full(q.shape[0], np.nan)
     interp = LinearNDInterpolator(tri, z)
@@ -355,7 +733,7 @@ def build_surface(points, polygon_latlon, settings, max_grid_cells=4_000_000):
 
     if not np.isfinite(depth).any():
         raise ProcessingError("The mesh does not cover any of the processing area")
-    return Surface(epsg=epsg, x0=float(xs[0]), y0=float(ys[0]), cell=cell, depth=depth), int(xy.shape[0])
+    return Surface(epsg=prep.epsg, x0=float(xs[0]), y0=float(ys[0]), cell=cell, depth=depth), int(xy.shape[0])
 
 
 # ---------------------------------------------------------------------------
@@ -625,15 +1003,131 @@ def render(lines, surface, settings, max_side_px=6000, max_canvas_px=60_000_000)
 # Pipeline
 # ---------------------------------------------------------------------------
 
-def process(csv_paths, polygon_latlon, settings, out_tif, out_preview):
-    """Run the full pipeline and write the GeoTIFF + PNG preview.
+# ---------------------------------------------------------------------------
+# Auto-tuning
+# ---------------------------------------------------------------------------
 
-    Returns a JSON-serialisable summary including WGS 84 bounds of the preview.
+_NICE_INTERVALS = (0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0)
+_MAJOR_FOR_MINOR = {0.1: 0.5, 0.25: 1.0, 0.5: 2.0, 1.0: 5.0, 2.0: 10.0, 5.0: 25.0,
+                    10.0: 50.0, 20.0: 100.0, 50.0: 250.0}
+TARGET_MAX_CONTOURS = 40
+
+
+def suggest_settings(prep):
+    """Settings derived from the soundings that will be meshed.
+
+    Returns (values, notes): values is a dict of ContourSettings fields, notes a
+    list of short human-readable reasons shown in the UI.
     """
-    points = load_points(csv_paths)
+    from scipy.spatial import cKDTree
+
+    z, xy, t = prep.z, prep.xy, prep.rows[:, TIME]
+    lo, hi = (float(v) for v in np.percentile(z, [2, 98]))
+    depth_range = max(hi - lo, 0.01)
+    median_depth = float(np.median(z))
+    footprint = beam_footprint_m(max(median_depth, 0.5))
+    extent = float(np.ptp(xy, axis=0).max()) if z.size > 1 else 1.0
+    tree = cKDTree(xy)
+
+    # Distance from each sounding to the nearest sounding of another pass ~ line spacing.
+    k = min(40, z.size)
+    dist, idx = tree.query(xy, k=k)
+    other = np.abs(t[idx] - t[:, None]) > PASS_GAP_S
+    nearest_other = np.where(other, dist, np.inf).min(axis=1)
+    nearest_other = nearest_other[np.isfinite(nearest_other)]
+    spacing = float(np.percentile(nearest_other, 95)) if nearest_other.size else 10.0
+
+    # Disagreement between passes, relative to depth (robust).
+    radius = float(np.clip(round(0.25 * footprint * 2) / 2, 1.0, 5.0))
+    pairs = tree.query_pairs(radius, output_type="ndarray")
+    rel_scale = None
+    if pairs.size:
+        a, b = pairs[:, 0], pairs[:, 1]
+        sel = np.abs(t[a] - t[b]) > PASS_GAP_S
+        if sel.sum() >= 50:
+            a, b = a[sel], b[sel]
+            rel = np.abs(z[a] - z[b]) / np.maximum((z[a] + z[b]) / 2, 0.5)
+            rel_scale = 1.4826 * float(np.median(rel))
+    cross_sigma_m = (rel_scale or 0.01) * median_depth / math.sqrt(2)
+
+    # Contour interval: at most ~40 levels, and no finer than twice the pass-to-pass noise.
+    wanted = max(depth_range / TARGET_MAX_CONTOURS, 2 * cross_sigma_m)
+    minor = next((v for v in _NICE_INTERVALS if v >= wanted), _NICE_INTERVALS[-1])
+    major = _MAJOR_FOR_MINOR[minor]
+
+    # Line and label sizes grow gently with survey extent (the image is shown scaled down).
+    f = float(np.clip((extent / 100.0) ** 0.3, 1.0, 3.0))
+    pct = round(8 * rel_scale * 100, 1) if rel_scale is not None else 5.0
+    values = {
+        "minor_m": minor,
+        "major_m": major,
+        "max_edge_m": float(np.clip(round(4 * spacing), 10, 150)),
+        "label_size_px": int(round(22 * f)),
+        "major_width_px": round(2.5 * f * 2) / 2,
+        "minor_width_px": round(1.0 * f * 2) / 2,
+        "label_spacing_m": float(round(40 * f * f / 5) * 5),
+        "qc_radius_m": radius,
+        "qc_depth_tol_m": 0.3,
+        "qc_depth_tol_pct": pct,
+        "qc_spike_tol_m": 0.3,
+        "qc_spike_k": 5.0,
+        "overlap_buffer_m": float(np.clip(round(footprint), 3, 30)),
+    }
+    n_levels = int(depth_range // minor) + 1
+    notes = [
+        f"Contours every {minor:g} m, majors every {major:g} m: about {n_levels} levels over "
+        f"{lo:.1f}–{hi:.1f} m, and no finer than the {cross_sigma_m:.2f} m scatter between passes.",
+        f"Max mesh triangle edge {values['max_edge_m']:g} m: survey lines are up to about {spacing:.0f} m apart.",
+        f"Line widths and labels sized for a {extent:.0f} m survey.",
+        f"Overlap check within {radius:g} m (a quarter of the {footprint:.1f} m beam footprint at the "
+        f"median depth of {median_depth:.1f} m), tolerance {pct:g}% of depth (at least 0.3 m).",
+        "Spikes: more than 5× the local scatter of neighbouring soundings (and at least 0.3 m).",
+    ]
+    return values, notes
+
+
+def _prepare_tuned(points, files, polygon_latlon, settings, tides, exclude, exclude_overlaps, tide_series=None):
+    """prepare(), then apply auto-tuned settings when enabled."""
+    from dataclasses import replace
+
+    prep = prepare(points, files, polygon_latlon, settings, tides, exclude, exclude_overlaps, tide_series)
+    if not settings.auto_tune:
+        return prep, settings, None
+    values, notes = suggest_settings(prep)
+    tuned = replace(settings, **values)
+    if exclude_overlaps and tuned.overlap_buffer_m != settings.overlap_buffer_m:
+        prep = prepare(points, files, polygon_latlon, tuned, tides, exclude, exclude_overlaps, tide_series)
+    return prep, tuned, {"values": values, "notes": notes}
+
+
+def analyse(csv_paths, polygon_latlon, settings, tides=None, exclude=None, exclude_overlaps=None,
+            tide_series=None):
+    """Data-quality report for exactly the soundings that would be meshed."""
+    points, files = load_survey(csv_paths)
     if points.shape[0] == 0:
         raise ProcessingError("The selected files contain no soundings with a GPS fix")
-    surface, n_used = build_surface(points, polygon_latlon, settings)
+    prep, settings, tuned = _prepare_tuned(points, files, polygon_latlon, settings, tides, exclude,
+                                           exclude_overlaps, tide_series)
+    report, _ = quality_check(prep, files, settings)
+    report["tuned"] = tuned
+    return report
+
+
+def process(csv_paths, polygon_latlon, settings, out_tif, out_preview, tides=None, exclude=None,
+            exclude_overlaps=None, tide_series=None):
+    """Run the full pipeline and write the GeoTIFF + PNG preview.
+
+    Returns a JSON-serialisable summary including WGS 84 bounds of the preview
+    and the data-quality report for the soundings that were meshed.
+    """
+    points, files = load_survey(csv_paths)
+    if points.shape[0] == 0:
+        raise ProcessingError("The selected files contain no soundings with a GPS fix")
+    prep, settings, tuned = _prepare_tuned(points, files, polygon_latlon, settings, tides, exclude,
+                                           exclude_overlaps, tide_series)
+    report, spikes = quality_check(prep, files, settings)
+    keep = ~spikes if settings.exclude_spikes else None
+    surface, n_used = build_surface(prep, settings, keep)
     lines, (zmin, zmax) = make_contours(surface, settings)
     if not lines:
         raise ProcessingError(
@@ -657,8 +1151,19 @@ def process(csv_paths, polygon_latlon, settings, out_tif, out_preview):
         "points_total": int(points.shape[0]),
         "points_accepted": int(accepted_mask(points, settings.min_conf).sum()),
         "points_used": n_used,
+        "points_excluded": prep.n_excluded,
+        "overlap_removed": prep.overlap_removed,
+        "spikes_excluded": int(spikes.sum()) if settings.exclude_spikes else 0,
         "depth_min_m": round(zmin, 2),
         "depth_max_m": round(zmax, 2),
         "minor_lines": sum(1 for l in lines if not l.is_major),
         "major_lines": sum(1 for l in lines if l.is_major),
+        "settings": settings.__dict__,   # effective (auto-tuned) settings
+        "tuned_notes": tuned["notes"] if tuned else [],
+        "quality": {
+            "file_offsets": report["file_offsets"],
+            "altitude_warnings": report["altitude_warnings"],
+            "conflict_count": report["conflict_count"],
+            "spike_count": report["spike_count"],
+        },
     }
