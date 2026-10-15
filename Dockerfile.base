@@ -30,10 +30,12 @@ RUN if [ "$(uname -m)" = "armv7l" ]; then \
         contourpy==1.2.1 \
         Pillow==10.4.0
 
-# Every compiled module must find its shared libraries. Importing a package doesn't load all
-# of them (scipy.optimize's HiGHS wrapper needs libatomic on armv7 and is only loaded via
-# scipy.interpolate), so check them all with ldd.
-RUN missing=$(find /usr/local/lib/python3.11/site-packages -name '*.so*' -exec ldd {} \; 2>/dev/null | grep 'not found' | sort -u); \
+# Every Python extension module must find its shared libraries. Importing a package doesn't
+# load all of them (scipy.optimize's HiGHS wrapper needs libatomic on armv7 and is only loaded
+# via scipy.interpolate), so check them all with ldd. Libraries that PyPI wheels bundle in
+# *.libs/ are skipped: they load through the extension modules, not on their own.
+RUN missing=$(find /usr/local/lib/python3.11/site-packages -name '*.cpython-*.so' -not -path '*.libs/*' \
+        -exec ldd {} \; 2>/dev/null | grep 'not found' | sort -u); \
     if [ -n "$missing" ]; then echo "Missing shared libraries:"; echo "$missing"; exit 1; fi
 
 # Verify the runtime dependencies import cleanly, including the submodules post-mission
