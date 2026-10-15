@@ -597,6 +597,32 @@
             height: calc(100vh - 112px); /* header (64px) + tab bar (48px) */
         }
 
+        /* ---------- Sonar data warning (Live Survey) ---------- */
+        .sonar-banner {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: min(640px, calc(100% - 32px));
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            padding: 10px 14px;
+            border-radius: 6px;
+            color: #fff;
+            font-size: 0.85rem;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+        }
+        .sonar-banner--error { background: #C62828; }
+        .sonar-banner--warning { background: #E65100; }
+        .sonar-banner__text { flex: 1; min-width: 0; }
+        .sonar-banner__title { font-weight: 600; font-size: 0.95rem; }
+        .sonar-banner__redetect { margin-top: 4px; font-style: italic; }
+        @media (max-width: 600px) {
+            .sonar-banner { flex-wrap: wrap; }
+            .sonar-banner .v-btn { margin: 8px 0 0 32px !important; }
+        }
+
         /* ---------- Post-Mission Processing ---------- */
         .pm-layout {
             display: grid;
@@ -655,6 +681,11 @@
             font-size: 0.75rem;
             color: #888;
             margin: -6px 0 6px 32px;
+        }
+        .pm-file-warning {
+            font-size: 0.75rem;
+            color: #FFB74D;
+            margin: -2px 0 8px 32px;
         }
         .pm-hint {
             font-size: 0.8rem;
@@ -952,6 +983,7 @@
                                             <v-btn icon x-small :href="'/log_file/' + encodeURIComponent(f.filename)" title="Download raw CSV"><v-icon small>mdi-download</v-icon></v-btn>
                                         </div>
                                         <div class="pm-file-meta">{{ pmFormatDate(f.modified) }} · {{ f.size_mb }} MB</div>
+                                        <div v-if="pm.selectedFiles.includes(f.filename) && pmDataWarning(f.filename)" class="pm-file-warning">{{ pmDataWarning(f.filename) }}</div>
                                         <div v-if="pm.settings.vertical_reference === 'tide' && pm.settings.tide_source === 'online' && pm.selectedFiles.includes(f.filename) && pmFileMeta(f.filename)" class="pm-tide">
                                             <template v-if="pm.tideInfo[f.filename] && !pm.tideInfo[f.filename].error">
                                                 <div class="pm-tide-label">
@@ -1355,6 +1387,17 @@
                 <div>
                     <div class="map-container">
                         <div id="map"></div>
+                        <div class="sonar-banner" v-if="sonarBanner" :class="'sonar-banner--' + sonarBanner.level">
+                            <v-icon color="white" class="mr-2">mdi-alert</v-icon>
+                            <div class="sonar-banner__text">
+                                <div class="sonar-banner__title">{{ sonarBanner.title }}</div>
+                                <div>{{ sonarBanner.detail }}</div>
+                                <div v-if="sonarBanner.redetect" class="sonar-banner__redetect">{{ sonarBanner.redetect }}</div>
+                            </div>
+                            <v-btn v-if="sonarBanner.button !== false" small outlined color="white" class="ml-3" :loading="sonarRedetecting" :disabled="sonarRedetecting" @click="redetectPing">
+                                Re-detect Ping
+                            </v-btn>
+                        </div>
                         <!-- Floating center map button for mobile -->
                         <div class="map-center-button" :class="{ 'map-center-button--disabled': !hasGpsLock }" @click="onCenterMapButtonClick">
                             <v-icon color="white">mdi-crosshairs-gps</v-icon>
@@ -1766,6 +1809,9 @@
 
                     // Tabs
                     activeTab: 0,
+                    sonarStatus: null,               // /status sonar block while recording
+                    sonarCheck: null,                // /sonar_check while idle
+                    sonarTimer: null,
 
                     // Post-mission processing
                     pm: {
@@ -1803,6 +1849,53 @@
                 }
             },
             computed: {
+                sonarRedetecting() {
+                    const src = this.run ? this.sonarStatus : this.sonarCheck;
+                    return !!(src && src.redetect && src.redetect.state === 'running');
+                },
+                sonarBanner() {
+                    if (this.simulationActive) return null;
+                    const src = this.run ? this.sonarStatus : this.sonarCheck;
+                    if (!src) return null;
+                    const r = src.redetect || {};
+                    // Outcomes of an earlier re-detect fade after two minutes; a running one always shows.
+                    const redetect = r.state === 'running' || (r.state && r.state !== 'idle' && (r.age_s || 0) < 120) ? r.message : '';
+                    if (this.run) {
+                        // Allow a moment after Start for the first reading to arrive.
+                        if (!src.logging) return null;
+                        if ((src.seconds_without_rows || 0) >= 5) {
+                            return {
+                                level: 'error',
+                                title: 'No data is being recorded',
+                                detail: `No rows have been written for ${Math.round(src.seconds_without_rows)} s. The logger needs GPS position and attitude from the autopilot; check the vehicle is connected and has a GPS fix.`,
+                                redetect: '',
+                                button: false
+                            };
+                        }
+                        if (src.receiving_depth || (src.seconds_without_depth || 0) < 3) return null;
+                        const secs = Math.round(src.seconds_without_depth);
+                        return {
+                            level: 'error',
+                            title: 'No depth data is being recorded',
+                            detail: (src.ever_received
+                                ? `The Ping sonar stopped sending readings ${secs} s ago.`
+                                : `The Ping sonar has not sent a reading since recording started (${secs} s).`)
+                                + (src.rows ? ` Positions are still logged, but ${src.rows_without_depth} of ${src.rows} rows have no depth.` : ''),
+                            redetect
+                        };
+                    }
+                    if (src.receiving) return null;
+                    const noPing = Array.isArray(src.sensors) && src.sensors.length === 0;
+                    if (!noPing && !src.ping_service_error && !redetect) return null;
+                    return {
+                        level: 'warning',
+                        title: noPing ? 'Ping sonar not detected' : 'No live data from the Ping sonar',
+                        detail: (src.ping_service_error || (noPing
+                            ? 'BlueOS has not detected a Ping, so a recording now would log positions without depth.'
+                            : 'BlueOS lists a Ping, but no depth readings are arriving.')),
+                        redetect
+                    };
+                },
                 pmAccepted() {
                     const minConf = this.pm.settings.min_conf;
                     return this.pm.points.filter(p => p[3] >= minConf);
@@ -1851,6 +1944,17 @@
                         }
                     });
                     return out;
+                },
+                pmDataWarning() {
+                    return name => {
+                        const f = this.pmFileMeta(name);
+                        if (!f || !f.rows) return '';
+                        if (f.no_depth && f.no_depth >= f.rows / 2) {
+                            return `${f.no_depth} of ${f.rows} rows have a GPS position but no sonar depth: the Ping was not reporting during this log. Check it is detected in BlueOS > Ping Sonar Devices before surveying.`;
+                        }
+                        if (f.no_fix && f.no_fix >= f.rows / 2) return `${f.no_fix} of ${f.rows} rows have no GPS fix.`;
+                        return '';
+                    };
                 },
                 pmAltitudeMissing() {
                     return this.pm.files.filter(f => !f.has_altitude).map(f => f.name);
@@ -2651,6 +2755,9 @@
                         this.receivingData = true;
                         this.resetMap(9.2, -133, 10);
                         this.intervalId = setInterval(this.fetchData, 1000);
+                        this.sonarStatus = null;
+                        clearTimeout(this.sonarTimer);
+                        this.sonarTimer = setTimeout(this.pollSonar, 1000);
                     } catch (error) {
                         console.error('Error starting logging:', error);
                         this.status = 'Error: ' + error.message;
@@ -2667,6 +2774,9 @@
                         this.status = 'Data logging stopped.';
                         this.receivingData = false;
                         clearInterval(this.intervalId);
+                        this.sonarStatus = null;
+                        clearTimeout(this.sonarTimer);
+                        this.sonarTimer = setTimeout(this.pollSonar, 500);
                     } catch (error) {
                         console.error('Error stopping logging:', error);
                         this.status = 'Error: ' + error.message;
@@ -2848,6 +2958,44 @@
                     return 'confidence-low';
                 },
 
+                async pollSonar() {
+                    try {
+                        if (this.run) {
+                            const response = await axios.get('/status');
+                            this.sonarStatus = response.data.sonar || null;
+                        } else if (!this.simulationActive) {
+                            const response = await axios.get('/sonar_check');
+                            this.sonarCheck = response.data;
+                        }
+                    } catch (error) {
+                        console.error('Error checking sonar:', error);
+                    }
+                    // Poll faster while recording or while BlueOS is re-detecting the Ping.
+                    const delay = this.run || this.sonarRedetecting ? 2000 : 10000;
+                    clearTimeout(this.sonarTimer);
+                    this.sonarTimer = setTimeout(this.pollSonar, delay);
+                },
+                async redetectPing() {
+                    try {
+                        const response = await axios.post('/sonar_redetect');
+                        this.applyRedetect(response.data.redetect);
+                    } catch (error) {
+                        if (error.response && error.response.data && error.response.data.redetect) {
+                            this.applyRedetect(error.response.data.redetect);
+                        } else {
+                            this.status = 'Could not re-detect the Ping: ' + error.message;
+                        }
+                    }
+                    clearTimeout(this.sonarTimer);
+                    this.sonarTimer = setTimeout(this.pollSonar, 1000);
+                },
+                applyRedetect(redetect) {
+                    if (this.run) {
+                        this.sonarStatus = Object.assign({}, this.sonarStatus || {}, { redetect });
+                    } else {
+                        this.sonarCheck = Object.assign({}, this.sonarCheck || {}, { redetect });
+                    }
+                },
                 async checkLoggingStatus() {
                     try {
                         const response = await axios.get('/status');
@@ -3662,7 +3810,7 @@
                             }
                         }, 500);
                         
-                        this.checkLoggingStatus();
+                        this.checkLoggingStatus().then(() => this.pollSonar());
                         this.getCacheStats();
                         this.getRecentCachedArea();
                         this.startCacheStatsRefresh();

@@ -38,6 +38,17 @@ _distance_ids_cache = None
 _urls_cache = None
 _cache_size_bytes = 0
 _cache_size_last_check = 0
+
+
+def _forget_distance_sensor():
+    """Re-detect which component publishes DISTANCE_SENSOR on the next logged row."""
+    global _distance_ids_cache, _urls_cache
+    _distance_ids_cache = None
+    _urls_cache = None
+
+
+import sonar_watchdog
+sonar = sonar_watchdog.SonarWatchdog(on_redetected=_forget_distance_sensor)
 _CACHE_SIZE_CHECK_INTERVAL = 60  # Only recalculate cache size every 60 seconds
 
 # Map tile sources
@@ -60,7 +71,7 @@ logging_active = False
 simulation_active = False
 simulation_index = 0
 simulation_data = []
-base_url = 'http://host.docker.internal/mavlink2rest/mavlink'
+base_url = f'{sonar_watchdog.BLUEOS}/mavlink2rest/mavlink'
 log_rate = 2  # Desired rate in Hz
 simulation_speed = 5  # Playback speed multiplier
 simulation_file = os.path.join(LOGS_DIR, 'simulation.csv')
@@ -431,11 +442,19 @@ def main():
     # Get the correct URLs based on system ID
     urls = get_urls()
     print(f"Using system ID: {get_system_id()}")
-    
+    sonar.start_session()
+
     while (logging_active == True): # Main loop for logging data
-        distance_response = requests.get(urls['distance'])
-        gps_response = requests.get(urls['gps'])
-        yaw_response = requests.get(urls['yaw'])
+        urls = get_urls()  # cached; re-detected after the Ping service finds the Ping again
+        # Timeouts keep one stalled mavlink2rest request from freezing the log.
+        try:
+            distance_response = requests.get(urls['distance'], timeout=2)
+            gps_response = requests.get(urls['gps'], timeout=2)
+            yaw_response = requests.get(urls['yaw'], timeout=2)
+        except requests.RequestException as e:
+            print(f"Warning: mavlink2rest request failed: {e}")
+            time.sleep(1 / log_rate)
+            continue
         
         # Check if GPS and yaw data are available (required)
         if gps_response.status_code == 200 and yaw_response.status_code == 200:
@@ -508,6 +527,7 @@ def main():
             longitude = gps_data['lon'] / 1e7
             altitude = gps_data['alt'] / 1000  # GLOBAL_POSITION_INT.alt is in mm
             row = [unix_timestamp, date, timenow, distance, confidence, yaw, roll, pitch, latitude, longitude, altitude, position_depth_delta_ms]
+            sonar.record_row(distance_json, distance)
             with _state_lock:
                 data = row
             with open(current_log_file, 'a', newline='') as csvfile:
@@ -539,13 +559,20 @@ def home():
 def widget():
     return app.send_static_file("widget.html")
 
+def _run_logger():
+    try:
+        main()
+    finally:
+        sonar.stop_session()
+
+
 @app.route('/start')
 def start_logging():
     global logging_active
     with _state_lock:
         if not logging_active:
             logging_active = True
-            thread = threading.Thread(target=main, daemon=True)
+            thread = threading.Thread(target=_run_logger, daemon=True)
             thread.start()
     return 'Started'
 
@@ -656,7 +683,7 @@ def servicenames():
     "description": "This extension makes it easy to record data from the Ping sonar and gps onboard the vehicle, keeping a poor communications link from interfering with the quality of collected survey data. When connected, the extension displays a data preview that is intended to aide in survey grid spacing determination while logging at 2Hz. Happy motoring!",
     "icon": "mdi-map-plus",
     "company": "Blue Robotics",
-    "version": "1.3.0",
+    "version": "1.3.1",
     "webpage": "https://github.com/vshie/pingSurvey",
     "api": "https://github.com/bluerobotics/BlueOS-docker"}
     '''
@@ -864,7 +891,36 @@ def get_recent_cached_area():
 @app.route('/status', methods=['GET'])
 def status():
     with _state_lock:
-        return {"logging_active": logging_active, "simulation_active": simulation_active}
+        state = {"logging_active": logging_active, "simulation_active": simulation_active}
+    state["sonar"] = sonar.status()
+    return state
+
+
+@app.route('/sonar_check')
+def sonar_check():
+    """Is BlueOS detecting the Ping, and is live DISTANCE_SENSOR data arriving? Works while idle."""
+    sensors, error = sonar_watchdog.ping_service_sensors()
+    age = None
+    try:
+        response = requests.get(get_urls()['distance'], timeout=3)
+        if response.status_code == 200:
+            age = sonar_watchdog.distance_age_s(response.json())
+    except Exception:
+        pass
+    return jsonify({
+        'ping_service_error': error,
+        'sensors': sensors,
+        'distance_age_s': None if age is None else round(age, 1),
+        'receiving': age is not None and age <= sonar_watchdog.STALE_AFTER_S,
+        'redetect': sonar.status()['redetect'],
+    })
+
+
+@app.route('/sonar_redetect', methods=['POST'])
+def sonar_redetect():
+    """Ask BlueOS to look for the Ping again (restarts its Ping service if no Ping is detected)."""
+    started = sonar.redetect()
+    return jsonify({'started': started, 'redetect': sonar.status()['redetect']}), (202 if started else 409)
 
 @app.route('/log_files')
 def list_log_files():

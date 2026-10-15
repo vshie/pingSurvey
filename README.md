@@ -48,6 +48,17 @@ Access the full interface by navigating to **Simple Ping Survey** in the BlueOS 
 4. Data is saved to a timestamped CSV file in `/app/logs/`
 5. Click **Download** to retrieve the collected data
 
+#### Missing sonar data
+
+BlueOS's Ping service checks each serial port only three times when it starts. If the Ping doesn't answer in those first seconds (for example it powers up late, or a connector is loose), the service gives up until it is restarted, and no depth reaches MAVLink. Positions are still logged, so the survey looks normal until you process it.
+
+The extension watches for this:
+
+- **Before recording**, the Live Survey map shows an orange banner when BlueOS hasn't detected a Ping.
+- **While recording**, a red banner on the Live Survey map and in the Cockpit widget says when no depth has arrived for 3 seconds (or no rows at all for 5 seconds, which means GPS or attitude is missing).
+- **Re-detect Ping** asks BlueOS to look again. When BlueOS lists no Ping, the extension restarts the BlueOS Ping service (through BlueOS Commander) so it probes the ports again; this takes about 10–15 seconds. If BlueOS already lists the Ping, nothing is restarted and the banner explains what to check instead.
+- If a recording has gone 6 seconds without any depth, the extension re-detects once automatically.
+
 ### Cockpit Widget Integration
 
 The Cockpit IFrame widget must point at the extension's **direct service port**, not
@@ -218,7 +229,9 @@ Older log files may have 8 columns (without Roll, Pitch, Altitude, and Delta) or
 | `/widget` | GET | Cockpit widget interface |
 | `/start` | GET | Start data logging |
 | `/stop` | GET | Stop data logging |
-| `/status` | GET | Get logging and simulation status |
+| `/status` | GET | Get logging and simulation status, plus a `sonar` block (depth arriving, seconds without depth or rows, re-detect state) |
+| `/sonar_check` | GET | Whether BlueOS lists a Ping and live DISTANCE_SENSOR data is arriving (works while idle) |
+| `/sonar_redetect` | POST | Ask BlueOS to look for the Ping again (restarts the BlueOS Ping service only if no Ping is detected) |
 | `/data` | GET | Get current sensor data point |
 | `/download` | GET | Download current CSV log file |
 | `/start_simulation` | GET | Start simulation playback |
@@ -300,7 +313,7 @@ docker run --rm -p 5420:5420 -v "$PWD/devlogs:/app/logs" pingsurvey:dev
 # Open http://localhost:5420 -> Post-Mission Processing
 ```
 
-Add `-v "$PWD/app:/app"` to pick up source changes without rebuilding. The logs directory can also be set with the `PING_SURVEY_LOGS_DIR` environment variable.
+Add `-v "$PWD/app:/app"` to pick up source changes without rebuilding. The logs directory can also be set with the `PING_SURVEY_LOGS_DIR` environment variable, and BlueOS's address (default `http://host.docker.internal`) with `PING_SURVEY_BLUEOS_URL`, e.g. to point the logger at a mock BlueOS.
 
 ### Docker Build
 
@@ -323,7 +336,7 @@ See [BASE_IMAGE_SETUP.md](BASE_IMAGE_SETUP.md) for base image build instructions
 
 ## Troubleshooting
 
-- **No depth readings**: Verify the Ping sonar is connected and detected. Check that DISTANCE_SENSOR messages are available in MAVLink2Rest.
+- **No depth readings**: Press **Re-detect Ping** on the Live Survey banner, or check that BlueOS lists the Ping under Ping Sonar Devices with its MAVLink output enabled. Post-mission processing flags logs whose rows have positions but no depth.
 - **GPS data missing**: Ensure the vehicle has a GPS fix. The extension requires GLOBAL_POSITION_INT messages.
 - **Map tiles not loading**: Check internet connectivity. For offline use, pre-cache tiles using the Cache View or Cache Region buttons while connected.
 - **Simulation not starting**: Verify `simulation.csv` exists in `/app/logs/` with the correct CSV format.

@@ -204,6 +204,28 @@
         .confidence-medium { color: #b8860b; }
         .confidence-low { color: #c0392b; }
 
+        .sonar-alert {
+            margin: 0 0 8px;
+            padding: 6px 8px;
+            border-radius: 4px;
+            background-color: #c0392b;
+            color: #fff;
+            font-size: 11px;
+            line-height: 1.35;
+        }
+        .sonar-alert b { display: block; font-size: 12px; }
+        .sonar-alert button {
+            margin-top: 5px;
+            padding: 3px 8px;
+            border: 1px solid #fff;
+            border-radius: 3px;
+            background: transparent;
+            color: #fff;
+            font-size: 11px;
+            cursor: pointer;
+        }
+        .sonar-alert button:disabled { opacity: 0.6; cursor: default; }
+
         .status-bar {
             margin-top: 8px;
             padding: 5px 8px;
@@ -242,6 +264,12 @@
                 </button>
             </div>
 
+            <div class="sonar-alert" v-if="sonarAlert">
+                <b>{{ (sonar.seconds_without_rows || 0) >= 5 ? 'No data is being recorded' : 'No depth data is being recorded' }}</b>
+                {{ sonarAlert }}
+                <div v-if="redetectMessage">{{ redetectMessage }}</div>
+                <button v-if="(sonar.seconds_without_rows || 0) < 5" :disabled="sonar.redetect && sonar.redetect.state === 'running'" @click="redetectPing">Re-detect Ping</button>
+            </div>
             <div class="hero">
                 <div class="hero-card">
                     <div class="hero-label">Depth</div>
@@ -303,10 +331,28 @@
                     longitude: '--',
                     altitude: '--',
                     status: 'Ready',
-                    intervalId: null
+                    intervalId: null,
+                    sonar: {},
+                    sonarTimer: null
                 }
             },
             computed: {
+                redetectMessage() {
+                    const r = this.sonar.redetect;
+                    if (!r || (this.sonar.seconds_without_rows || 0) >= 5) return '';
+                    // Outcomes of an earlier re-detect fade after two minutes; a running one always shows.
+                    return r.state === 'running' || (r.state !== 'idle' && (r.age_s || 0) < 120) ? r.message : '';
+                },
+                sonarAlert() {
+                    const s = this.sonar;
+                    if (!this.run || !s.logging) return '';
+                    if ((s.seconds_without_rows || 0) >= 5) {
+                        return `No rows written for ${Math.round(s.seconds_without_rows)} s: GPS or attitude from the autopilot is missing.`;
+                    }
+                    if (s.receiving_depth || (s.seconds_without_depth || 0) < 3) return '';
+                    return `The Ping has sent no reading for ${Math.round(s.seconds_without_depth)} s` +
+                        (s.rows ? `; ${s.rows_without_depth} of ${s.rows} rows have no depth.` : '.');
+                },
                 confidenceClass() {
                     if (this.confidence === '--') return '';
                     if (this.confidence > 95) return 'confidence-high';
@@ -392,6 +438,32 @@
                     }
                 },
 
+                async pollSonar() {
+                    try {
+                        const response = await axios.get('/status');
+                        this.sonar = response.data.sonar || {};
+                        if (!response.data.logging_active && this.run) {
+                            this.run = false;
+                            this.status = 'Stopped';
+                            clearInterval(this.intervalId);
+                        }
+                    } catch (error) {
+                        // Silent fail during polling
+                    }
+                    clearTimeout(this.sonarTimer);
+                    this.sonarTimer = setTimeout(this.pollSonar, this.run ? 2000 : 5000);
+                },
+
+                async redetectPing() {
+                    try {
+                        const response = await axios.post('/sonar_redetect');
+                        this.sonar = Object.assign({}, this.sonar, { redetect: response.data.redetect });
+                    } catch (error) {
+                        const r = error.response && error.response.data && error.response.data.redetect;
+                        if (r) this.sonar = Object.assign({}, this.sonar, { redetect: r });
+                    }
+                },
+
                 async checkStatus() {
                     try {
                         const response = await axios.get('/status');
@@ -410,10 +482,11 @@
                 }
             },
             mounted() {
-                this.checkStatus();
+                this.checkStatus().then(() => this.pollSonar());
             },
             beforeDestroy() {
                 if (this.intervalId) clearInterval(this.intervalId);
+                clearTimeout(this.sonarTimer);
             }
         });
     </script>

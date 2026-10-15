@@ -151,7 +151,8 @@ def load_survey(paths):
     files) and ALT (GPS altitude m, NaN when the log has no altitude column),
     for every row with a valid fix and a non-zero depth. Confidence filtering
     is left to the caller so the UI can show rejected soundings too.
-    files is a list of {name, start, end, count, has_altitude}.
+    files is a list of {name, start, end, count, rows, no_depth, no_fix, has_altitude};
+    no_depth / no_fix count the rows dropped for each reason.
     """
     rows = []
     files = []
@@ -172,7 +173,9 @@ def load_survey(paths):
                 raise ProcessingError(f"{name} is not a Ping Survey log (missing columns)")
             i_alt = idx.get("Altitude (m)")
             n_before = len(rows)
+            n_rows = n_no_depth = n_no_fix = 0
             for r in reader:
+                n_rows += 1
                 try:
                     t = float(r[i_time]) / 1000.0
                     depth_cm = float(r[i_depth])
@@ -182,9 +185,11 @@ def load_survey(paths):
                     alt = float(r[i_alt]) if i_alt is not None else math.nan
                 except (ValueError, IndexError):
                     continue
-                if depth_cm <= 0 or (lat == 0 and lon == 0):
+                if (lat == 0 and lon == 0) or not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                    n_no_fix += 1
                     continue
-                if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                if depth_cm <= 0:
+                    n_no_depth += 1
                     continue
                 rows.append((lat, lon, depth_cm / 100.0, conf, t, file_idx, alt))
         times = [r[TIME] for r in rows[n_before:]]
@@ -193,9 +198,26 @@ def load_survey(paths):
             "start": min(times) if times else None,
             "end": max(times) if times else None,
             "count": len(times),
+            "rows": n_rows,
+            "no_depth": n_no_depth,
+            "no_fix": n_no_fix,
             "has_altitude": i_alt is not None,
         })
     return np.array(rows, dtype=np.float64).reshape(-1, 7), files
+
+
+def no_soundings_message(files):
+    """Explain why the selected logs yielded no usable soundings."""
+    reasons = []
+    for f in files:
+        if f["no_depth"]:
+            reasons.append(f"{f['name']}: {f['no_depth']} rows have a GPS position but no sonar depth "
+                           "(the Ping was not reporting; check it is detected in BlueOS > Ping Sonar Devices)")
+        elif f["no_fix"]:
+            reasons.append(f"{f['name']}: {f['no_fix']} rows have no GPS fix")
+        else:
+            reasons.append(f"{f['name']}: no data rows")
+    return "The selected files contain no usable soundings. " + "; ".join(reasons)
 
 
 def load_points(paths):
@@ -1105,7 +1127,7 @@ def analyse(csv_paths, polygon_latlon, settings, tides=None, exclude=None, exclu
     """Data-quality report for exactly the soundings that would be meshed."""
     points, files = load_survey(csv_paths)
     if points.shape[0] == 0:
-        raise ProcessingError("The selected files contain no soundings with a GPS fix")
+        raise ProcessingError(no_soundings_message(files))
     prep, settings, tuned = _prepare_tuned(points, files, polygon_latlon, settings, tides, exclude,
                                            exclude_overlaps, tide_series)
     report, _ = quality_check(prep, files, settings)
@@ -1122,7 +1144,7 @@ def process(csv_paths, polygon_latlon, settings, out_tif, out_preview, tides=Non
     """
     points, files = load_survey(csv_paths)
     if points.shape[0] == 0:
-        raise ProcessingError("The selected files contain no soundings with a GPS fix")
+        raise ProcessingError(no_soundings_message(files))
     prep, settings, tuned = _prepare_tuned(points, files, polygon_latlon, settings, tides, exclude,
                                            exclude_overlaps, tide_series)
     report, spikes = quality_check(prep, files, settings)
