@@ -12,6 +12,7 @@ point-cloud-trimmer's write_geotiff), so no GDAL/PROJ is required.
 """
 
 import csv
+import json
 import math
 from dataclasses import dataclass, fields
 from pathlib import Path
@@ -1135,9 +1136,30 @@ def analyse(csv_paths, polygon_latlon, settings, tides=None, exclude=None, exclu
     return report
 
 
+def contours_geojson(lines, epsg, settings):
+    """The contour lines as a WGS 84 GeoJSON FeatureCollection, styled like the GeoTIFF.
+
+    Feature properties follow the simplestyle spec, which is what Cockpit's map overlays read.
+    """
+    features = []
+    for line in lines:
+        lat, lon = from_utm(line.xy[:, 0], line.xy[:, 1], epsg)
+        features.append({
+            "type": "Feature",
+            "properties": {
+                "depth_m": line.level,
+                "stroke": settings.major_color if line.is_major else settings.minor_color,
+                "stroke-width": settings.major_width_px if line.is_major else settings.minor_width_px,
+                "stroke-opacity": settings.major_opacity if line.is_major else settings.minor_opacity,
+            },
+            "geometry": {"type": "LineString", "coordinates": np.column_stack([lon, lat]).round(7).tolist()},
+        })
+    return {"type": "FeatureCollection", "features": features}
+
+
 def process(csv_paths, polygon_latlon, settings, out_tif, out_preview, tides=None, exclude=None,
-            exclude_overlaps=None, tide_series=None):
-    """Run the full pipeline and write the GeoTIFF + PNG preview.
+            exclude_overlaps=None, tide_series=None, out_geojson=None):
+    """Run the full pipeline and write the GeoTIFF + PNG preview, and the contours as GeoJSON when asked.
 
     Returns a JSON-serialisable summary including WGS 84 bounds of the preview
     and the data-quality report for the soundings that were meshed.
@@ -1159,6 +1181,9 @@ def process(csv_paths, polygon_latlon, settings, out_tif, out_preview, tides=Non
     img, ulx, uly, px = render(lines, surface, settings)
     _save_geotiff(img, out_tif, ulx, uly, px, surface.epsg)
     img.save(out_preview, format="PNG", optimize=True)
+    if out_geojson:
+        with open(out_geojson, "w") as f:
+            json.dump(contours_geojson(lines, surface.epsg, settings), f)
 
     w, h = img.size
     ce = np.array([ulx, ulx + w * px, ulx + w * px, ulx])

@@ -59,26 +59,20 @@ The extension watches for this:
 - **Re-detect Ping** asks BlueOS to look again. When BlueOS lists no Ping, the extension restarts the BlueOS Ping service (through BlueOS Commander) so it probes the ports again; this takes about 10–15 seconds. If BlueOS already lists the Ping, nothing is restarted and the banner explains what to check instead.
 - If a recording has gone 6 seconds without any depth, the extension re-detects once automatically.
 
-### Cockpit Widget Integration
+### Cockpit Integration
 
-The Cockpit IFrame widget must point at the extension's **direct service port**, not
-the reverse-proxy path. Find the port in BlueOS:
+The extension tells Cockpit what it offers through `cockpit_extras.json`:
 
-1. Enable **Pirate Mode** in BlueOS (bottom of the main menu).
-2. Go to **Available Services** and locate the **Simple Ping Survey** service. Note
-   the port it is exposed on (for example `32772` — the port is assigned by BlueOS and
-   may change if the extension is reinstalled/updated).
-3. In Cockpit's edit interface, add a new **IFrame** widget and set its URL to:
+- **The widget**, listed in Cockpit's edit menu with the other extension widgets.
+- **Survey maps**, a connection Cockpit offers in its *BlueOS Extension Features* dialog
+  (Connections tab). Once connected, the latest post-mission contours appear on Cockpit's
+  Map widget, Mission Planning view and MiniMap as a "Survey contours" overlay, which can be
+  toggled from the map's layer control. This needs a Cockpit version with
+  extension map overlays; older versions ignore it.
 
-```
-http://<vehicle-ip>:<port>/widget
-```
-
-For example: `http://192.168.1.68:32772/widget`
-
-> Tip: The widget URL shown at the bottom of the main extension interface is only
-> correct if you opened the extension via its direct port. If you reached it through
-> the BlueOS reverse proxy, use the Pirate Mode / Available Services port instead.
+To add the widget by hand instead, create an **IFrame** widget with the URL
+`http://<vehicle-ip>/extensionv2/simplepingsurvey/widget`. It stays the same across
+restarts and updates, unlike the extension's port.
 
 The widget provides:
 - Beam width and depth as prominent readouts

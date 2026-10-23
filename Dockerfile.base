@@ -2,6 +2,7 @@ FROM python:3.11-slim
 
 # Runtime dependencies.
 # - flask + requests: web backend and BlueOS/mavlink2rest access
+# - flask-sock: the WebSocket that puts surveys on Cockpit's maps
 # - numpy + scipy + contourpy + Pillow: post-mission processing (TIN mesh,
 #   contour tracing, and rendering the transparent contour GeoTIFF). GeoTIFF tags
 #   are written by hand with Pillow, so no GDAL/PROJ is needed.
@@ -24,6 +25,7 @@ RUN if [ "$(uname -m)" = "armv7l" ]; then \
     pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir --prefer-binary --only-binary=numpy,scipy,contourpy,Pillow \
         flask==2.3.3 \
+        flask-sock==0.7.0 \
         requests==2.28.2 \
         numpy==1.26.4 \
         scipy==1.13.1 \
@@ -40,7 +42,7 @@ RUN missing=$(find /usr/local/lib/python3.11/site-packages -name '*.cpython-*.so
 
 # Verify the runtime dependencies import cleanly, including the submodules post-mission
 # processing uses (and Pillow has FreeType for labels)
-RUN python3 -c "import flask, requests, numpy, scipy, contourpy, PIL; from PIL import features; \
+RUN python3 -c "import flask, flask_sock, requests, numpy, scipy, contourpy, PIL; from PIL import features; \
 import scipy.spatial, scipy.ndimage, scipy.interpolate, PIL.Image, PIL.ImageDraw, PIL.ImageFont, PIL.TiffImagePlugin; \
 assert features.check('freetype2'), 'Pillow built without FreeType'; \
 print(f'flask {flask.__version__}, numpy {numpy.__version__}, scipy {scipy.__version__}, contourpy {contourpy.__version__}, Pillow {PIL.__version__}')"

@@ -47,6 +47,7 @@ def _forget_distance_sensor():
     _urls_cache = None
 
 
+import cockpit_link
 import sonar_watchdog
 sonar = sonar_watchdog.SonarWatchdog(on_redetected=_forget_distance_sensor)
 _CACHE_SIZE_CHECK_INTERVAL = 60  # Only recalculate cache size every 60 seconds
@@ -686,8 +687,27 @@ def servicenames():
     "version": "1.3.1",
     "webpage": "https://github.com/vshie/pingSurvey",
     "api": "https://github.com/bluerobotics/BlueOS-docker",
-    "works_in_relative_paths": true}
+    "works_in_relative_paths": true,
+    "extras": {"cockpit": "/cockpit_extras.json"}}
     '''
+
+
+@app.route('/cockpit_extras.json')
+def cockpit_extras():
+    """Features this extension offers Cockpit: its widget, and the socket that puts surveys on Cockpit's maps."""
+    extras = {
+        "targetCockpitApiVersion": "1.0.0",
+        "targetSystem": "Cockpit",
+        "widgets": [{
+            "name": "Ping Survey",
+            "iframeUrl": "/widget",
+            "iconUrl": "/static/BB.png",
+            "useExtensionPathAsBaseUrl": True,
+        }],
+    }
+    if cockpit.available:
+        extras["webSockets"] = [{"name": "Survey maps", "path": "/cockpit_ws"}]
+    return jsonify(extras)
     
 
 @app.route('/download')
@@ -1122,13 +1142,15 @@ def process_contours():
         tmp = os.path.join(PROCESSED_DIR, f".processing_{os.getpid()}_{threading.get_ident()}")
         started = time.time()
         summary = contour_processing.process(paths, polygon, settings, tmp + '.tif', tmp + '.png',
-                                             manual_tides, exclude, overlaps, series)
+                                             manual_tides, exclude, overlaps, series, tmp + '.geojson')
         effective = contour_processing.ContourSettings.from_dict(summary['settings'])
         base = _output_basename(paths, effective)
         tif = os.path.join(PROCESSED_DIR, base + '.tif')
         preview = os.path.join(PROCESSED_DIR, base + '_preview.png')
         os.replace(tmp + '.tif', tif)
         os.replace(tmp + '.png', preview)
+        geojson = os.path.join(PROCESSED_DIR, base + '.geojson')
+        os.replace(tmp + '.geojson', geojson)
     except ValueError as e:  # includes ProcessingError
         return jsonify({'error': str(e)}), 400
     except Exception as e:
@@ -1138,6 +1160,7 @@ def process_contours():
     summary.update({
         'tif': os.path.basename(tif),
         'preview': os.path.basename(preview),
+        'geojson': os.path.basename(geojson),
         'source_files': [os.path.basename(p) for p in paths],
         'polygon': polygon,
         'tides': manual_tides,
@@ -1153,6 +1176,9 @@ def process_contours():
         json.dump(summary, f)
     _remove_other_outputs(base)
     print(f"Generated {summary['tif']} in {summary['elapsed_s']}s")
+    contours = _contours_message(summary)
+    if contours:
+        cockpit.send(contours)
     return jsonify(summary)
 
 
@@ -1236,6 +1262,12 @@ def tide_config_test():
 @app.route('/processed_files')
 def processed_files():
     """Return the most recently generated contour GeoTIFF (only one is kept)."""
+    latest = _latest_output()
+    return jsonify({'files': [latest] if latest else []})
+
+
+def _latest_output():
+    """Metadata of the most recently generated contour output, or None when there is none."""
     latest = None
     if os.path.isdir(PROCESSED_DIR):
         for f in os.listdir(PROCESSED_DIR):
@@ -1250,7 +1282,35 @@ def processed_files():
                 continue
             if latest is None or meta.get('created', 0) > latest.get('created', 0):
                 latest = meta
-    return jsonify({'files': [latest] if latest else []})
+    return latest
+
+
+# Cockpit overlay ids are shared by every extension, so ours carry the extension's name.
+CONTOURS_OVERLAY_ID = 'pingsurvey-contours'
+
+
+def _contours_message(meta):
+    """The Cockpit command that shows an output's contour lines, or None when it has no GeoJSON."""
+    geojson_name = (meta or {}).get('geojson')
+    if not geojson_name:
+        return None
+    try:
+        with open(os.path.join(PROCESSED_DIR, geojson_name)) as f:
+            geojson = json.load(f)
+    except (OSError, ValueError) as e:
+        print(f"Could not read {geojson_name} for Cockpit: {e}")
+        return None
+    return {'type': 'cockpit:setMapOverlay',
+            'overlay': {'id': CONTOURS_OVERLAY_ID, 'name': 'Survey contours', 'geojson': geojson}}
+
+
+def _cockpit_snapshot():
+    """Messages that bring a newly connected Cockpit up to date."""
+    contours = _contours_message(_latest_output())
+    return [contours] if contours else []
+
+
+cockpit = cockpit_link.CockpitLink(app, '/cockpit_ws', _cockpit_snapshot)
 
 
 @app.route('/processed/<path:filename>')
