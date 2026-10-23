@@ -66,8 +66,10 @@ The extension tells Cockpit what it offers through `cockpit_extras.json`:
 - **The widget**, listed in Cockpit's edit menu with the other extension widgets.
 - **Survey maps**, a connection Cockpit offers in its *BlueOS Extension Features* dialog
   (Connections tab). Once connected, the latest post-mission contours appear on Cockpit's
-  Map widget, Mission Planning view and MiniMap as a "Survey contours" overlay, which can be
-  toggled from the map's layer control. This needs a Cockpit version with
+  Map widget, Mission Planning view and MiniMap as a "Survey contours" overlay, and while
+  recording (or simulating) each new sounding is drawn live as a "Live soundings" overlay,
+  coloured by depth and filtered by the same confidence threshold as post-processing.
+  Both can be toggled from the map's layer control. This needs a Cockpit version with
   extension map overlays; older versions ignore it.
 
 To add the widget by hand instead, create an **IFrame** widget with the URL

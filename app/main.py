@@ -531,6 +531,7 @@ def main():
             sonar.record_row(distance_json, distance)
             with _state_lock:
                 data = row
+            _live_sounding(row)
             with open(current_log_file, 'a', newline='') as csvfile:
                 writer = csv.writer(csvfile)
                 if csvfile.tell() == 0:
@@ -573,6 +574,7 @@ def start_logging():
     with _state_lock:
         if not logging_active:
             logging_active = True
+            _live_start()
             thread = threading.Thread(target=_run_logger, daemon=True)
             thread.start()
     return 'Started'
@@ -616,6 +618,7 @@ def start_simulation():
                     simulation_active = True
                     simulation_index = 0
                     data = simulation_data[0]
+                _live_start()
                 
                 thread = threading.Thread(target=simulation_loop, daemon=True)
                 thread.start()
@@ -652,9 +655,13 @@ def simulation_loop():
                     padded_row.append("-1")    # Pos/Depth Delta (ms) unknown
                     with _state_lock:
                         data = padded_row
-                
+                _live_sounding(current_row)
+
                 with _state_lock:
                     simulation_index = (simulation_index + 1) % len(simulation_data)
+                # The playback loops, so each pass starts a fresh live survey instead of drawing over the last.
+                if simulation_index == 0:
+                    _live_start()
             except Exception as e:
                 print(f"Error in simulation loop: {str(e)}")
                 with _state_lock:
@@ -1304,10 +1311,90 @@ def _contours_message(meta):
             'overlay': {'id': CONTOURS_OVERLAY_ID, 'name': 'Survey contours', 'geojson': geojson}}
 
 
+LIVE_OVERLAY_ID = 'pingsurvey-live'
+# The same default as post-mission processing, so the live view shows the soundings the contours would use.
+LIVE_MIN_CONFIDENCE = contour_processing.ContourSettings().min_conf if contour_processing else 95.0
+# Each sounding is drawn as the sonar's footprint on the seabed, like the post-mission map does.
+_LIVE_HALF_BEAM_TAN = math.tan(math.radians((contour_processing.BEAM_WIDTH_DEG if contour_processing else 25.0) / 2))
+# How far past the deepest/shallowest sounding so far the colour scale reaches, so it is widened (and every
+# sounding re-sent) only now and then rather than on every new extreme.
+_LIVE_RANGE_MARGIN_M = 1.0
+# Viridis reversed: shallow is yellow, deep is purple.
+_DEPTH_COLORS = ['#fde725', '#b5de2b', '#6ece58', '#35b779', '#1f9e89', '#26828e', '#31688e', '#3e4989',
+                 '#482878', '#440154']
+
+_live_lock = threading.Lock()
+_live_soundings = []        # (lat, lon, depth_m) of this session's accepted soundings
+_live_depth_range = None    # (shallowest, deepest) the colours are spread over; None until the first sounding
+
+
+def _sounding_feature(lat, lon, depth, depth_range):
+    lo, hi = depth_range
+    index = round((depth - lo) / (hi - lo) * (len(_DEPTH_COLORS) - 1))
+    color = _DEPTH_COLORS[min(max(index, 0), len(_DEPTH_COLORS) - 1)]
+    return {
+        'type': 'Feature',
+        # Outline in the depth colour with only a faint fill, so overlap between passes stays readable.
+        'properties': {'depth_m': round(depth, 2), 'radius': round(depth * _LIVE_HALF_BEAM_TAN, 2),
+                       'stroke': color, 'stroke-width': 1.5, 'stroke-opacity': 0.9,
+                       'fill': color, 'fill-opacity': 0.12},
+        'geometry': {'type': 'Point', 'coordinates': [lon, lat]},
+    }
+
+
+def _live_overlay_message():
+    """The Cockpit command that draws every live sounding so far. Call with _live_lock held."""
+    features = [_sounding_feature(lat, lon, depth, _live_depth_range) for lat, lon, depth in _live_soundings]
+    return {'type': 'cockpit:setMapOverlay',
+            'overlay': {'id': LIVE_OVERLAY_ID, 'name': 'Live soundings', 'live': True,
+                        'geojson': {'type': 'FeatureCollection', 'features': features}}}
+
+
+def _live_start():
+    """Start a new live survey on Cockpit's maps, dropping the previous one's soundings."""
+    global _live_depth_range
+    with _live_lock:
+        _live_soundings.clear()
+        _live_depth_range = None
+        message = _live_overlay_message()
+    cockpit.send(message)
+
+
+def _live_sounding(row):
+    """Draw a logged (or simulated) row on Cockpit's maps, when it is a sounding post-processing would use."""
+    global _live_depth_range
+    try:
+        depth = float(row[3]) / 100
+        confidence = float(row[4])
+        lat, lon = float(row[8]), float(row[9])
+    except (IndexError, ValueError):
+        return
+    if depth <= 0 or confidence < LIVE_MIN_CONFIDENCE or (lat == 0 and lon == 0):
+        return
+    with _live_lock:
+        _live_soundings.append((lat, lon, depth))
+        if _live_depth_range and _live_depth_range[0] <= depth <= _live_depth_range[1]:
+            message = {'type': 'cockpit:appendMapOverlayFeatures', 'id': LIVE_OVERLAY_ID,
+                       'features': [_sounding_feature(lat, lon, depth, _live_depth_range)]}
+        else:
+            # Re-sending everything keeps one colour per depth for the whole survey. The first sounding of a
+            # session always lands here, which also creates the overlay on a Cockpit that has none yet.
+            lo, hi = _live_depth_range or (depth, depth)
+            _live_depth_range = (min(lo, depth - _LIVE_RANGE_MARGIN_M), max(hi, depth + _LIVE_RANGE_MARGIN_M))
+            message = _live_overlay_message()
+    cockpit.send(message)
+
+
 def _cockpit_snapshot():
     """Messages that bring a newly connected Cockpit up to date."""
+    messages = []
     contours = _contours_message(_latest_output())
-    return [contours] if contours else []
+    if contours:
+        messages.append(contours)
+    with _live_lock:
+        if _live_soundings:
+            messages.append(_live_overlay_message())
+    return messages
 
 
 cockpit = cockpit_link.CockpitLink(app, '/cockpit_ws', _cockpit_snapshot)
