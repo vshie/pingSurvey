@@ -685,7 +685,8 @@ def servicenames():
     "company": "Blue Robotics",
     "version": "1.3.1",
     "webpage": "https://github.com/vshie/pingSurvey",
-    "api": "https://github.com/bluerobotics/BlueOS-docker"}
+    "api": "https://github.com/bluerobotics/BlueOS-docker",
+    "works_in_relative_paths": true}
     '''
     
 

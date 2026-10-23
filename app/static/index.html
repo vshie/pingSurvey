@@ -945,18 +945,18 @@
             }
         }
     </style>
-    <link href="/static/css/materialdesignicons.min.css" rel="stylesheet">
-    <link href="/static/css/vuetify.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/leaflet.css" />
+    <link href="static/css/materialdesignicons.min.css" rel="stylesheet">
+    <link href="static/css/vuetify.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="static/css/leaflet.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 </head>
 <body>
     <div id="app">
         <v-app>
             <div class="header">
-                <img class="logo" :class="{ 'rotate': receivingData }" src="/static/BRlogo.png" alt="Logo">
+                <img class="logo" :class="{ 'rotate': receivingData }" src="static/BRlogo.png" alt="Logo">
                 <h1 class="title">Simple Ping Survey Extension</h1>
-                <img class="logo" :class="{ 'rotate': receivingData }" src="/static/BRlogo.png" alt="Logo">
+                <img class="logo" :class="{ 'rotate': receivingData }" src="static/BRlogo.png" alt="Logo">
             </div>
             
             <v-tabs v-model="activeTab" class="main-tabs" background-color="#1E1E1E" color="#4CAF50" grow @change="onTabChange">
@@ -980,7 +980,7 @@
                                     <div v-for="f in pm.logFiles" :key="f.filename">
                                         <div class="pm-file-row">
                                             <v-checkbox v-model="pm.selectedFiles" :value="f.filename" :label="f.filename" dense hide-details color="#4CAF50" @change="pmLoadPoints"></v-checkbox>
-                                            <v-btn icon x-small :href="'/log_file/' + encodeURIComponent(f.filename)" title="Download raw CSV"><v-icon small>mdi-download</v-icon></v-btn>
+                                            <v-btn icon x-small :href="'log_file/' + encodeURIComponent(f.filename)" title="Download raw CSV"><v-icon small>mdi-download</v-icon></v-btn>
                                         </div>
                                         <div class="pm-file-meta">{{ pmFormatDate(f.modified) }} · {{ f.size_mb }} MB</div>
                                         <div v-if="pm.selectedFiles.includes(f.filename) && pmDataWarning(f.filename)" class="pm-file-warning">{{ pmDataWarning(f.filename) }}</div>
@@ -1350,7 +1350,7 @@
                                     </div>
                                     <div class="pm-stat" v-if="pmResultTideNote">{{ pmResultTideNote }}</div>
                                     <div class="pm-stat" v-if="pmResultQualityNote">{{ pmResultQualityNote }}</div>
-                                    <v-btn block color="primary" class="mt-2" :href="'/processed/' + encodeURIComponent(pm.result.tif)">
+                                    <v-btn block color="primary" class="mt-2" :href="'processed/' + encodeURIComponent(pm.result.tif)">
                                         <v-icon left>mdi-download</v-icon>Download GeoTIFF ({{ pm.result.size_mb }} MB)
                                     </v-btn>
                                     <div class="pm-hint mt-2">Load the GeoTIFF in Cockpit as a map background layer. The image is transparent apart from the contour lines and labels. Generating again replaces this file.</div>
@@ -1604,12 +1604,12 @@
 
     </div>
 
-    <script src="/static/js/vue.js"></script>
-    <script src="/static/js/vuetify.js"></script>
-    <script src="/static/js/axios.min.js"></script>
-    <script src="/static/js/leaflet.js"></script>
+    <script src="static/js/vue.js"></script>
+    <script src="static/js/vuetify.js"></script>
+    <script src="static/js/axios.min.js"></script>
+    <script src="static/js/leaflet.js"></script>
 
-    <script src="/static/js/leaflet-heat.js"></script>
+    <script src="static/js/leaflet-heat.js"></script>
     <script>
 
         // Post-mission processing defaults (mirror ContourSettings in contour_processing.py)
@@ -1771,7 +1771,7 @@
                     selectedMapSource: 'arcgis',
 
                     customIcon: L.icon({
-                        iconUrl: '/static/BB.png',
+                        iconUrl: 'static/BB.png',
                         iconSize: [32, 45],
                         iconAnchor: [12, 26]
                     }),
@@ -2165,7 +2165,7 @@
                 },
                 async pmLoadLogFiles() {
                     try {
-                        const response = await axios.get('/log_files');
+                        const response = await axios.get('log_files');
                         this.pm.logFiles = response.data.files || [];
                         const names = new Set(this.pm.logFiles.map(f => f.filename));
                         const kept = this.pm.selectedFiles.filter(n => names.has(n));
@@ -2182,7 +2182,7 @@
                     // when the tab opens so the download always matches the preview.
                     if (this.pm.result) return;
                     try {
-                        const response = await axios.get('/processed_files');
+                        const response = await axios.get('processed_files');
                         const latest = (response.data.files || [])[0];
                         if (latest) await this.pmRestoreFrom(latest);
                     } catch (e) {
@@ -2200,7 +2200,7 @@
                         return;
                     }
                     try {
-                        const response = await axios.get('/log_points', { params: { files: this.pm.selectedFiles.join(',') } });
+                        const response = await axios.get('log_points', { params: { files: this.pm.selectedFiles.join(',') } });
                         this.pm.points = Object.freeze(response.data.points);
                         this.pm.files = response.data.files || [];
                         this.pm.pointsTotal = response.data.total;
@@ -2363,7 +2363,7 @@
                     this.pm.processing = true;
                     this.pm.error = '';
                     try {
-                        const response = await axios.post('/process_contours', {
+                        const response = await axios.post('process_contours', {
                             files: this.pm.selectedFiles,
                             polygon: this.pm.polygon.length >= 3 ? this.pm.polygon : null,
                             settings: this.pm.settings,
@@ -2388,7 +2388,7 @@
                         L_.overlay = null;
                     }
                     if (!o || !L_.map || !this.pm.showContours) return;
-                    L_.overlay = L.imageOverlay('/processed/' + encodeURIComponent(o.preview) + '?t=' + o.created, o.bounds, { interactive: false }).addTo(L_.map);
+                    L_.overlay = L.imageOverlay('processed/' + encodeURIComponent(o.preview) + '?t=' + o.created, o.bounds, { interactive: false }).addTo(L_.map);
                 },
                 async pmRestoreFrom(o) {
                     this.pm.result = o;
@@ -2458,7 +2458,7 @@
                 async pmRunQc(req) {
                     this.pm.qcLoading = true;
                     try {
-                        const response = await axios.post('/log_qc', JSON.parse(req));
+                        const response = await axios.post('log_qc', JSON.parse(req));
                         if (req !== this.pmQcRequest) return;   // inputs changed while running
                         const tuned = response.data.tuned;
                         if (tuned && this.pm.settings.auto_tune) {
@@ -2653,7 +2653,7 @@
                     if (!req) return;
                     this.pm.tideLoading = true;
                     try {
-                        const response = await axios.post('/tide_fetch', Object.assign(JSON.parse(req), { refresh: !!refresh }));
+                        const response = await axios.post('tide_fetch', Object.assign(JSON.parse(req), { refresh: !!refresh }));
                         if (req !== this.pmTideRequest) return;
                         this.pm.tideInfo = response.data.files || {};
                         const errors = Object.values(this.pm.tideInfo).filter(t => t.error);
@@ -2686,26 +2686,26 @@
                 },
                 async pmLoadTideConfig() {
                     try {
-                        const response = await axios.get('/tide_config');
+                        const response = await axios.get('tide_config');
                         this.pm.tideConfig = response.data;
                     } catch (e) { /* older backend */ }
                 },
                 async pmSaveWorldTidesKey() {
-                    const response = await axios.post('/tide_config', { worldtides_key: this.pm.worldTidesKeyInput });
+                    const response = await axios.post('tide_config', { worldtides_key: this.pm.worldTidesKeyInput });
                     this.pm.tideConfig = response.data;
                     this.pm.worldTidesKeyInput = '';
                     this.pm.worldTidesStatus = 'Key saved on the vehicle.';
                     this.pmFetchTides(true);
                 },
                 async pmClearWorldTidesKey() {
-                    const response = await axios.post('/tide_config', { worldtides_key: '' });
+                    const response = await axios.post('tide_config', { worldtides_key: '' });
                     this.pm.tideConfig = response.data;
                     this.pm.worldTidesStatus = 'Key removed.';
                 },
                 async pmTestWorldTidesKey() {
                     this.pm.worldTidesTesting = true;
                     try {
-                        const response = await axios.post('/tide_config/test', { worldtides_key: this.pm.worldTidesKeyInput });
+                        const response = await axios.post('tide_config/test', { worldtides_key: this.pm.worldTidesKeyInput });
                         const n = response.data.call_count;
                         this.pm.worldTidesStatus = 'Key works' + (n !== undefined && n !== null ? ` (this test used ${n} credit${n === 1 ? '' : 's'}).` : '.');
                     } catch (e) {
@@ -2745,7 +2745,7 @@
                 },
                 async start() {
                     try {
-                        const response = await fetch('/start');
+                        const response = await fetch('start');
                         if (!response.ok) {
                             throw new Error(`HTTP error! Status: ${response.status}`);
                         }
@@ -2765,7 +2765,7 @@
                 },
                 async stop() {
                     try {
-                        const response = await fetch('/stop');
+                        const response = await fetch('stop');
                         if (!response.ok) {
                             throw new Error(`HTTP error! Status: ${response.status}`);
                         }
@@ -2784,7 +2784,7 @@
                 },
                 async download() {
                     try {
-                        const response = await fetch('/download');
+                        const response = await fetch('download');
                         if (!response.ok) {
                             throw new Error(`HTTP error! Status: ${response.status}`);
                         }
@@ -2810,7 +2810,7 @@
                 },
                 async fetchData() {
                     try {
-                        const response = await axios.get('/data');
+                        const response = await axios.get('data');
                         
                         // Make sure we have valid data to work with (should always be 11 points)
                         if (!response.data || !Array.isArray(response.data) || response.data.length < 11) {
@@ -2961,10 +2961,10 @@
                 async pollSonar() {
                     try {
                         if (this.run) {
-                            const response = await axios.get('/status');
+                            const response = await axios.get('status');
                             this.sonarStatus = response.data.sonar || null;
                         } else if (!this.simulationActive) {
-                            const response = await axios.get('/sonar_check');
+                            const response = await axios.get('sonar_check');
                             this.sonarCheck = response.data;
                         }
                     } catch (error) {
@@ -2977,7 +2977,7 @@
                 },
                 async redetectPing() {
                     try {
-                        const response = await axios.post('/sonar_redetect');
+                        const response = await axios.post('sonar_redetect');
                         this.applyRedetect(response.data.redetect);
                     } catch (error) {
                         if (error.response && error.response.data && error.response.data.redetect) {
@@ -2998,7 +2998,7 @@
                 },
                 async checkLoggingStatus() {
                     try {
-                        const response = await axios.get('/status');
+                        const response = await axios.get('status');
                         if (response.data.logging_active) {
                             this.run = true;
                             this.icon = 'mdi-stop';
@@ -3064,7 +3064,7 @@
                 async getCacheStats() {
                     this.cacheLoading = true;
                     try {
-                        const response = await fetch('/cache_stats');
+                        const response = await fetch('cache_stats');
                         const stats = await response.json();
                         console.log('Cache stats received:', stats);
                         // Convert backend snake_case to frontend camelCase
@@ -3263,7 +3263,7 @@
                 },
                 async checkTileCached(z, x, y) {
                     try {
-                        const response = await fetch(`/tile_cached/${z}/${x}/${y}`);
+                        const response = await fetch(`tile_cached/${z}/${x}/${y}`);
                         const data = await response.json();
                         return data.cached;
                     } catch (error) {
@@ -3274,7 +3274,7 @@
                 async cacheTile(z, x, y) {
                     try {
                         console.log(`Attempting to cache tile: ${z}/${x}/${y}`);
-                        const response = await fetch(`/tiles/${z}/${x}/${y}.png?source=${this.selectedMapSource}`);
+                        const response = await fetch(`tiles/${z}/${x}/${y}.png?source=${this.selectedMapSource}`);
                         const success = response.ok;
                         console.log(`Tile ${z}/${x}/${y} cache result: ${success ? 'SUCCESS' : 'FAILED'} (${response.status})`);
                         return success;
@@ -3300,7 +3300,7 @@
                 },
                 async clearCache() {
                     try {
-                        const response = await fetch('/clear_cache');
+                        const response = await fetch('clear_cache');
                         const result = await response.json();
                         alert(result.message);
                         await this.getCacheStats();
@@ -3312,7 +3312,7 @@
                 createOfflineTileLayer() {
                     // Create a custom tile layer that uses our offline-capable backend
                     const sourceConfig = this.mapSources[this.selectedMapSource];
-                    const tileUrl = `/tiles/{z}/{x}/{y}.png?source=${this.selectedMapSource}`;
+                    const tileUrl = `tiles/{z}/{x}/{y}.png?source=${this.selectedMapSource}`;
                     console.log('Creating tile layer with URL:', tileUrl);
                     
                     const tileLayer = L.tileLayer(tileUrl, {
@@ -3358,7 +3358,7 @@
                 },
                 async getRecentCachedArea() {
                     try {
-                        const response = await fetch('/recent_cached_area');
+                        const response = await fetch('recent_cached_area');
                         const data = await response.json();
                         this.recentCachedArea = data;
                         
@@ -3397,7 +3397,7 @@
                 },
                 async loadMapSources() {
                     try {
-                        const response = await fetch('/map_sources');
+                        const response = await fetch('map_sources');
                         const sources = await response.json();
                         if (sources && Object.keys(sources).length > 0) {
                             this.mapSources = sources;
@@ -3657,7 +3657,7 @@
                 },
                 async startSimulation() {
                     try {
-                        const response = await fetch('/start_simulation');
+                        const response = await fetch('start_simulation');
                         const result = await response.json();
                         if (result.success) {
                             this.simulationActive = true;
@@ -3676,7 +3676,7 @@
                 },
                 async stopSimulation() {
                     try {
-                        const response = await fetch('/stop_simulation');
+                        const response = await fetch('stop_simulation');
                         const result = await response.json();
                         this.simulationActive = false;
                         this.receivingData = false;
@@ -3739,7 +3739,11 @@
                 // isn't knowable from here, so show a <PORT> placeholder plus a hint.
                 const loc = window.location;
                 const proxied = loc.pathname.includes('/extension/');
-                if (!proxied && loc.port) {
+                if (loc.pathname.includes('/extensionv2/')) {
+                    // BlueOS's /extensionv2/<name>/ route is stable across restarts, unlike the host port.
+                    this.widgetUrl = new URL('widget', loc.href).href;
+                    this.widgetUrlDirect = true;
+                } else if (!proxied && loc.port) {
                     this.widgetUrl = `${loc.origin}/widget`;
                     this.widgetUrlDirect = true;
                 } else {

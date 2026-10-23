@@ -238,7 +238,7 @@
             flex-shrink: 0;
         }
     </style>
-    <link href="/static/css/materialdesignicons.min.css" rel="stylesheet">
+    <link href="static/css/materialdesignicons.min.css" rel="stylesheet">
     <meta name="viewport" content="width=device-width, initial-scale=1">
 </head>
 <body>
@@ -312,8 +312,8 @@
         </div>
     </div>
 
-    <script src="/static/js/vue.js"></script>
-    <script src="/static/js/axios.min.js"></script>
+    <script src="static/js/vue.js"></script>
+    <script src="static/js/axios.min.js"></script>
     <script>
         new Vue({
             el: '#app',
@@ -365,13 +365,13 @@
                     this.isLoading = true;
                     try {
                         if (!this.run) {
-                            const response = await fetch('/start');
+                            const response = await fetch('start');
                             if (!response.ok) throw new Error('Failed to start');
                             this.run = true;
                             this.status = 'Recording...';
                             this.intervalId = setInterval(this.fetchData, 500);
                         } else {
-                            const response = await fetch('/stop');
+                            const response = await fetch('stop');
                             if (!response.ok) throw new Error('Failed to stop');
                             this.run = false;
                             this.status = 'Stopped';
@@ -387,7 +387,7 @@
                 async download() {
                     try {
                         this.status = 'Downloading...';
-                        const response = await fetch('/download');
+                        const response = await fetch('download');
                         if (!response.ok) throw new Error('No data');
 
                         const blob = await response.blob();
@@ -408,7 +408,7 @@
 
                 async fetchData() {
                     try {
-                        const response = await axios.get('/data');
+                        const response = await axios.get('data');
                         const data = response.data;
 
                         if (data && Array.isArray(data) && data.length >= 8) {
@@ -440,7 +440,7 @@
 
                 async pollSonar() {
                     try {
-                        const response = await axios.get('/status');
+                        const response = await axios.get('status');
                         this.sonar = response.data.sonar || {};
                         if (!response.data.logging_active && this.run) {
                             this.run = false;
@@ -456,7 +456,7 @@
 
                 async redetectPing() {
                     try {
-                        const response = await axios.post('/sonar_redetect');
+                        const response = await axios.post('sonar_redetect');
                         this.sonar = Object.assign({}, this.sonar, { redetect: response.data.redetect });
                     } catch (error) {
                         const r = error.response && error.response.data && error.response.data.redetect;
@@ -466,7 +466,7 @@
 
                 async checkStatus() {
                     try {
-                        const response = await axios.get('/status');
+                        const response = await axios.get('status');
                         if (response.data.logging_active) {
                             this.run = true;
                             this.status = 'Recording...';
