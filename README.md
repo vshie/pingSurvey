@@ -70,7 +70,8 @@ The extension tells Cockpit what it offers through `cockpit_extras.json`:
   recording (or simulating) each new sounding is drawn live as a "Live soundings" overlay,
   coloured by depth and filtered by the same confidence threshold as post-processing.
   Both can be toggled from the map's layer control. This needs a Cockpit version with
-  extension map overlays; older versions ignore it.
+  extension map overlays; older versions ignore it (see
+  [Getting live data in Cockpit](#getting-live-data-in-cockpit)).
 
 To add the widget by hand instead, create an **IFrame** widget with the URL
 `http://<vehicle-ip>/extensionv2/simplepingsurvey/widget`. It stays the same across
@@ -81,6 +82,33 @@ The widget provides:
 - Full sensor readings (confidence, heading, roll/pitch, altitude, position)
 - Start/Stop and Download controls
 - Recording status indicator
+
+#### Getting live data in Cockpit
+
+> **Not in a Cockpit release yet.** The survey map overlays and the Connections tab come from
+> [bluerobotics/cockpit#3271](https://github.com/bluerobotics/cockpit/pull/3271), which is
+> still open. Until it is merged and released, use a test build of Cockpit from that pull
+> request. Released versions of Cockpit show the widget but not the survey maps.
+
+1. Connect Cockpit to the vehicle.
+2. Open the **Extension features** dialog, go to the **Connections** tab and press
+   **Connect** next to "Survey maps". The connection is saved under **Settings → General →
+   Generic WebSocket connections** and follows the vehicle if its address changes. To add it
+   by hand, use `ws://{{ vehicle-address }}/extensionv2/simplepingsurvey/cockpit_ws`.
+3. **Live soundings:** start recording (or a simulation). Each sounding with a GPS fix, a depth
+   and enough confidence is drawn on the Map widget and in Mission Planning as the sonar's
+   footprint on the seabed, to scale and coloured by depth. This overlay is live only, so it
+   is not kept when Cockpit reloads.
+4. **Contours:** run **Generate** in Post-Mission Processing. A "Survey contours" overlay
+   appears. It is saved on that computer, so it comes back after a reload even with the
+   extension stopped.
+5. Toggle the overlays from the map's layer control, or remove one with right-click on the
+   map → **Manage overlays**. On the MiniMap, turn on **Show map overlays** to see them.
+
+If "Survey maps" is not offered, open
+`http://<vehicle-ip>/extensionv2/simplepingsurvey/cockpit_extras.json`. If it doesn't list
+`webSockets`, the extension's image was built without `flask-sock`; reinstall it after the
+base image has been rebuilt.
 
 ### Offline Map Caching
 
