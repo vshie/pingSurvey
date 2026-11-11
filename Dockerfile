@@ -1,5 +1,7 @@
-FROM vshie/simplepingsurvey-base:latest
-# Using updated base image with multi-platform manifest and compatible package versions
+FROM vshie/simplepingsurvey-base:mapmaker
+# This branch's own base image (built by build-base.yml on this branch): it includes the
+# numpy/scipy/contourpy/Pillow stack post-mission processing needs, which main's :latest does not.
+# Switch back to :latest when merging into main along with Dockerfile.base.
 
 # Copy application files (these change most frequently)
 COPY app /app

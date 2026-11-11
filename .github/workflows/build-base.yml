@@ -36,6 +36,15 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
+      # Branches need different dependencies (main is slim; mapmaker needs numpy/scipy for
+      # post-processing), so each gets its own base tag: main -> latest, other branches -> branch name.
+      # A shared tag let main's weekly scheduled build silently strip numpy from mapmaker's images.
+      - name: Choose base image tag
+        id: tag
+        run: |
+          if [ "$GITHUB_REF_NAME" = "main" ]; then tag=latest; else tag=$(echo "$GITHUB_REF_NAME" | tr '/' '-'); fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
       - name: Build and push base image (Multi-platform)
         uses: docker/build-push-action@v5
         timeout-minutes: 720  # 12 hours timeout for all architectures
@@ -43,7 +52,7 @@ jobs:
           context: .
           file: ./Dockerfile.base
           platforms: linux/amd64,linux/arm64,linux/arm/v7
-          push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/simplepingsurvey-base:latest
-          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/simplepingsurvey-base:latest
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ secrets.DOCKER_USERNAME }}/simplepingsurvey-base:${{ steps.tag.outputs.tag }}
+          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/simplepingsurvey-base:${{ steps.tag.outputs.tag }}
           cache-to: type=inline 
