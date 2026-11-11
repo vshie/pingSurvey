@@ -794,6 +794,32 @@
             cursor: move;
             touch-action: none;
         }
+        /* ---------- Measure tool (both maps) ---------- */
+        .measure-btn {
+            font-size: 18px;
+            line-height: 30px !important;
+            color: #333 !important;
+        }
+        .measure-btn--active {
+            background-color: #E91E63 !important;
+            color: white !important;
+        }
+        .leaflet-container.measuring,
+        .leaflet-container.measuring .leaflet-interactive {
+            cursor: crosshair !important;
+        }
+        .measure-label span {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            white-space: nowrap;
+            padding: 2px 8px;
+            border-radius: 4px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            font-size: 13px;
+            font-weight: 600;
+            pointer-events: none;
+        }
         .pm-tide {
             margin: -2px 0 8px 32px;
             padding: 6px 8px;
@@ -852,10 +878,41 @@
             margin: 4px 0;
         }
         .pm-qc-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
             font-size: 0.78rem;
             color: #ddd;
             cursor: pointer;
             padding: 2px 0;
+        }
+        .pm-qc-item__text {
+            flex: 1;
+            min-width: 0;
+        }
+        .pm-progress-stage {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            font-size: 0.8rem;
+            color: #ccc;
+            margin-top: 4px;
+        }
+        .pm-files-bar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .pm-files-frame {
+            flex: 1;
+            width: 100%;
+            min-height: 70vh;
+            border: 0;
+            border-radius: 8px;
+            background: #fff;
         }
         .pm-qc-item:hover {
             color: #4CAF50;
@@ -962,7 +1019,16 @@
             <v-tabs v-model="activeTab" class="main-tabs" background-color="#1E1E1E" color="#4CAF50" grow @change="onTabChange">
                 <v-tab><v-icon left small>mdi-radar</v-icon>Live Survey</v-tab>
                 <v-tab><v-icon left small>mdi-map-legend</v-icon>Post-Mission Processing</v-tab>
+                <v-tab><v-icon left small>mdi-folder-open</v-icon>Files</v-tab>
             </v-tabs>
+
+            <div class="content content--tabbed" v-show="activeTab === 2">
+                <div class="pm-files-bar">
+                    <span class="pm-hint">Survey logs and generated contours in BlueOS's <code>extensions/ping-survey</code> folder. Upload, download, rename or delete them here.</span>
+                    <v-btn x-small text :href="filesUrl" target="_blank" :disabled="!filesUrl"><v-icon left x-small>mdi-open-in-new</v-icon>Open in new window</v-btn>
+                </div>
+                <iframe v-if="filesUrl" :src="filesUrl" class="pm-files-frame" title="BlueOS file browser"></iframe>
+            </div>
 
             <div class="content content--tabbed" v-show="activeTab === 1">
                 <div class="pm-layout">
@@ -1135,42 +1201,47 @@
                                         </div>
                                     </div>
 
-                                    <div v-if="pm.qc.conflict_count && !pmIsIgnored('conflicts')" class="pm-qc-alert">
-                                        <div class="pm-qc-title"><v-icon small color="#ff5252">mdi-alert</v-icon> {{ pm.qc.conflict_count }} overlapping sounding pairs disagree</div>
+                                    <div v-if="pmConflictsRemaining && !pmIsIgnored('conflicts')" class="pm-qc-alert">
+                                        <div class="pm-qc-title"><v-icon small color="#ff5252">mdi-alert</v-icon> {{ pmConflictsRemaining }} overlapping sounding pair{{ pmConflictsRemaining > 1 ? 's' : '' }} disagree{{ pmConflictsRemaining > 1 ? '' : 's' }}</div>
                                         <div class="pm-qc-text">
                                             Soundings from different passes within {{ pm.settings.qc_radius_m }} m of each other differ by more than {{ pmDepthTolText }}
                                             (median {{ pm.qc.conflict_median_dz_m }} m vertically, {{ pm.qc.conflict_median_h_m }} m apart horizontally). Causes include a steep or uneven
                                             seabed within the sonar's {{ pmBeamWidth }}° beam footprint, a position error, or a bad return.
                                         </div>
                                         <div class="pm-qc-list">
-                                            <div v-for="(c, k) in pm.qc.conflicts.slice(0, 5)" :key="k" class="pm-qc-item" @click="pmZoomTo(c.a)">
+                                            <div v-for="c in pmConflictsShown.slice(0, 5)" :key="pmConflictId(c)" class="pm-qc-item" @click="pmZoomTo(c.a)">
                                                 <v-icon x-small>mdi-crosshairs</v-icon>
-                                                {{ c.h_m }} m apart · {{ c.dz_m }} m depth difference · {{ c.slope_pct }}% slope · confidence {{ c.a.conf }}% / {{ c.b.conf }}%
+                                                <span class="pm-qc-item__text">{{ c.h_m }} m apart · {{ c.dz_m }} m depth difference · {{ c.slope_pct }}% slope · confidence {{ c.a.conf }}% / {{ c.b.conf }}%</span>
+                                                <v-btn icon x-small title="Dismiss this pair" @click.stop="pmIgnore(pmConflictId(c))"><v-icon x-small>mdi-close</v-icon></v-btn>
                                             </div>
+                                            <div v-if="pmConflictsRemaining > pmConflictsShown.slice(0, 5).length" class="pm-hint">…and {{ pmConflictsRemaining - pmConflictsShown.slice(0, 5).length }} more</div>
                                         </div>
-                                        <div class="pm-hint">Click a red marker on the map to compare the two soundings and exclude the wrong one.</div>
+                                        <div class="pm-hint">Click a row to zoom to it; × dismisses it. Click a red marker on the map to compare the two soundings and exclude the wrong one.</div>
                                         <div class="pm-qc-actions">
-                                            <v-btn x-small text @click="pmIgnore('conflicts')">Ignore</v-btn>
+                                            <v-btn x-small text @click="pmIgnore('conflicts')"><v-icon left x-small>mdi-close-box-multiple-outline</v-icon>Dismiss all</v-btn>
                                         </div>
                                     </div>
 
-                                    <div v-if="pm.qc.spike_count && !pmIsIgnored('spikes')" class="pm-qc-alert">
+                                    <div v-if="pmSpikesRemaining && !pmIsIgnored('spikes')" class="pm-qc-alert">
                                         <div class="pm-qc-title">
                                             <v-icon small :color="pm.settings.exclude_spikes ? '#4CAF50' : 'orange'">{{ pm.settings.exclude_spikes ? 'mdi-check-circle' : 'mdi-alert' }}</v-icon>
-                                            {{ pm.qc.spike_count }} spike{{ pm.qc.spike_count > 1 ? 's' : '' }} along track{{ pm.settings.exclude_spikes ? ' (excluded from the mesh)' : '' }}
+                                            {{ pmSpikesRemaining }} spike{{ pmSpikesRemaining > 1 ? 's' : '' }} along track{{ pm.settings.exclude_spikes ? ' (excluded from the mesh)' : '' }}
                                         </div>
                                         <div class="pm-qc-text">
                                             Soundings further from the median of their neighbours on the same pass than {{ pm.settings.qc_spike_k }}× those neighbours' scatter (and at least {{ pm.settings.qc_spike_tol_m }} m); typically fish, bubbles, wake or multipath. Rough seabed raises the threshold locally so it isn't reported as spikes.
                                         </div>
                                         <div class="pm-qc-list">
-                                            <div v-for="(sp, k) in pm.qc.spikes.slice(0, 3)" :key="k" class="pm-qc-item" @click="pmZoomTo(sp)">
+                                            <div v-for="sp in pmSpikesShown.slice(0, 3)" :key="pmSpikeId(sp)" class="pm-qc-item" @click="pmZoomTo(sp)">
                                                 <v-icon x-small>mdi-crosshairs</v-icon>
-                                                {{ sp.deviation_m > 0 ? '+' : '' }}{{ sp.deviation_m }} m vs neighbours ({{ sp.depth_m }} m vs {{ sp.neighbour_median_m }} m) · confidence {{ sp.conf }}%
+                                                <span class="pm-qc-item__text">{{ sp.deviation_m > 0 ? '+' : '' }}{{ sp.deviation_m }} m vs neighbours ({{ sp.depth_m }} m vs {{ sp.neighbour_median_m }} m) · confidence {{ sp.conf }}%</span>
+                                                <v-btn icon x-small :title="pm.settings.exclude_spikes ? 'Dismiss: keep this sounding in the mesh' : 'Dismiss this spike'" @click.stop="pmIgnore(pmSpikeId(sp))"><v-icon x-small>mdi-close</v-icon></v-btn>
                                             </div>
+                                            <div v-if="pmSpikesRemaining > pmSpikesShown.slice(0, 3).length" class="pm-hint">…and {{ pmSpikesRemaining - pmSpikesShown.slice(0, 3).length }} more</div>
                                         </div>
-                                        <v-checkbox v-model="pm.settings.exclude_spikes" label="Exclude spikes from the mesh" dense hide-details class="mt-1"></v-checkbox>
                                         <div class="pm-qc-actions">
-                                            <v-btn x-small text @click="pmIgnore('spikes')">Ignore</v-btn>
+                                            <v-btn v-if="!pm.settings.exclude_spikes" x-small color="primary" @click="pm.settings.exclude_spikes = true"><v-icon left x-small>mdi-delete-sweep</v-icon>Exclude all spikes</v-btn>
+                                            <v-btn v-else x-small @click="pm.settings.exclude_spikes = false"><v-icon left x-small>mdi-undo</v-icon>Keep spikes in the mesh</v-btn>
+                                            <v-btn x-small text @click="pmIgnore('spikes')"><v-icon left x-small>mdi-close-box-multiple-outline</v-icon>Dismiss all</v-btn>
                                         </div>
                                     </div>
 
@@ -1195,8 +1266,8 @@
                                     <div v-if="pm.exclude.length > 20" class="pm-hint">…and {{ pm.exclude.length - 20 }} more</div>
                                 </div>
                                 <div v-if="pm.ignored.length" class="mt-2">
-                                    <div class="pm-section-label">Ignored ({{ pm.ignored.length }})</div>
-                                    <v-chip v-for="id in pm.ignored" :key="id" x-small close class="mr-1 mb-1" @click:close="pmUnignore(id)">{{ pmIgnoredLabel(id) }}</v-chip>
+                                    <div class="pm-section-label">Dismissed</div>
+                                    <v-chip v-for="g in pmIgnoredGroups" :key="g.key" x-small close class="mr-1 mb-1" title="Restore" @click:close="pmUnignore(g.ids)">{{ g.label }}</v-chip>
                                 </div>
                             </v-card-text>
                         </v-card>
@@ -1206,13 +1277,14 @@
                             <v-card-title>3. Processing area</v-card-title>
                             <v-card-text>
                                 <div class="pm-hint mb-2">
-                                    Draw a polygon around the soundings to include in the mesh. Vertices can be dragged. Without a polygon, all accepted soundings are used.
+                                    Draw a polygon around the soundings to include in the mesh. Drag a vertex to move it; click it to select it, then delete it (or right-click it). Without a polygon, all accepted soundings are used.
                                 </div>
                                 <div class="d-flex flex-wrap" style="gap: 6px;">
                                     <v-btn small :color="pm.drawing ? 'orange' : 'primary'" @click="pmToggleDrawing" :disabled="!pm.pointsTotal">
                                         <v-icon left small>{{ pm.drawing ? 'mdi-check' : 'mdi-vector-polygon' }}</v-icon>
                                         {{ pm.drawing ? 'Finish' : (pm.polygon.length ? 'Add vertices' : 'Draw area') }}
                                     </v-btn>
+                                    <v-btn small @click="pmDeleteVertex(pm.selectedVertex)" :disabled="pm.selectedVertex === null"><v-icon left small>mdi-vector-polyline-minus</v-icon>Delete vertex</v-btn>
                                     <v-btn small @click="pmUndoVertex" :disabled="!pm.polygon.length"><v-icon left small>mdi-undo</v-icon>Undo</v-btn>
                                     <v-btn small @click="pmClearPolygon" :disabled="!pm.polygon.length"><v-icon left small>mdi-close</v-icon>Clear</v-btn>
                                     <v-btn small @click="pmUseDataExtent" :disabled="!pmAcceptedCount"><v-icon left small>mdi-shape-polygon-plus</v-icon>Fit to data</v-btn>
@@ -1329,9 +1401,17 @@
                         <v-card class="pm-card" outlined>
                             <v-card-title>5. Generate GeoTIFF</v-card-title>
                             <v-card-text>
-                                <v-btn block color="success" :loading="pm.processing" :disabled="!pm.selectedFiles.length || !!pmIntervalError || !!pmAntennaError" @click="pmGenerate">
-                                    <v-icon left>mdi-layers-triple</v-icon>Generate contours
+                                <v-btn block color="success" :disabled="pm.processing || !pm.selectedFiles.length || !!pmIntervalError || !!pmAntennaError" @click="pmGenerate">
+                                    <v-icon left>mdi-layers-triple</v-icon>{{ pm.processing ? 'Generating…' : 'Generate contours' }}
                                 </v-btn>
+                                <div v-if="pm.processing" class="mt-2">
+                                    <v-progress-linear :value="pm.job.pct" color="success" height="6" rounded></v-progress-linear>
+                                    <div class="pm-progress-stage">
+                                        <span>{{ pm.job.stage }}…</span>
+                                        <span>{{ Math.round(pm.job.pct) }}% · {{ pm.job.elapsed }} s</span>
+                                    </div>
+                                    <div class="pm-hint">Processing runs on the vehicle; you can leave this page and come back.</div>
+                                </div>
                                 <v-alert v-if="pm.error" type="error" dense text class="mt-3 mb-0">{{ pm.error }}</v-alert>
                                 <div v-if="pm.result" class="mt-3">
                                     <v-alert v-if="pmResultOutdated" type="warning" dense text class="mb-2">
@@ -1368,7 +1448,7 @@
                             </v-btn>
                         </div>
                         <div class="pm-map-hint" v-if="pm.drawing">
-                            Click to add vertices ({{ pm.polygon.length }}{{ pm.polygon.length < 3 ? ', need 3+' : '' }}). Drag to adjust. Press Finish when done.
+                            Click to add vertices ({{ pm.polygon.length }}{{ pm.polygon.length < 3 ? ', need 3+' : '' }}). Drag to adjust; click a vertex to delete it. Press Finish when done.
                         </div>
                         <div class="pm-map-hint" v-else-if="!pm.selectedFiles.length">Select one or more survey logs to see their coverage.</div>
                         <div class="pm-legend" v-if="pmDepthRange">
@@ -1684,6 +1764,67 @@
         // Shallow (yellow) -> deep (purple), viridis-like
         const PM_DEPTH_STOPS = [[253, 231, 37], [94, 201, 98], [33, 145, 140], [59, 82, 139], [68, 1, 84]];
 
+        // Two-point distance measurement: a ruler button under the zoom buttons. While it is on, clicks
+        // set the two end points and show the distance; a third click starts a new measurement.
+        // Returns its state; other map click handlers should do nothing while state.active.
+        function addMeasureControl(map) {
+            const state = { active: false, points: [] };
+            const layer = L.layerGroup().addTo(map);
+            let button;
+
+            const format = d => (d >= 1000 ? (d / 1000).toFixed(3) + ' km' : d.toFixed(d < 10 ? 2 : 1) + ' m');
+            const draw = () => {
+                layer.clearLayers();
+                const pts = state.points;
+                if (pts.length === 2) {
+                    L.polyline(pts, { color: '#E91E63', weight: 3, dashArray: '8 6', interactive: false }).addTo(layer);
+                    const mid = L.latLng((pts[0].lat + pts[1].lat) / 2, (pts[0].lng + pts[1].lng) / 2);
+                    L.marker(mid, {
+                        interactive: false, keyboard: false,
+                        icon: L.divIcon({ className: 'measure-label', html: `<span>${format(map.distance(pts[0], pts[1]))}</span>`, iconSize: [0, 0] })
+                    }).addTo(layer);
+                }
+                pts.forEach(p => L.circleMarker(p, { radius: 5, color: 'white', weight: 2, fillColor: '#E91E63', fillOpacity: 1, interactive: false }).addTo(layer));
+            };
+            const setActive = on => {
+                state.active = on;
+                state.points = [];
+                draw();
+                button.classList.toggle('measure-btn--active', on);
+                map.getContainer().classList.toggle('measuring', on);
+            };
+
+            const Control = L.Control.extend({
+                options: { position: 'topleft' },
+                onAdd() {
+                    const bar = L.DomUtil.create('div', 'leaflet-bar');
+                    button = L.DomUtil.create('a', 'measure-btn', bar);
+                    button.href = '#';
+                    button.title = 'Measure distance';
+                    button.setAttribute('role', 'button');
+                    button.innerHTML = '<span class="mdi mdi-ruler"></span>';
+                    L.DomEvent.disableClickPropagation(bar);
+                    L.DomEvent.on(button, 'click', ev => {
+                        L.DomEvent.preventDefault(ev);
+                        setActive(!state.active);
+                    });
+                    return bar;
+                }
+            });
+            map.addControl(new Control());
+
+            map.on('click', e => {
+                if (!state.active) return;
+                if (state.points.length >= 2) state.points = [];
+                state.points.push(e.latlng);
+                draw();
+            });
+            document.addEventListener('keydown', e => {
+                if (e.key === 'Escape' && state.active) setActive(false);
+            });
+            return state;
+        }
+
         function pmPointInPolygon(lat, lon, poly) {
             let inside = false;
             for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -1809,6 +1950,7 @@
 
                     // Tabs
                     activeTab: 0,
+                    filesUrl: '',                    // BlueOS file browser, set when the Files tab is first opened
                     sonarStatus: null,               // /status sonar block while recording
                     sonarCheck: null,                // /sonar_check while idle
                     sonarTimer: null,
@@ -1824,8 +1966,10 @@
                         showContours: true,
                         drawing: false,
                         polygon: [],
+                        selectedVertex: null,        // index into polygon, or null
                         settings: pmLoadSavedSettings(),
                         processing: false,
+                        job: { stage: '', pct: 0, elapsed: 0 },   // progress of the running contour job
                         error: '',
                         result: null,
                         // Data quality / corrections
@@ -1928,7 +2072,10 @@
                     const norm = v => (v === '' || v === undefined ? null : v);
                     const settingsChanged = Object.keys(PM_DEFAULT_SETTINGS).some(k => norm(r.settings[k]) !== norm(this.pm.settings[k]));
                     const keys = list => (list || []).map(e => (e.key || e).join('|')).sort();
+                    // Dismissed spikes only change the output when spikes are excluded.
+                    const keptSpikes = ids => (this.pm.settings.exclude_spikes ? (ids || []).filter(id => id.startsWith('spike:')).sort() : []);
                     return settingsChanged
+                        || !same(keptSpikes(r.ignored), keptSpikes(this.pm.ignored))
                         || !same(r.source_files.slice().sort(), this.pm.selectedFiles.slice().sort())
                         || !same(r.polygon || null, polygon)
                         || !same(this.pmNormTides(r.tides, r.source_files), this.pmNormTides(this.pmSelectedTides, this.pm.selectedFiles))
@@ -2037,20 +2184,55 @@
                 pmQcAltWarnings() {
                     return this.pm.qc ? this.pm.qc.altitude_warnings.filter(a => !this.pmIsIgnored('alt:' + a.file)) : [];
                 },
+                pmExcludedIds() {
+                    return new Set(this.pm.exclude.map(e => e.key.join('|')));
+                },
+                pmConflictsShown() {
+                    // Listed pairs minus dismissed ones and ones with an excluded sounding (the next
+                    // data-quality run drops those too, but hide them straight away).
+                    const qc = this.pm.qc, ex = this.pmExcludedIds;
+                    if (!qc) return [];
+                    return qc.conflicts.filter(c => !this.pmIsIgnored(this.pmConflictId(c))
+                        && !ex.has(c.a.key.join('|')) && !ex.has(c.b.key.join('|')));
+                },
+                pmConflictsRemaining() {
+                    const qc = this.pm.qc;
+                    return qc ? qc.conflict_count - (qc.conflicts.length - this.pmConflictsShown.length) : 0;
+                },
+                pmSpikesShown() {
+                    const qc = this.pm.qc, ex = this.pmExcludedIds;
+                    if (!qc) return [];
+                    return qc.spikes.filter(s => !this.pmIsIgnored(this.pmSpikeId(s)) && !ex.has(s.key.join('|')));
+                },
+                pmSpikesRemaining() {
+                    const qc = this.pm.qc;
+                    return qc ? qc.spike_count - (qc.spikes.length - this.pmSpikesShown.length) : 0;
+                },
+                pmIgnoredGroups() {
+                    // Alerts dismissed as a whole get a chip each; individually dismissed rows one chip per type.
+                    const ids = this.pm.ignored;
+                    const groups = ids.filter(id => !id.startsWith('conflict:') && !id.startsWith('spike:'))
+                        .map(id => ({ key: id, label: this.pmIgnoredLabel(id), ids: [id] }));
+                    const conflicts = ids.filter(id => id.startsWith('conflict:'));
+                    if (conflicts.length) groups.push({ key: 'conflict:*', label: `${conflicts.length} overlap pair${conflicts.length > 1 ? 's' : ''}`, ids: conflicts });
+                    const spikes = ids.filter(id => id.startsWith('spike:'));
+                    if (spikes.length) groups.push({ key: 'spike:*', label: `${spikes.length} spike${spikes.length > 1 ? 's' : ''}`, ids: spikes });
+                    return groups;
+                },
                 pmQcActiveCount() {
                     const qc = this.pm.qc;
                     if (!qc) return 0;
                     return this.pmQcOffsets.length + this.pmQcAltWarnings.length
-                        + (qc.conflict_count && !this.pmIsIgnored('conflicts') ? 1 : 0)
-                        + (qc.spike_count && !this.pmIsIgnored('spikes') ? 1 : 0);
+                        + (this.pmConflictsRemaining && !this.pmIsIgnored('conflicts') ? 1 : 0)
+                        + (this.pmSpikesRemaining && !this.pmIsIgnored('spikes') ? 1 : 0);
                 },
                 pmConfidenceHint() {
                     // Would raising the confidence filter remove the flagged soundings?
                     const qc = this.pm.qc;
                     if (!qc) return null;
                     const flagged = new Map();
-                    if (!this.pmIsIgnored('conflicts')) qc.conflicts.forEach(c => { flagged.set(c.a.key.join('|'), c.a.conf); flagged.set(c.b.key.join('|'), c.b.conf); });
-                    if (!this.pmIsIgnored('spikes') && !this.pm.settings.exclude_spikes) qc.spikes.forEach(s => flagged.set(s.key.join('|'), s.conf));
+                    if (!this.pmIsIgnored('conflicts')) this.pmConflictsShown.forEach(c => { flagged.set(c.a.key.join('|'), c.a.conf); flagged.set(c.b.key.join('|'), c.b.conf); });
+                    if (!this.pmIsIgnored('spikes') && !this.pm.settings.exclude_spikes) this.pmSpikesShown.forEach(s => flagged.set(s.key.join('|'), s.conf));
                     if (!flagged.size) return null;
                     const confs = Array.from(flagged.values());
                     const below = confs.filter(c => c < 100);
@@ -2071,8 +2253,13 @@
                     const r = this.pm.result;
                     if (!r) return '';
                     const parts = [];
-                    const ign = (r.ignored || []).length;
-                    if (ign) parts.push(`${ign} ignored warning${ign > 1 ? 's' : ''}`);
+                    const ignored = r.ignored || [];
+                    const pairs = ignored.filter(id => id.startsWith('conflict:')).length;
+                    const spikes = ignored.filter(id => id.startsWith('spike:')).length;
+                    const ign = ignored.length - pairs - spikes;
+                    if (ign) parts.push(`${ign} dismissed warning${ign > 1 ? 's' : ''}`);
+                    if (pairs) parts.push(`${pairs} dismissed overlap pair${pairs > 1 ? 's' : ''}`);
+                    if (spikes) parts.push(`${spikes} dismissed spike${spikes > 1 ? 's' : ''}`);
                     if (r.points_excluded) parts.push(`${r.points_excluded} excluded sounding${r.points_excluded > 1 ? 's' : ''}`);
                     if (r.spikes_excluded) parts.push(`${r.spikes_excluded} spike${r.spikes_excluded > 1 ? 's' : ''} excluded`);
                     (r.overlap_removed || []).forEach(o => parts.push(`${o.count} overlapping soundings removed from ${o.file}`));
@@ -2112,6 +2299,7 @@
                 },
                 'pm.exclude'() {
                     this.pmRedrawPoints();
+                    this.pmRenderFlags();
                 },
                 'pm.excludeOverlaps'() {
                     this.pmRedrawPoints();
@@ -2127,7 +2315,7 @@
             },
             created() {
                 // Leaflet objects for the processing map; kept out of data() so Vue doesn't observe them.
-                this.pmLeaflet = { map: null, pointsLayer: null, flagsLayer: null, polygonLayer: null, overlay: null, renderer: null, suppressClickUntil: 0, qcTimer: null, tideTimer: null };
+                this.pmLeaflet = { map: null, pointsLayer: null, flagsLayer: null, polygonLayer: null, overlay: null, renderer: null, suppressClickUntil: 0, qcTimer: null, tideTimer: null, jobTimer: null, measure: { active: false } };
             },
             methods: {
                 // ---------- Tabs ----------
@@ -2139,8 +2327,11 @@
                             } else {
                                 this.pmLeaflet.map.invalidateSize();
                             }
+                            this.pmResumeJob();
                             this.pmLoadLogFiles().then(() => this.pmLoadLatestOutput());
                             this.pmLoadTideConfig();
+                        } else if (tab === 2) {
+                            if (!this.filesUrl) this.filesUrl = window.location.origin + '/file-browser/files/extensions/ping-survey/';
                         } else if (this.map) {
                             this.map.invalidateSize();
                         }
@@ -2160,7 +2351,9 @@
                     this.pmLeaflet.pointsLayer = L.layerGroup().addTo(map);
                     this.pmLeaflet.flagsLayer = L.layerGroup().addTo(map);
                     this.pmLeaflet.polygonLayer = L.layerGroup().addTo(map);
+                    this.pmLeaflet.measure = addMeasureControl(map);
                     map.on('click', this.pmAddVertex);
+                    document.addEventListener('keydown', this.pmVertexKey);
                     setTimeout(() => map.invalidateSize(), 100);
                 },
                 async pmLoadLogFiles() {
@@ -2286,17 +2479,52 @@
                     if (map) map.getContainer().style.cursor = this.pm.drawing ? 'crosshair' : '';
                 },
                 pmAddVertex(event) {
-                    // Ignore the click that follows a vertex drag/tap.
-                    if (!this.pm.drawing || Date.now() < (this.pmLeaflet.suppressClickUntil || 0)) return;
+                    // Ignore the click that follows a vertex drag/tap, and clicks for the measure tool.
+                    if (Date.now() < (this.pmLeaflet.suppressClickUntil || 0) || this.pmLeaflet.measure.active) return;
+                    if (!this.pm.drawing) {
+                        if (this.pm.selectedVertex !== null) this.pmSelectVertex(null);
+                        return;
+                    }
                     this.pm.polygon.push([event.latlng.lat, event.latlng.lng]);
+                    this.pm.selectedVertex = null;
                     this.pmRenderPolygon();
+                },
+                pmSelectVertex(i) {
+                    this.pm.selectedVertex = i;
+                    this.pmRenderPolygon();
+                    const map = this.pmLeaflet.map;
+                    if (i === null || !map) {
+                        if (map) map.closePopup();
+                        return;
+                    }
+                    L.popup({ offset: [0, -6] })
+                        .setLatLng(this.pm.polygon[i])
+                        .setContent(this.pmPopup(`<h4>Vertex ${i + 1} of ${this.pm.polygon.length}</h4>`, [['Delete vertex', () => this.pmDeleteVertex(i)]]))
+                        .openOn(map);
+                },
+                pmDeleteVertex(i) {
+                    if (i === null || i < 0 || i >= this.pm.polygon.length) return;
+                    this.pm.polygon = this.pm.polygon.filter((_, k) => k !== i);
+                    this.pm.selectedVertex = null;
+                    if (this.pmLeaflet.map) this.pmLeaflet.map.closePopup();
+                    this.pmRenderPolygon();
+                },
+                pmVertexKey(ev) {
+                    // Delete / Backspace removes the selected vertex (not while typing in a field).
+                    if (this.activeTab !== 1 || this.pm.selectedVertex === null) return;
+                    if (ev.key !== 'Delete' && ev.key !== 'Backspace') return;
+                    if (ev.target && /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName)) return;
+                    ev.preventDefault();
+                    this.pmDeleteVertex(this.pm.selectedVertex);
                 },
                 pmUndoVertex() {
                     this.pm.polygon.pop();
+                    this.pm.selectedVertex = null;
                     this.pmRenderPolygon();
                 },
                 pmClearPolygon() {
                     this.pm.polygon = [];
+                    this.pm.selectedVertex = null;
                     this.pmRenderPolygon();
                 },
                 pmUseDataExtent() {
@@ -2317,6 +2545,7 @@
                         const d = Math.hypot(dx, dy) || 1;
                         return [p[0] + (dy / d) * 2 / mLat, p[1] + (dx / d) * 2 / mLon];
                     });
+                    this.pm.selectedVertex = null;
                     this.pm.drawing = false;
                     if (this.pmLeaflet.map) this.pmLeaflet.map.getContainer().style.cursor = '';
                     this.pmRenderPolygon();
@@ -2333,14 +2562,29 @@
                     // Vertices are dragged with pointer events (mouse + touch) rather than Leaflet's
                     // marker dragging, which is unreliable in Leaflet 1.7 on pointer-event browsers.
                     poly.forEach((v, i) => {
+                        const selected = i === this.pm.selectedVertex;
                         const vertex = L.circleMarker(v, {
-                            radius: 7, color: 'white', weight: 2, fillColor: '#FF9800', fillOpacity: 1,
+                            radius: selected ? 9 : 7, color: selected ? '#FF9800' : 'white', weight: selected ? 3 : 2,
+                            fillColor: selected ? 'white' : '#FF9800', fillOpacity: 1,
                             className: 'pm-vertex', bubblingMouseEvents: false
                         }).addTo(layer);
-                        L.DomEvent.on(vertex.getElement(), 'pointerdown', ev => {
+                        const el = vertex.getElement();
+                        // Right-click (or long-press on touch) deletes the vertex.
+                        L.DomEvent.on(el, 'contextmenu', ev => {
                             L.DomEvent.stop(ev);
+                            this.pmLeaflet.suppressClickUntil = Date.now() + 300;
+                            this.pmDeleteVertex(i);
+                        });
+                        L.DomEvent.on(el, 'pointerdown', ev => {
+                            L.DomEvent.stop(ev);
+                            if (ev.button !== undefined && ev.button !== 0) return;
                             map.dragging.disable();
+                            const x0 = ev.clientX, y0 = ev.clientY;
+                            let moved = false;
                             const move = e => {
+                                // A few pixels of jitter is still a click, not a drag.
+                                if (!moved && Math.hypot(e.clientX - x0, e.clientY - y0) < 4) return;
+                                moved = true;
                                 const ll = map.mouseEventToLatLng(e);
                                 poly[i] = [ll.lat, ll.lng];
                                 vertex.setLatLng(ll);
@@ -2351,8 +2595,14 @@
                                 document.removeEventListener('pointerup', up);
                                 map.dragging.enable();
                                 this.pmLeaflet.suppressClickUntil = Date.now() + 300;
-                                this.pm.polygon = poly.slice();
-                                this.pmRenderPolygon();
+                                if (this.pm.polygon !== poly) return;   // deleted meanwhile (long-press)
+                                if (moved) {
+                                    this.pm.polygon = poly.slice();
+                                    this.pmRenderPolygon();
+                                } else {
+                                    // After the click that follows, which would close the popup straight away.
+                                    setTimeout(() => this.pmSelectVertex(i), 0);
+                                }
                             };
                             document.addEventListener('pointermove', move);
                             document.addEventListener('pointerup', up);
@@ -2360,9 +2610,12 @@
                     });
                 },
                 async pmGenerate() {
+                    if (this.pm.processing) return;
                     this.pm.processing = true;
                     this.pm.error = '';
+                    this.pm.job = { stage: 'Starting', pct: 0, elapsed: 0 };
                     try {
+                        // Processing runs in the background on the vehicle; follow it with /process_status.
                         const response = await axios.post('process_contours', {
                             files: this.pm.selectedFiles,
                             polygon: this.pm.polygon.length >= 3 ? this.pm.polygon : null,
@@ -2372,14 +2625,55 @@
                             exclude_overlaps: this.pm.excludeOverlaps,
                             ignored: this.pm.ignored
                         });
-                        this.pm.result = response.data;
-                        this.pm.showContours = true;
-                        this.pmShowOverlay(response.data);
+                        this.pmPollJob(response.data.id);
                     } catch (e) {
-                        this.pm.error = (e.response && e.response.data && e.response.data.error) || ('Processing failed: ' + e.message);
-                    } finally {
+                        const data = e.response && e.response.data;
+                        if (e.response && e.response.status === 409 && data && data.id) {
+                            this.pmPollJob(data.id);   // another job is already running: follow it
+                            return;
+                        }
+                        this.pm.error = (data && data.error) || ('Processing failed: ' + e.message);
                         this.pm.processing = false;
                     }
+                },
+                async pmPollJob(id) {
+                    clearTimeout(this.pmLeaflet.jobTimer);
+                    let job;
+                    try {
+                        job = (await axios.get('process_status')).data;
+                    } catch (e) {
+                        // Keep following the job through a brief loss of connection to the vehicle.
+                        this.pmLeaflet.jobTimer = setTimeout(() => this.pmPollJob(id), 2000);
+                        return;
+                    }
+                    if (job.state === 'running' && job.id === id) {
+                        this.pm.processing = true;
+                        this.pm.job = { stage: job.stage, pct: job.pct, elapsed: Math.max(0, Math.round(job.now - job.started)) };
+                        this.pmLeaflet.jobTimer = setTimeout(() => this.pmPollJob(id), 1000);
+                        return;
+                    }
+                    this.pm.processing = false;
+                    if (job.id !== id) {
+                        this.pm.error = 'Processing was interrupted (the extension restarted). Generate again.';
+                    } else if (job.state === 'error') {
+                        this.pm.error = job.error;
+                    } else if (job.state === 'done') {
+                        this.pm.result = job.result;
+                        this.pm.showContours = true;
+                        this.pmShowOverlay(job.result);
+                    }
+                },
+                async pmResumeJob() {
+                    // Pick up a job started before this page was (re)loaded.
+                    if (this.pm.processing) return;
+                    try {
+                        const job = (await axios.get('process_status')).data;
+                        if (job.state === 'running') {
+                            this.pm.processing = true;
+                            this.pm.job = { stage: job.stage, pct: job.pct, elapsed: Math.max(0, Math.round(job.now - job.started)) };
+                            this.pmPollJob(job.id);
+                        }
+                    } catch (e) { /* older extension without /process_status */ }
                 },
                 pmShowOverlay(o) {
                     const L_ = this.pmLeaflet;
@@ -2396,6 +2690,7 @@
                     this.pm.selectedFiles = o.source_files.filter(n => names.has(n));
                     this.pm.settings = Object.assign({}, PM_DEFAULT_SETTINGS, o.settings);
                     this.pm.polygon = (o.polygon || []).map(v => [v[0], v[1]]);
+                    this.pm.selectedVertex = null;
                     this.pm.drawing = false;
                     Object.entries(o.tides || {}).forEach(([n, t]) => this.$set(this.pm.tides, n, Object.assign({}, this.pm.tides[n], t)));
                     this.pmRenderPolygon();
@@ -2479,14 +2774,21 @@
                 pmOffsetId(o) {
                     return 'offset:' + o.file_a + '|' + o.file_b;
                 },
+                pmConflictId(c) {
+                    return 'conflict:' + [c.a.key.join('|'), c.b.key.join('|')].sort().join('~');
+                },
+                pmSpikeId(s) {
+                    return 'spike:' + s.key.join('|');
+                },
                 pmIsIgnored(id) {
                     return this.pm.ignored.includes(id);
                 },
                 pmIgnore(id) {
                     if (!this.pmIsIgnored(id)) this.pm.ignored.push(id);
                 },
-                pmUnignore(id) {
-                    this.pm.ignored = this.pm.ignored.filter(x => x !== id);
+                pmUnignore(ids) {
+                    const drop = new Set([].concat(ids));
+                    this.pm.ignored = this.pm.ignored.filter(x => !drop.has(x));
                 },
                 pmIgnoredLabel(id) {
                     if (id === 'conflicts') return 'Overlap disagreements';
@@ -2613,13 +2915,14 @@
                     if (!qc) return;
                     const ring = color => ({ radius: 7, color, weight: 2, fill: true, fillOpacity: 0, bubblingMouseEvents: false });
                     if (!this.pmIsIgnored('conflicts')) {
-                        qc.conflicts.forEach(c => {
+                        this.pmConflictsShown.forEach(c => {
                             const html = this.pmSoundingHtml(c.a, 'Sounding A') + this.pmSoundingHtml(c.b, 'Sounding B')
                                 + `<h4>Difference</h4>${c.h_m} m apart horizontally · ${c.dz_m} m vertically · ${c.slope_pct}% slope`
                                 + `<div class="pm-note">Beam footprint at this depth is about ${c.a.footprint_m} m wide; on a sloping seabed, soundings within one footprint can legitimately differ.</div>`;
                             const popup = () => this.pmPopup(html, [
                                 [`Exclude A (${c.a.depth_m} m)`, () => this.pmExclude(c.a)],
-                                [`Exclude B (${c.b.depth_m} m)`, () => this.pmExclude(c.b)]
+                                [`Exclude B (${c.b.depth_m} m)`, () => this.pmExclude(c.b)],
+                                ['Dismiss', () => { this.pmIgnore(this.pmConflictId(c)); this.pmLeaflet.map.closePopup(); }]
                             ]);
                             L.polyline([[c.a.lat, c.a.lon], [c.b.lat, c.b.lon]], { color: '#ff1744', weight: 2, bubblingMouseEvents: false })
                                 .bindPopup(popup).addTo(layer);
@@ -2629,12 +2932,15 @@
                     }
                     if (!this.pmIsIgnored('spikes')) {
                         const color = this.pm.settings.exclude_spikes ? '#9e9e9e' : '#ff9100';
-                        qc.spikes.forEach(sp => {
+                        this.pmSpikesShown.forEach(sp => {
                             const html = this.pmSoundingHtml(sp, 'Spike along track')
                                 + `<h4>Neighbours</h4>Median of neighbours on this pass: ${sp.neighbour_median_m} m (${sp.deviation_m > 0 ? '+' : ''}${sp.deviation_m} m)`
                                 + `<div class="pm-note">Beam footprint at this depth is about ${sp.footprint_m} m wide.${this.pm.settings.exclude_spikes ? ' Spikes are currently excluded from the mesh.' : ''}</div>`;
                             L.circleMarker([sp.lat, sp.lon], ring(color))
-                                .bindPopup(() => this.pmPopup(html, [['Exclude this sounding', () => this.pmExclude(sp)]]))
+                                .bindPopup(() => this.pmPopup(html, [
+                                    ['Exclude this sounding', () => this.pmExclude(sp)],
+                                    ['Dismiss', () => { this.pmIgnore(this.pmSpikeId(sp)); this.pmLeaflet.map.closePopup(); }]
+                                ]))
                                 .addTo(layer);
                         });
                     }
@@ -3436,7 +3742,7 @@
                 
                 addPolygonVertex(event) {
                     console.log('Polygon vertex click detected:', event.latlng);
-                    if (!this.isDrawingPolygon) {
+                    if (!this.isDrawingPolygon || (this.measure && this.measure.active)) {
                         console.log('Not in polygon drawing mode, ignoring click');
                         return;
                     }
@@ -3794,7 +4100,9 @@
                         // Add scale control
                         L.control.scale({imperial: false}).addTo(this.map);
                         this.scaleAdded = true;
-                        
+                        // Not reactive data: the control keeps its own state.
+                        this.measure = addMeasureControl(this.map);
+
                         // Add zoom change listener to update zoom display
                         this.map.on('zoomend', () => {
                             // Force Vue to update the zoom display

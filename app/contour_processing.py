@@ -654,6 +654,26 @@ def _points_in_polygon(x, y, poly):
     return inside
 
 
+def _grid_in_polygon(xs, ys, poly):
+    """_points_in_polygon for every cell of the grid xs x ys, as an (ny, nx) mask.
+
+    The same even-odd rule, but the edge crossings are found once per row, which is far
+    faster than testing millions of grid cells against every edge.
+    """
+    px, py = poly[:, 0], poly[:, 1]
+    qx, qy = np.roll(px, 1), np.roll(py, 1)          # edge i runs from vertex i-1 to vertex i
+    y = ys[:, None]
+    crosses = (py > y) != (qy > y)                   # (ny, edges)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        x_int = (qx - px) * (y - py) / (qy - py) + px
+    mask = np.zeros((ys.size, xs.size), dtype=bool)
+    for r in np.flatnonzero(crosses.any(axis=1)):
+        cuts = np.sort(x_int[r, crosses[r]])
+        # Inside when an odd number of crossings lie strictly to the right of the cell centre.
+        mask[r] = (cuts.size - np.searchsorted(cuts, xs, side="right")) % 2 == 1
+    return mask
+
+
 def _dedupe(xy, z, tol_m=0.05):
     """Average soundings that share a position (e.g. while the boat is stationary)."""
     keys = np.round(xy / tol_m).astype(np.int64)
@@ -697,11 +717,14 @@ class Surface:
         return self.y0 + self.cell * np.arange(self.depth.shape[0])
 
 
-def build_surface(prep, settings, keep=None, max_grid_cells=4_000_000):
-    """Triangulate the prepared soundings and interpolate a depth grid inside the area."""
-    from scipy.interpolate import LinearNDInterpolator
+def build_surface(prep, settings, keep=None, max_grid_cells=4_000_000, progress=None, chunk=250_000):
+    """Triangulate the prepared soundings and interpolate a depth grid inside the area.
+
+    progress, when given, is called with the fraction done (0-1).
+    """
     from scipy.spatial import Delaunay, QhullError
 
+    report = progress or (lambda done: None)
     xy, z = prep.xy, prep.z
     if keep is not None:
         xy, z = xy[keep], z[keep]
@@ -739,20 +762,32 @@ def build_surface(prep, settings, keep=None, max_grid_cells=4_000_000):
     ys = np.arange(math.floor(ymin / cell) * cell, ymax + cell, cell)
     gx, gy = np.meshgrid(xs, ys)
     q = np.column_stack([gx.ravel(), gy.ravel()])
+    report(0.1)
 
     simplex = tri.find_simplex(q)
     in_mesh = simplex >= 0
     in_mesh[in_mesh] = good_simplex[simplex[in_mesh]]
     if prep.poly_utm is not None:
-        in_mesh &= _points_in_polygon(q[:, 0], q[:, 1], prep.poly_utm)
+        in_mesh &= _grid_in_polygon(xs, ys, prep.poly_utm).ravel()
+    report(0.4)
 
+    # Linear interpolation on the triangles find_simplex already found (what LinearNDInterpolator
+    # does, without locating every grid cell a second time), in chunks to bound memory.
     depth = np.full(q.shape[0], np.nan)
-    interp = LinearNDInterpolator(tri, z)
-    depth[in_mesh] = interp(q[in_mesh])
+    cells = np.flatnonzero(in_mesh)
+    for start in range(0, cells.size, chunk):
+        idx = cells[start:start + chunk]
+        s = simplex[idx]
+        t = tri.transform[s]
+        b = np.einsum("nij,nj->ni", t[:, :2], q[idx] - t[:, 2])
+        w = np.column_stack([b, 1 - b.sum(axis=1)])
+        depth[idx] = (w * z[tri.simplices[s]]).sum(axis=1)
+        report(0.4 + 0.4 * min(1.0, (start + chunk) / cells.size))
     depth = depth.reshape(gx.shape)
 
     sigma_cells = SMOOTHING_SIGMA_M[settings.smoothing] / cell
     depth = _masked_gaussian(depth, sigma_cells)
+    report(1.0)
 
     if not np.isfinite(depth).any():
         raise ProcessingError("The mesh does not cover any of the processing area")
@@ -810,7 +845,7 @@ def _polyline_length(xy):
     return float(np.hypot(d[:, 0], d[:, 1]).sum())
 
 
-def make_contours(surface, settings, min_length_m=3.0):
+def make_contours(surface, settings, min_length_m=3.0, progress=None):
     import contourpy
 
     z = surface.depth
@@ -834,6 +869,8 @@ def make_contours(surface, settings, min_length_m=3.0):
             xy = _rdp_simplify(np.asarray(xy, dtype=np.float64), tol)
             if _polyline_length(xy) >= min_length_m:
                 lines.append(ContourLine(level=level, is_major=is_major, xy=xy))
+        if progress:
+            progress((k - k_lo + 1) / (k_hi - k_lo + 1))
     return lines, (zmin, zmax)
 
 
@@ -918,13 +955,14 @@ def _label_text(level):
     return f"{round(level, 2):g}"
 
 
-def render(lines, surface, settings, max_side_px=6000, max_canvas_px=60_000_000):
+def render(lines, surface, settings, max_side_px=6000, max_canvas_px=60_000_000, progress=None):
     """Render contour lines + labels onto a transparent RGBA image.
 
     Returns (image, ulx, uly, pixel_size).
     """
     from PIL import Image, ImageDraw
 
+    report = progress or (lambda done: None)
     pts_all = np.vstack([l.xy for l in lines])
     margin = settings.label_size_px * settings.pixel_size_m  # room for edge labels
     ux_min, uy_min = pts_all.min(axis=0) - margin
@@ -961,11 +999,14 @@ def render(lines, surface, settings, max_side_px=6000, max_canvas_px=60_000_000)
     font = _load_font(label_size)
 
     placements = []
+    drawn = 0
     # Minor first so majors draw on top.
     for major_pass in (False, True):
         for L in lines:
             if L.is_major != major_pass:
                 continue
+            drawn += 1
+            report(0.6 * drawn / len(lines))
             pts = to_px(L.xy)
             if pts.shape[0] < 2:
                 continue
@@ -1012,13 +1053,16 @@ def render(lines, surface, settings, max_side_px=6000, max_canvas_px=60_000_000)
         arr = np.array(line_layer)
         arr[np.array(mask) > 0, 3] = 0
         line_layer = Image.fromarray(arr, mode="RGBA")
+    report(0.7)
 
     img = line_layer
     for cx, cy, angle, text, _tw, _th in placements:
         _paste_rotated_text(img, cx, cy, text, font, label_color, angle, halo_color, halo_px)
+    report(0.8)
 
     if ss > 1:
         img = img.resize((w, h), resample=Image.LANCZOS)
+    report(1.0)
     return img, float(ux_min), float(uy_max), float(px_size)
 
 
@@ -1157,33 +1201,73 @@ def contours_geojson(lines, epsg, settings):
     return {"type": "FeatureCollection", "features": features}
 
 
+# Pipeline stages and their rough share of the run time on a Raspberry Pi 4, for progress reporting.
+PROCESS_STAGES = (
+    ("Loading survey logs", 1),
+    ("Preparing soundings", 4),
+    ("Checking data quality", 2),
+    ("Building the depth surface", 29),
+    ("Tracing contours", 27),
+    ("Drawing contour lines and labels", 14),
+    ("Writing the GeoTIFF", 5),
+    ("Writing the preview", 18),
+)
+
+
+def _stage_reporter(callback):
+    """stage(i, done) -> callback(stage name, overall fraction done), weighted by PROCESS_STAGES."""
+    total = sum(w for _, w in PROCESS_STAGES)
+    starts = np.cumsum([0] + [w for _, w in PROCESS_STAGES]) / total
+
+    def stage(i, done=0.0):
+        if callback:
+            name, weight = PROCESS_STAGES[i]
+            callback(name, float(starts[i] + weight / total * min(1.0, max(0.0, done))))
+    return stage
+
+
 def process(csv_paths, polygon_latlon, settings, out_tif, out_preview, tides=None, exclude=None,
-            exclude_overlaps=None, tide_series=None, out_geojson=None):
+            exclude_overlaps=None, tide_series=None, out_geojson=None, keep_spikes=None, progress=None):
     """Run the full pipeline and write the GeoTIFF + PNG preview, and the contours as GeoJSON when asked.
+
+    keep_spikes lists [file name, unix ms] keys of spikes to keep even when exclude_spikes is on.
+    progress, when given, is called with (stage name, overall fraction done) as the pipeline runs.
 
     Returns a JSON-serialisable summary including WGS 84 bounds of the preview
     and the data-quality report for the soundings that were meshed.
     """
+    stage = _stage_reporter(progress)
+    stage(0)
     points, files = load_survey(csv_paths)
     if points.shape[0] == 0:
         raise ProcessingError(no_soundings_message(files))
+    stage(1)
     prep, settings, tuned = _prepare_tuned(points, files, polygon_latlon, settings, tides, exclude,
                                            exclude_overlaps, tide_series)
+    stage(2)
     report, spikes = quality_check(prep, files, settings)
-    keep = ~spikes if settings.exclude_spikes else None
-    surface, n_used = build_surface(prep, settings, keep)
-    lines, (zmin, zmax) = make_contours(surface, settings)
+    drop = spikes & ~exclusion_mask(prep.rows, files, keep_spikes) if settings.exclude_spikes else None
+    stage(3)
+    surface, n_used = build_surface(prep, settings, None if drop is None else ~drop,
+                                    progress=lambda done: stage(3, done))
+    stage(4)
+    lines, (zmin, zmax) = make_contours(surface, settings, progress=lambda done: stage(4, done))
     if not lines:
         raise ProcessingError(
             f"No contours: depth range {zmin:.2f}-{zmax:.2f} m does not cross a "
             f"{settings.minor_m:g} m interval"
         )
-    img, ulx, uly, px = render(lines, surface, settings)
+    stage(5)
+    img, ulx, uly, px = render(lines, surface, settings, progress=lambda done: stage(5, done))
+    stage(6)
     _save_geotiff(img, out_tif, ulx, uly, px, surface.epsg)
-    img.save(out_preview, format="PNG", optimize=True)
     if out_geojson:
         with open(out_geojson, "w") as f:
             json.dump(contours_geojson(lines, surface.epsg, settings), f)
+    stage(7)
+    # optimize=True makes the file under 10% smaller but takes several times longer on a Pi.
+    img.save(out_preview, format="PNG")
+    stage(7, 1.0)
 
     w, h = img.size
     ce = np.array([ulx, ulx + w * px, ulx + w * px, ulx])
@@ -1200,7 +1284,7 @@ def process(csv_paths, polygon_latlon, settings, out_tif, out_preview, tides=Non
         "points_used": n_used,
         "points_excluded": prep.n_excluded,
         "overlap_removed": prep.overlap_removed,
-        "spikes_excluded": int(spikes.sum()) if settings.exclude_spikes else 0,
+        "spikes_excluded": int(drop.sum()) if drop is not None else 0,
         "depth_min_m": round(zmin, 2),
         "depth_max_m": round(zmax, 2),
         "minor_lines": sum(1 for l in lines if not l.is_major),

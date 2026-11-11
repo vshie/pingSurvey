@@ -69,6 +69,9 @@ app = Flask(__name__, static_url_path="/static", static_folder="static")
 _state_lock = threading.Lock()
 
 logging_active = False
+# Incremented on every start, so a logger thread from a previous session (still finishing its last
+# iteration after a quick stop/start) exits instead of logging alongside the new one.
+_log_session = 0
 simulation_active = False
 simulation_index = 0
 simulation_data = []
@@ -427,25 +430,25 @@ def get_urls():
     }
     return _urls_cache
 
-def main():
+def main(session):
     global row_counter
     global data
     global current_log_file
     print("main started")
-    
+
     # Ensure logs directory exists
     ensure_logs_dir()
-    
+
     # Generate new log file name for this session
-    current_log_file = generate_log_filename()
-    print(f"Logging to: {current_log_file}")
+    log_file = current_log_file = generate_log_filename()
+    print(f"Logging to: {log_file}")
     
     # Get the correct URLs based on system ID
     urls = get_urls()
     print(f"Using system ID: {get_system_id()}")
     sonar.start_session()
 
-    while (logging_active == True): # Main loop for logging data
+    while logging_active and session == _log_session: # Main loop for logging data
         urls = get_urls()  # cached; re-detected after the Ping service finds the Ping again
         # Timeouts keep one stalled mavlink2rest request from freezing the log.
         try:
@@ -532,7 +535,7 @@ def main():
             with _state_lock:
                 data = row
             _live_sounding(row)
-            with open(current_log_file, 'a', newline='') as csvfile:
+            with open(log_file, 'a', newline='') as csvfile:
                 writer = csv.writer(csvfile)
                 if csvfile.tell() == 0:
                     writer.writerow(column_labels)
@@ -561,21 +564,24 @@ def home():
 def widget():
     return app.send_static_file("widget.html")
 
-def _run_logger():
+def _run_logger(session):
     try:
-        main()
+        main(session)
     finally:
-        sonar.stop_session()
+        # A newer session has already started its own watchdog session; leave it running.
+        if session == _log_session:
+            sonar.stop_session()
 
 
 @app.route('/start')
 def start_logging():
-    global logging_active
+    global logging_active, _log_session
     with _state_lock:
         if not logging_active:
             logging_active = True
+            _log_session += 1
             _live_start()
-            thread = threading.Thread(target=_run_logger, daemon=True)
+            thread = threading.Thread(target=_run_logger, args=(_log_session,), daemon=True)
             thread.start()
     return 'Started'
 
@@ -1133,36 +1139,84 @@ def _remove_other_outputs(keep_base):
             print(f"Could not remove old output {f}: {e}")
 
 
+# The latest contour job: {id, state: running | done | error, stage, pct, started, result | error}.
+# Processing takes tens of seconds on a Pi, so it runs in the background and the UI polls /process_status.
+_job_lock = threading.Lock()
+_job = None
+
+
+def _update_job(**fields):
+    with _job_lock:
+        _job.update(fields)
+
+
 @app.route('/process_contours', methods=['POST'])
 def process_contours():
-    """Build a TIN mesh from the selected logs and write a transparent contour GeoTIFF."""
+    """Start building a TIN mesh from the selected logs and writing a transparent contour GeoTIFF.
+
+    Returns 202 with the job; poll /process_status for progress and the result. Only one job runs at a time.
+    """
+    global _job
     if contour_processing is None:
         return _processing_unavailable()
     body = request.get_json(silent=True) or {}
     try:
-        paths, settings, polygon, manual_tides, exclude, overlaps = _processing_inputs(body)
-        series = _online_tides(paths, settings)
-
-        os.makedirs(PROCESSED_DIR, exist_ok=True)
-        # Write under a temporary name: with auto-tune the intervals in the final name are only
-        # known once processing has run.
-        tmp = os.path.join(PROCESSED_DIR, f".processing_{os.getpid()}_{threading.get_ident()}")
-        started = time.time()
-        summary = contour_processing.process(paths, polygon, settings, tmp + '.tif', tmp + '.png',
-                                             manual_tides, exclude, overlaps, series, tmp + '.geojson')
-        effective = contour_processing.ContourSettings.from_dict(summary['settings'])
-        base = _output_basename(paths, effective)
-        tif = os.path.join(PROCESSED_DIR, base + '.tif')
-        preview = os.path.join(PROCESSED_DIR, base + '_preview.png')
-        os.replace(tmp + '.tif', tif)
-        os.replace(tmp + '.png', preview)
-        geojson = os.path.join(PROCESSED_DIR, base + '.geojson')
-        os.replace(tmp + '.geojson', geojson)
-    except ValueError as e:  # includes ProcessingError
+        inputs = _processing_inputs(body)
+    except ValueError as e:
         return jsonify({'error': str(e)}), 400
+    with _job_lock:
+        if _job and _job['state'] == 'running':
+            return jsonify(dict(_job, error='Contours are already being generated')), 409
+        started = time.time()
+        _job = {'id': int(started * 1000), 'state': 'running', 'stage': 'Starting', 'pct': 0, 'started': started}
+        job = dict(_job)
+    threading.Thread(target=_run_contour_job, args=(body, inputs), daemon=True).start()
+    return jsonify(job), 202
+
+
+@app.route('/process_status')
+def process_status():
+    with _job_lock:
+        return jsonify(dict(_job, now=time.time()) if _job else {'state': 'idle'})
+
+
+def _run_contour_job(body, inputs):
+    try:
+        summary = _process_contours(body, *inputs)
+    except ValueError as e:  # includes ProcessingError
+        _update_job(state='error', error=str(e))
     except Exception as e:
         print(f"Contour processing failed: {e}")
-        return jsonify({'error': f'Processing failed: {e}'}), 500
+        _update_job(state='error', error=f'Processing failed: {e}')
+    else:
+        _update_job(state='done', stage='Done', pct=100, result=summary)
+
+
+def _process_contours(body, paths, settings, polygon, manual_tides, exclude, overlaps):
+    online = settings.vertical_reference == 'tide' and settings.tide_source == 'online'
+    _update_job(stage='Fetching tide data' if online else 'Starting')
+    series = _online_tides(paths, settings)
+    # Dismissed spikes stay in the mesh when spikes are excluded.
+    keep_spikes = [i[len('spike:'):].rsplit('|', 1) for i in body.get('ignored') or []
+                   if isinstance(i, str) and i.startswith('spike:')]
+
+    os.makedirs(PROCESSED_DIR, exist_ok=True)
+    # Write under a temporary name: with auto-tune the intervals in the final name are only
+    # known once processing has run.
+    tmp = os.path.join(PROCESSED_DIR, f".processing_{os.getpid()}_{threading.get_ident()}")
+    started = time.time()
+    summary = contour_processing.process(paths, polygon, settings, tmp + '.tif', tmp + '.png',
+                                         manual_tides, exclude, overlaps, series, tmp + '.geojson',
+                                         keep_spikes=keep_spikes,
+                                         progress=lambda stage, done: _update_job(stage=stage, pct=round(done * 100, 1)))
+    effective = contour_processing.ContourSettings.from_dict(summary['settings'])
+    base = _output_basename(paths, effective)
+    tif = os.path.join(PROCESSED_DIR, base + '.tif')
+    preview = os.path.join(PROCESSED_DIR, base + '_preview.png')
+    os.replace(tmp + '.tif', tif)
+    os.replace(tmp + '.png', preview)
+    geojson = os.path.join(PROCESSED_DIR, base + '.geojson')
+    os.replace(tmp + '.geojson', geojson)
 
     summary.update({
         'tif': os.path.basename(tif),
@@ -1186,7 +1240,7 @@ def process_contours():
     contours = _contours_message(summary)
     if contours:
         cockpit.send(contours)
-    return jsonify(summary)
+    return summary
 
 
 @app.route('/tide_fetch', methods=['POST'])
