@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import json
 import os
 import hashlib
+import shutil
 import re
 
 # Post-mission processing needs numpy/scipy/contourpy/Pillow from the base image. Import it
@@ -25,6 +26,8 @@ VERSION = "1.3.1"
 # Logs live on the BlueOS host bind mount; overridable for local development.
 LOGS_DIR = os.environ.get('PING_SURVEY_LOGS_DIR', '/app/logs')
 PROCESSED_DIR = os.path.join(LOGS_DIR, 'processed')
+# Interface Tour outputs: kept apart so the tour never replaces the user's latest GeoTIFF.
+TOUR_DIR = os.path.join(LOGS_DIR, 'processed_tour')
 
 import tides
 tide_service = tides.TideService(os.path.join(LOGS_DIR, 'tides'))
@@ -77,6 +80,8 @@ logging_active = False
 # iteration after a quick stop/start) exits instead of logging alongside the new one.
 _log_session = 0
 simulation_active = False
+_sim_session = 0     # the same, for simulation playback
+_sim_publish = True  # draw playback on Cockpit's maps (not for the Interface Tour's examples)
 simulation_index = 0
 simulation_data = []
 base_url = f'{sonar_watchdog.BLUEOS}/mavlink2rest/mavlink'
@@ -599,56 +604,78 @@ def stop_logging():
         logging_active = False
     return 'Stopped'
 
+def _load_simulation_rows(path):
+    """A log's rows padded to the current 12-column format, for playback."""
+    rows = []
+    with open(path, 'r', newline='') as csvfile:
+        reader = csv.reader(csvfile)
+        next(reader, None)  # Skip header
+        for row in reader:
+            if len(row) >= 8:
+                # Pad old format (8 columns) to 11-column format
+                if len(row) < 11:
+                    row.insert(6, "0")  # Roll
+                    row.insert(7, "0")  # Pitch
+                    row.append("0")     # Altitude
+                # Pad 11-column format to 12 columns
+                if len(row) < 12:
+                    row.append("-1")    # Pos/Depth Delta (ms) unknown
+                rows.append(row)
+    return rows
+
+
 @app.route('/start_simulation')
 def start_simulation():
-    global simulation_active, simulation_data, simulation_index, logging_active, data
-    
+    """Play back simulation.csv, or the log named by ?file= (e.g. an example survey in the Interface Tour)."""
+    global simulation_active, simulation_data, simulation_index, logging_active, data, _sim_session, _sim_publish
+
     with _state_lock:
         # Stop normal logging if it's running
         if logging_active:
             logging_active = False
-    
-    if os.path.exists(simulation_file):
-        simulation_data = []
-        try:
-            with open(simulation_file, 'r') as csvfile:
-                reader = csv.reader(csvfile)
-                next(reader, None)  # Skip header
-                for row in reader:
-                    if len(row) >= 8:
-                        # Pad old format (8 columns) to 11-column format
-                        if len(row) < 11:
-                            row.insert(6, "0")  # Roll
-                            row.insert(7, "0")  # Pitch
-                            row.append("0")     # Altitude
-                        # Pad 11-column format to 12 columns
-                        if len(row) < 12:
-                            row.append("-1")    # Pos/Depth Delta (ms) unknown
-                        simulation_data.append(row)
-            
-            if simulation_data:
-                with _state_lock:
-                    simulation_active = True
-                    simulation_index = 0
-                    data = simulation_data[0]
-                _live_start()
-                
-                thread = threading.Thread(target=simulation_loop, daemon=True)
-                thread.start()
-                return jsonify({"success": True, "data_rows": len(simulation_data),
-                                "message": f"Loaded {len(simulation_data)} rows from simulation file"})
-            else:
-                return jsonify({"success": False, "message": "Simulation file is empty or invalid format."})
-        except Exception as e:
-            print(f"Simulation error: {str(e)}")
-            return jsonify({"success": False, "message": f"Error loading simulation file: {str(e)}"})
-    else:
-        return jsonify({"success": False, "message": f"Simulation file not found: {simulation_file}"})
 
-def simulation_loop():
+    name = request.args.get('file')
+    path = _safe_path(LOGS_DIR, name, ('.csv',)) if name else simulation_file
+    if path is None or not os.path.exists(path):
+        return jsonify({"success": False, "message": f"Simulation file not found: {name or simulation_file}"})
+    try:
+        rows = _load_simulation_rows(path)
+    except Exception as e:
+        print(f"Simulation error: {str(e)}")
+        return jsonify({"success": False, "message": f"Error loading simulation file: {str(e)}"})
+    if not rows:
+        return jsonify({"success": False, "message": "Simulation file is empty or invalid format."})
+    start = 0
+    if request.args.get('skip_warmup'):
+        # Logs begin with the sonar settling (very low confidence, nonsense depths): start at the first
+        # confident sounding instead.
+        def _confident(row):
+            try:
+                return float(row[4]) >= 90
+            except (IndexError, ValueError):
+                return False
+        start = next((i for i, row in enumerate(rows) if _confident(row)), 0)
+
+    with _state_lock:
+        simulation_data = rows
+        simulation_active = True
+        simulation_index = start
+        data = rows[start]
+        # A playback loop from before (still running, or finishing after a quick stop) sees the new
+        # session and exits, so only one loop ever plays.
+        _sim_session += 1
+        session = _sim_session
+        _sim_publish = not request.args.get('quiet')
+    if _sim_publish:
+        _live_start()
+    threading.Thread(target=simulation_loop, args=(session,), daemon=True).start()
+    return jsonify({"success": True, "data_rows": len(rows),
+                    "message": f"Loaded {len(rows)} rows from {os.path.basename(path)}"})
+
+def simulation_loop(session):
     global simulation_active, simulation_data, simulation_index, data
     
-    while simulation_active:
+    while simulation_active and session == _sim_session:
         if simulation_index < len(simulation_data):
             try:
                 current_row = simulation_data[simulation_index]
@@ -668,12 +695,13 @@ def simulation_loop():
                     padded_row.append("-1")    # Pos/Depth Delta (ms) unknown
                     with _state_lock:
                         data = padded_row
-                _live_sounding(current_row)
+                if _sim_publish:
+                    _live_sounding(current_row)
 
                 with _state_lock:
                     simulation_index = (simulation_index + 1) % len(simulation_data)
                 # The playback loops, so each pass starts a fresh live survey instead of drawing over the last.
-                if simulation_index == 0:
+                if simulation_index == 0 and _sim_publish:
                     _live_start()
             except Exception as e:
                 print(f"Error in simulation loop: {str(e)}")
@@ -1294,13 +1322,13 @@ def _output_basename(paths, settings):
     return f"{stem}_contours_{settings.minor_m:g}m-{settings.major_m:g}m_conf{settings.min_conf:g}{ref}"
 
 
-def _remove_other_outputs(keep_base):
+def _remove_other_outputs(keep_base, out_dir=PROCESSED_DIR):
     """Only the latest output is kept, so the files on disk always match what the UI shows."""
-    for f in os.listdir(PROCESSED_DIR):
+    for f in os.listdir(out_dir):
         if f.startswith(keep_base + '.') or f.startswith(keep_base + '_preview.'):
             continue
         try:
-            os.remove(os.path.join(PROCESSED_DIR, f))
+            os.remove(os.path.join(out_dir, f))
         except OSError as e:
             print(f"Could not remove old output {f}: {e}")
 
@@ -1359,6 +1387,9 @@ def _run_contour_job(body, inputs):
 
 
 def _process_contours(body, paths, settings, polygon, manual_tides, exclude, overlaps):
+    # Interface Tour runs go to their own folder and aren't put on Cockpit's maps.
+    tour = bool(body.get('tour'))
+    out_dir = TOUR_DIR if tour else PROCESSED_DIR
     online = settings.vertical_reference == 'tide' and settings.tide_source == 'online'
     _update_job(stage='Fetching tide data' if online else 'Starting')
     series = _online_tides(paths, settings)
@@ -1366,10 +1397,10 @@ def _process_contours(body, paths, settings, polygon, manual_tides, exclude, ove
     keep_spikes = [i[len('spike:'):].rsplit('|', 1) for i in body.get('ignored') or []
                    if isinstance(i, str) and i.startswith('spike:')]
 
-    os.makedirs(PROCESSED_DIR, exist_ok=True)
+    os.makedirs(out_dir, exist_ok=True)
     # Write under a temporary name: with auto-tune the intervals in the final name are only
     # known once processing has run.
-    tmp = os.path.join(PROCESSED_DIR, f".processing_{os.getpid()}_{threading.get_ident()}")
+    tmp = os.path.join(out_dir, f".processing_{os.getpid()}_{threading.get_ident()}")
     started = time.time()
     summary = contour_processing.process(paths, polygon, settings, tmp + '.tif', tmp + '.png',
                                          manual_tides, exclude, overlaps, series, tmp + '.geojson',
@@ -1377,11 +1408,11 @@ def _process_contours(body, paths, settings, polygon, manual_tides, exclude, ove
                                          progress=lambda stage, done: _update_job(stage=stage, pct=round(done * 100, 1)))
     effective = contour_processing.ContourSettings.from_dict(summary['settings'])
     base = _output_basename(paths, effective)
-    tif = os.path.join(PROCESSED_DIR, base + '.tif')
-    preview = os.path.join(PROCESSED_DIR, base + '_preview.png')
+    tif = os.path.join(out_dir, base + '.tif')
+    preview = os.path.join(out_dir, base + '_preview.png')
     os.replace(tmp + '.tif', tif)
     os.replace(tmp + '.png', preview)
-    geojson = os.path.join(PROCESSED_DIR, base + '.geojson')
+    geojson = os.path.join(out_dir, base + '.geojson')
     os.replace(tmp + '.geojson', geojson)
 
     summary.update({
@@ -1398,12 +1429,14 @@ def _process_contours(body, paths, settings, polygon, manual_tides, exclude, ove
         'created': time.time(),
         'elapsed_s': round(time.time() - started, 2),
         'size_mb': round(os.path.getsize(tif) / (1024 * 1024), 2),
+        'url_base': 'processed_tour/' if tour else 'processed/',   # where the UI fetches the files
+        'tour': tour,
     })
-    with open(os.path.join(PROCESSED_DIR, base + '.json'), 'w') as f:
+    with open(os.path.join(out_dir, base + '.json'), 'w') as f:
         json.dump(summary, f)
-    _remove_other_outputs(base)
-    print(f"Generated {summary['tif']} in {summary['elapsed_s']}s")
-    contours = _contours_message(summary)
+    _remove_other_outputs(base, out_dir)
+    print(f"Generated {summary['tif']} in {summary['elapsed_s']}s{' (Interface Tour)' if tour else ''}")
+    contours = None if tour else _contours_message(summary)
     if contours:
         cockpit.send(contours)
     return summary
@@ -1631,6 +1664,44 @@ def download_processed(filename):
     if path is None:
         return jsonify({'error': 'File not found'}), 404
     return send_file(path, as_attachment=path.endswith('.tif'), max_age=0)
+
+
+@app.route('/processed_tour/<path:filename>')
+def download_tour_output(filename):
+    """The Interface Tour's GeoTIFF or preview."""
+    path = _safe_path(TOUR_DIR, filename, ('.tif', '.png'))
+    if path is None:
+        return jsonify({'error': 'File not found'}), 404
+    return send_file(path, as_attachment=path.endswith('.tif'), max_age=0)
+
+
+# ---------------------------------------------------------------------------
+# Interface Tour
+# ---------------------------------------------------------------------------
+
+EXAMPLES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'examples')
+TOUR_EXAMPLES = ('example_small_survey.csv', 'example_large_survey.csv')
+
+
+@app.route('/tour/setup', methods=['POST'])
+def tour_setup():
+    """Put the example surveys in the log folder (kept afterwards so students can keep practising)."""
+    ensure_logs_dir()
+    examples, warnings = {}, []
+    for name in TOUR_EXAMPLES:
+        src = os.path.join(EXAMPLES_DIR, name)
+        dst = os.path.join(LOGS_DIR, name)
+        if not os.path.isfile(src):
+            return jsonify({'error': f'The example {name} is missing from this image'}), 500
+        if not os.path.exists(dst):
+            shutil.copyfile(src, dst)
+        elif os.path.getsize(dst) != os.path.getsize(src):
+            # Never overwrite: a file with this name that isn't our example belongs to the user.
+            warnings.append(f'{name} in the log folder is not the original example; the tour uses it as it is.')
+        with open(dst, newline='') as f:
+            rows = sum(1 for _ in f) - 1
+        examples['small' if 'small' in name else 'large'] = {'name': name, 'rows': rows}
+    return jsonify({'examples': examples, 'warnings': warnings})
 
 
 if __name__ == '__main__':

@@ -794,6 +794,118 @@
             cursor: move;
             touch-action: none;
         }
+        /* ---------- Interface Tour ---------- */
+        /* Room below the last card, so the tour can scroll any card to the top of its panel */
+        body.tour-on .pm-panel {
+            padding-bottom: 70vh;
+        }
+        .tour-start-btn {
+            text-transform: none;
+            letter-spacing: normal;
+        }
+        .tour-layer {
+            position: fixed;
+            inset: 0;
+            z-index: 10000;
+            pointer-events: none;
+        }
+        .tour-shade,
+        .tour-blocker {
+            position: fixed;
+            background: rgba(0, 0, 0, 0.6);
+            pointer-events: auto;              /* only the spotlighted target can be clicked */
+            transition: all 0.2s ease;
+        }
+        .tour-blocker {
+            inset: 0;
+            background: transparent;
+        }
+        .tour-ring {
+            position: fixed;
+            border: 2px solid #4CAF50;
+            border-radius: 6px;
+            box-shadow: 0 0 0 4px rgba(76, 175, 80, 0.25);
+            pointer-events: none;
+            transition: all 0.2s ease;
+        }
+        .tour-card {
+            position: fixed;
+            pointer-events: auto;
+            overflow-y: auto;
+            background: #1E1E1E;
+            color: #eee;
+            border: 1px solid #4CAF50;
+            border-radius: 8px;
+            padding: 12px 16px;
+            box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+            font-size: 0.9rem;
+            line-height: 1.45;
+        }
+        .tour-card__meta {
+            font-size: 0.72rem;
+            color: #9ccc65;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 4px;
+        }
+        .tour-card__title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: white;
+            margin-bottom: 6px;
+        }
+        .tour-card__body p,
+        .tour-card__body ul,
+        .tour-card__body ol {
+            margin-bottom: 8px;
+        }
+        .tour-card__body ul,
+        .tour-card__body ol {
+            padding-left: 20px;
+        }
+        .tour-card__body li {
+            margin-bottom: 2px;
+        }
+        .tour-card__body code {
+            font-size: 0.8rem;
+            background: rgba(255, 255, 255, 0.08);
+            color: #c5e1a5;
+            padding: 0 3px;
+            border-radius: 3px;
+            word-break: break-all;
+        }
+        .tour-card__busy {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #ccc;
+            padding: 8px 0;
+        }
+        .tour-try {
+            display: flex;
+            gap: 8px;
+            align-items: flex-start;
+            padding: 8px 10px;
+            margin: 4px 0 8px;
+            border-radius: 6px;
+            background: rgba(255, 183, 77, 0.12);
+            border-left: 3px solid #FFB74D;
+        }
+        .tour-try--done {
+            background: rgba(76, 175, 80, 0.12);
+            border-left-color: #4CAF50;
+        }
+        .tour-card__error {
+            color: #ffab91;
+            font-size: 0.8rem;
+            margin: 4px 0;
+        }
+        .tour-card__actions {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-top: 8px;
+        }
         /* ---------- Data Sharing ---------- */
         .ds-layout {
             display: grid;
@@ -1127,21 +1239,24 @@
             <div class="header">
                 <img class="logo" :class="{ 'rotate': receivingData }" src="static/BRlogo.png" alt="Logo">
                 <h1 class="title">Simple Ping Survey Extension</h1>
+                <v-btn small outlined color="#4CAF50" class="tour-start-btn mr-3" data-tour="tour-button" @click="tourOpen" :disabled="tour.active">
+                    <v-icon left small>mdi-school</v-icon>Interface Tour
+                </v-btn>
                 <img class="logo" :class="{ 'rotate': receivingData }" src="static/BRlogo.png" alt="Logo">
             </div>
             
             <v-tabs v-model="activeTab" class="main-tabs" background-color="#1E1E1E" color="#4CAF50" grow @change="onTabChange">
-                <v-tab><v-icon left small>mdi-radar</v-icon>Live Survey</v-tab>
-                <v-tab><v-icon left small>mdi-map-legend</v-icon>Post-Mission Processing</v-tab>
-                <v-tab><v-icon left small>mdi-lan-connect</v-icon>Data Sharing</v-tab>
-                <v-tab><v-icon left small>mdi-folder-open</v-icon>Files</v-tab>
+                <v-tab data-tour="tab-live"><v-icon left small>mdi-radar</v-icon>Live Survey</v-tab>
+                <v-tab data-tour="tab-pm"><v-icon left small>mdi-map-legend</v-icon>Post-Mission Processing</v-tab>
+                <v-tab data-tour="tab-ds"><v-icon left small>mdi-lan-connect</v-icon>Data Sharing</v-tab>
+                <v-tab data-tour="tab-files"><v-icon left small>mdi-folder-open</v-icon>Files</v-tab>
             </v-tabs>
 
             <div class="content content--tabbed" v-show="activeTab === 2">
                 <div class="ds-layout">
                     <div class="pm-panel">
                         <!-- Vehicles on the network -->
-                        <v-card class="pm-card" outlined>
+                        <v-card class="pm-card" outlined data-tour="ds-vehicles">
                             <v-card-title>
                                 Vehicles on the network
                                 <v-spacer></v-spacer>
@@ -1210,7 +1325,7 @@
 
                     <!-- Selected vehicle's logs -->
                     <div class="pm-panel">
-                        <v-card class="pm-card" outlined>
+                        <v-card class="pm-card" outlined data-tour="ds-logs">
                             <v-card-title>
                                 {{ dsSelected ? dsSelected.name + "'s logs" : 'Logs' }}
                                 <v-spacer></v-spacer>
@@ -1260,18 +1375,18 @@
             </div>
 
             <div class="content content--tabbed" v-show="activeTab === 3">
-                <div class="pm-files-bar">
+                <div class="pm-files-bar" data-tour="files-bar">
                     <span class="pm-hint">Survey logs and generated contours in BlueOS's <code>extensions/ping-survey</code> folder. Upload, download, rename or delete them here.</span>
                     <v-btn x-small text :href="filesUrl" target="_blank" :disabled="!filesUrl"><v-icon left x-small>mdi-open-in-new</v-icon>Open in new window</v-btn>
                 </div>
-                <iframe v-if="filesUrl" :src="filesUrl" class="pm-files-frame" title="BlueOS file browser"></iframe>
+                <iframe v-if="filesUrl" :src="filesUrl" data-tour="files-frame" class="pm-files-frame" title="BlueOS file browser"></iframe>
             </div>
 
             <div class="content content--tabbed" v-show="activeTab === 1">
                 <div class="pm-layout">
                     <div class="pm-panel">
                         <!-- 1. Files -->
-                        <v-card class="pm-card" outlined>
+                        <v-card class="pm-card" outlined data-tour="pm-logs">
                             <v-card-title>
                                 1. Survey logs
                                 <v-spacer></v-spacer>
@@ -1279,7 +1394,7 @@
                             </v-card-title>
                             <v-card-text>
                                 <div v-if="pm.logFiles.length === 0" class="pm-hint">No survey logs recorded yet.</div>
-                                <div class="pm-file-list">
+                                <div class="pm-file-list" data-tour="pm-file-list">
                                     <div v-for="f in pm.logFiles" :key="f.filename">
                                         <div class="pm-file-row">
                                             <v-checkbox v-model="pm.selectedFiles" :value="f.filename" :label="f.filename" dense hide-details color="#4CAF50" @change="pmLoadPoints"></v-checkbox>
@@ -1330,7 +1445,7 @@
                                     </div>
                                 </div>
                                 <template v-if="pm.settings.vertical_reference === 'tide'">
-                                    <div class="pm-section-label">Tide source</div>
+                                    <div class="pm-section-label" data-tour="pm-tides">Tide source</div>
                                     <v-radio-group v-model="pm.settings.tide_source" dense row hide-details class="mt-0 pt-0">
                                         <v-radio label="Online tide service" value="online"></v-radio>
                                         <v-radio label="Manual (tide table)" value="manual"></v-radio>
@@ -1382,10 +1497,12 @@
                                         Tide heights are metres above chart datum from a tide table for the survey site (blank = 0). Logs over an hour are interpolated linearly between their start and end heights.
                                     </div>
                                 </template>
-                                <div class="pm-section-label">Minimum confidence: {{ pm.settings.min_conf }}%</div>
-                                <v-slider v-model="pm.settings.min_conf" min="0" max="100" step="1" dense hide-details color="#4CAF50" @end="pmRedrawPoints"></v-slider>
+                                <div data-tour="pm-minconf">
+                                    <div class="pm-section-label">Minimum confidence: {{ pm.settings.min_conf }}%</div>
+                                    <v-slider v-model="pm.settings.min_conf" min="0" max="100" step="1" dense hide-details color="#4CAF50" @end="pmRedrawPoints"></v-slider>
+                                </div>
                                 <v-checkbox v-if="pm.pointsTotal" v-model="pm.showPoints" label="Show soundings on map" dense hide-details class="mt-2" @change="pmRedrawPoints"></v-checkbox>
-                                <div class="pm-stat mt-2" v-if="pm.pointsTotal">
+                                <div class="pm-stat mt-2" v-if="pm.pointsTotal" data-tour="pm-counts">
                                     <b>{{ pmAcceptedCount }}</b> of <b>{{ pm.pointsTotal }}</b> soundings accepted
                                     <span v-if="pm.polygon.length >= 3"> · <b>{{ pmInsideCount }}</b> inside area</span>
                                     <span v-if="pm.pointsStride > 1"> (map shows every {{ pm.pointsStride }}th)</span>
@@ -1395,7 +1512,7 @@
                         </v-card>
 
                         <!-- 2. Data quality -->
-                        <v-card class="pm-card" outlined v-if="pm.selectedFiles.length">
+                        <v-card class="pm-card" outlined v-if="pm.selectedFiles.length" data-tour="pm-quality">
                             <v-card-title>
                                 2. Data quality
                                 <v-spacer></v-spacer>
@@ -1438,7 +1555,7 @@
                                         </div>
                                     </div>
 
-                                    <div v-if="pmConflictsRemaining && !pmIsIgnored('conflicts')" class="pm-qc-alert">
+                                    <div v-if="pmConflictsRemaining && !pmIsIgnored('conflicts')" class="pm-qc-alert" data-tour="pm-conflicts">
                                         <div class="pm-qc-title"><v-icon small color="#ff5252">mdi-alert</v-icon> {{ pmConflictsRemaining }} overlapping sounding pair{{ pmConflictsRemaining > 1 ? 's' : '' }} disagree{{ pmConflictsRemaining > 1 ? '' : 's' }}</div>
                                         <div class="pm-qc-text">
                                             Soundings from different passes within {{ pm.settings.qc_radius_m }} m of each other differ by more than {{ pmDepthTolText }}
@@ -1459,7 +1576,7 @@
                                         </div>
                                     </div>
 
-                                    <div v-if="pmSpikesRemaining && !pmIsIgnored('spikes')" class="pm-qc-alert">
+                                    <div v-if="pmSpikesRemaining && !pmIsIgnored('spikes')" class="pm-qc-alert" data-tour="pm-spikes">
                                         <div class="pm-qc-title">
                                             <v-icon small :color="pm.settings.exclude_spikes ? '#4CAF50' : 'orange'">{{ pm.settings.exclude_spikes ? 'mdi-check-circle' : 'mdi-alert' }}</v-icon>
                                             {{ pmSpikesRemaining }} spike{{ pmSpikesRemaining > 1 ? 's' : '' }} along track{{ pm.settings.exclude_spikes ? ' (excluded from the mesh)' : '' }}
@@ -1482,13 +1599,13 @@
                                         </div>
                                     </div>
 
-                                    <div v-if="pmConfidenceHint" class="pm-hint mt-2">
+                                    <div v-if="pmConfidenceHint" class="pm-hint mt-2" data-tour="pm-confhint">
                                         <v-icon x-small>mdi-information-outline</v-icon> {{ pmConfidenceHint.text }}
                                         <v-btn v-if="pmConfidenceHint.threshold" x-small text color="primary" @click="pmSetMinConf(pmConfidenceHint.threshold)">Set to {{ pmConfidenceHint.threshold }}%</v-btn>
                                     </div>
                                 </template>
 
-                                <div v-if="pm.exclude.length || pm.excludeOverlaps.length" class="mt-2">
+                                <div v-if="pm.exclude.length || pm.excludeOverlaps.length" class="mt-2" data-tour="pm-excluded">
                                     <div class="pm-section-label">Excluded soundings
                                         <v-btn x-small text @click="pmRestoreAllExcluded">Restore all</v-btn>
                                     </div>
@@ -1502,7 +1619,7 @@
                                     </div>
                                     <div v-if="pm.exclude.length > 20" class="pm-hint">…and {{ pm.exclude.length - 20 }} more</div>
                                 </div>
-                                <div v-if="pm.ignored.length" class="mt-2">
+                                <div v-if="pm.ignored.length" class="mt-2" data-tour="pm-dismissed">
                                     <div class="pm-section-label">Dismissed</div>
                                     <v-chip v-for="g in pmIgnoredGroups" :key="g.key" x-small close class="mr-1 mb-1" title="Restore" @click:close="pmUnignore(g.ids)">{{ g.label }}</v-chip>
                                 </div>
@@ -1510,7 +1627,7 @@
                         </v-card>
 
                         <!-- 3. Area -->
-                        <v-card class="pm-card" outlined>
+                        <v-card class="pm-card" outlined data-tour="pm-area">
                             <v-card-title>3. Processing area</v-card-title>
                             <v-card-text>
                                 <div class="pm-hint mb-2">
@@ -1530,10 +1647,10 @@
                         </v-card>
 
                         <!-- 3. Contour style -->
-                        <v-card class="pm-card" outlined>
+                        <v-card class="pm-card" outlined data-tour="pm-contours">
                             <v-card-title>4. Contours</v-card-title>
                             <v-card-text>
-                                <v-switch v-model="pm.settings.auto_tune" label="Auto-tune settings from the data" dense hide-details color="#4CAF50" class="mt-0 pt-0"></v-switch>
+                                <v-switch v-model="pm.settings.auto_tune" data-tour="pm-autotune" label="Auto-tune settings from the data" dense hide-details color="#4CAF50" class="mt-0 pt-0"></v-switch>
                                 <div class="pm-hint mb-2">
                                     <template v-if="pm.settings.auto_tune">
                                         Contour intervals, mesh edge, line and label sizes and the data-quality tolerances follow the selected soundings. Editing any of them switches auto-tune off.
@@ -1543,7 +1660,7 @@
                                     </template>
                                     <template v-else>Using your own values. Switch on to recalculate them from the data.</template>
                                 </div>
-                                <div class="pm-section-label mt-0">Vertical reference</div>
+                                <div class="pm-section-label mt-0" data-tour="pm-vref">Vertical reference</div>
                                 <v-radio-group v-model="pm.settings.vertical_reference" dense row hide-details class="mt-0 pt-0">
                                     <v-radio label="Depth + tide" value="tide"></v-radio>
                                     <v-radio label="GPS altitude (RTK)" value="gps" :disabled="!!pmAltitudeMissing.length"></v-radio>
@@ -1556,7 +1673,7 @@
                                     <div class="pm-hint mb-3">Depth below the GPS vertical datum (MSL) = measured depth + antenna height − GPS altitude. Use only with RTK or another accurate vertical source.</div>
                                 </template>
 
-                                <div class="pm-style-grid">
+                                <div class="pm-style-grid" data-tour="pm-intervals">
                                     <v-text-field v-model.number="pm.settings.minor_m" @input="pmManualEdit" type="number" min="0.1" step="0.1" label="Minor interval (m)" dense></v-text-field>
                                     <v-text-field v-model.number="pm.settings.major_m" @input="pmManualEdit" type="number" min="0.1" step="0.5" label="Major interval (m)" dense
                                         :error-messages="pmIntervalError"></v-text-field>
@@ -1606,7 +1723,7 @@
                                 </div>
                                 <v-text-field v-model.number="pm.settings.label_spacing_m" @input="pmManualEdit" type="number" min="5" step="5" label="Label spacing along line (m)" dense class="mt-2"></v-text-field>
 
-                                <v-expansion-panels flat class="mt-1">
+                                <v-expansion-panels flat class="mt-1" data-tour="pm-advanced">
                                     <v-expansion-panel style="background: transparent;">
                                         <v-expansion-panel-header class="px-0">Advanced</v-expansion-panel-header>
                                         <v-expansion-panel-content>
@@ -1635,7 +1752,7 @@
                         </v-card>
 
                         <!-- 4. Generate -->
-                        <v-card class="pm-card" outlined>
+                        <v-card class="pm-card" outlined data-tour="pm-generate">
                             <v-card-title>5. Generate GeoTIFF</v-card-title>
                             <v-card-text>
                                 <v-btn block color="success" :disabled="pm.processing || !pm.selectedFiles.length || !!pmIntervalError || !!pmAntennaError" @click="pmGenerate">
@@ -1650,7 +1767,7 @@
                                     <div class="pm-hint">Processing runs on the vehicle; you can leave this page and come back.</div>
                                 </div>
                                 <v-alert v-if="pm.error" type="error" dense text class="mt-3 mb-0">{{ pm.error }}</v-alert>
-                                <div v-if="pm.result" class="mt-3">
+                                <div v-if="pm.result" class="mt-3" data-tour="pm-result">
                                     <v-alert v-if="pmResultOutdated" type="warning" dense text class="mb-2">
                                         Settings, area or logs have changed since this file was generated. Generate again to update it.
                                     </v-alert>
@@ -1667,7 +1784,7 @@
                                     </div>
                                     <div class="pm-stat" v-if="pmResultTideNote">{{ pmResultTideNote }}</div>
                                     <div class="pm-stat" v-if="pmResultQualityNote">{{ pmResultQualityNote }}</div>
-                                    <v-btn block color="primary" class="mt-2" :href="'processed/' + encodeURIComponent(pm.result.tif)">
+                                    <v-btn block color="primary" class="mt-2" :href="(pm.result.url_base || 'processed/') + encodeURIComponent(pm.result.tif)">
                                         <v-icon left>mdi-download</v-icon>Download GeoTIFF ({{ pm.result.size_mb }} MB)
                                     </v-btn>
                                     <div class="pm-hint mt-2">Load the GeoTIFF in Cockpit as a map background layer. The image is transparent apart from the contour lines and labels. Generating again replaces this file.</div>
@@ -1677,9 +1794,9 @@
 
                     </div>
 
-                    <div class="pm-map-wrap">
+                    <div class="pm-map-wrap" data-tour="pm-map">
                         <div id="pm-map"></div>
-                        <div class="pm-map-toggle" v-if="pm.result">
+                        <div class="pm-map-toggle" v-if="pm.result" data-tour="pm-contour-toggle">
                             <v-btn small :color="pm.showContours ? 'success' : ''" @click="pmToggleContours">
                                 <v-icon left small>{{ pm.showContours ? 'mdi-eye-off' : 'mdi-eye' }}</v-icon>{{ pm.showContours ? 'Hide contours' : 'Show contours' }}
                             </v-btn>
@@ -1688,7 +1805,7 @@
                             Click to add vertices ({{ pm.polygon.length }}{{ pm.polygon.length < 3 ? ', need 3+' : '' }}). Drag to adjust; click a vertex to delete it. Press Finish when done.
                         </div>
                         <div class="pm-map-hint" v-else-if="!pm.selectedFiles.length">Select one or more survey logs to see their coverage.</div>
-                        <div class="pm-legend" v-if="pmDepthRange">
+                        <div class="pm-legend" v-if="pmDepthRange" data-tour="pm-legend">
                             Depth (m)
                             <div class="pm-legend-bar"></div>
                             <div class="pm-legend-labels"><span>{{ pmDepthRange[0].toFixed(1) }}</span><span>{{ pmDepthRange[1].toFixed(1) }}</span></div>
@@ -1702,7 +1819,7 @@
             <div class="content content--tabbed" v-show="activeTab === 0">
                 <!-- Survey Content -->
                 <div>
-                    <div class="map-container">
+                    <div class="map-container" data-tour="live-map">
                         <div id="map"></div>
                         <div class="sonar-banner" v-if="sonarBanner" :class="'sonar-banner--' + sonarBanner.level">
                             <v-icon color="white" class="mr-2">mdi-alert</v-icon>
@@ -1744,7 +1861,7 @@
                             </v-chip>
                         </div>
                         <!-- Depth legend -->
-                        <div class="legend" @click="toggleLegend" :class="{ 'legend-minimized': !showLegend }">
+                        <div class="legend" data-tour="live-legend" @click="toggleLegend" :class="{ 'legend-minimized': !showLegend }">
                             <div class="zoom-level-display">
                                 <v-chip color="info" dark small>
                                     <v-icon left small>mdi-magnify</v-icon>
@@ -1774,37 +1891,37 @@
                     </div>
                     <div class="controls">
                         <!-- Left side - Start/Stop and Download -->
-                        <div class="controls-section">
+                        <div class="controls-section" data-tour="live-record">
                             <v-btn :color="run ? 'error' : 'success'" :disabled="isLoading" 
-                                   dark rounded elevation="2" @click="toggleRun">
+                                   dark rounded elevation="2" data-tour="btn-record" @click="toggleRun">
                                 <v-icon left>{{ run ? 'mdi-stop' : 'mdi-play' }}</v-icon>
                                 {{ run ? 'Stop' : 'Start' }}
                             </v-btn>
-                            <v-btn color="primary" dark rounded elevation="2" @click="download">
+                            <v-btn color="primary" dark rounded elevation="2" data-tour="btn-download" @click="download">
                                 <v-icon left>mdi-download</v-icon>
                                 Download
                             </v-btn>
                             <v-btn :color="simulationActive ? 'orange darken-2' : 'orange'" dark rounded elevation="2" 
-                                   @click="toggleSimulation" :disabled="run">
+                                   data-tour="btn-simulate" @click="toggleSimulation" :disabled="run">
                                 <v-icon left>{{ simulationActive ? 'mdi-stop' : 'mdi-replay' }}</v-icon>
                                 {{ simulationActive ? 'Stop Sim' : 'Simulate' }}
                             </v-btn>
                         </div>
                         <!-- Center section - Map Controls -->
-                        <div class="controls-section">
-                            <v-btn color="info" dark rounded elevation="2" @click="onCenterMapButtonClick" :disabled="!hasGpsLock">
+                        <div class="controls-section" data-tour="live-mapcontrols">
+                            <v-btn color="info" dark rounded elevation="2" data-tour="btn-center" @click="onCenterMapButtonClick" :disabled="!hasGpsLock">
                                 <v-icon left>mdi-crosshairs-gps</v-icon>
                                 Center
                             </v-btn>
-                            <v-btn color="warning" dark rounded elevation="2" @click="clearHeatmap">
+                            <v-btn color="warning" dark rounded elevation="2" data-tour="btn-clear" @click="clearHeatmap">
                                 <v-icon left>mdi-delete</v-icon>
                                 Clear
                             </v-btn>
-                            <v-btn color="purple" dark rounded elevation="2" @click="cacheVisibleTiles" :loading="cacheLoading" :disabled="cacheProgress.active">
+                            <v-btn color="purple" dark rounded elevation="2" data-tour="btn-cache-view" @click="cacheVisibleTiles" :loading="cacheLoading" :disabled="cacheProgress.active">
                                 <v-icon left>mdi-download-multiple</v-icon>
                                 Cache View
                             </v-btn>
-                            <v-btn color="purple darken-2" dark rounded elevation="2" @click="togglePolygonDrawing" :loading="cacheLoading" :disabled="cacheProgress.active">
+                            <v-btn color="purple darken-2" dark rounded elevation="2" data-tour="btn-cache-region" @click="togglePolygonDrawing" :loading="cacheLoading" :disabled="cacheProgress.active">
                                 <v-icon left>mdi-vector-polygon</v-icon>
                                 {{ isDrawingPolygon ? 'Cancel Drawing' : 'Cache Region' }}
                             </v-btn>
@@ -1812,18 +1929,18 @@
                                 <v-icon left>mdi-map-marker</v-icon>
                                 Recent Area
                             </v-btn>
-                            <v-btn color="blue" dark rounded elevation="2" @click="getCacheStats">
+                            <v-btn color="blue" dark rounded elevation="2" data-tour="btn-cache-refresh" @click="getCacheStats">
                                 <v-icon left>mdi-refresh</v-icon>
                                 Refresh
                             </v-btn>
-                            <v-btn color="red" dark rounded elevation="2" @click="confirmClearCache">
+                            <v-btn color="red" dark rounded elevation="2" data-tour="btn-cache-clear" @click="confirmClearCache">
                                 <v-icon left>mdi-delete-sweep</v-icon>
                                 Clear Cache
                             </v-btn>
                         </div>
                     </div>
                     <!-- Status Console - Directly beneath the map -->
-                    <div class="status-panel">
+                    <div class="status-panel" data-tour="live-console">
                         <h4>Status Console</h4>
                         <v-data-table
                             :headers="tableHeaders"
@@ -1906,7 +2023,7 @@
                 </div>
                 
                 <!-- Widget URL Footer -->
-                <div class="widget-url-footer">
+                <div class="widget-url-footer" data-tour="widget-url">
                     <span class="widget-url-label">Cockpit Widget URL:</span>
                     <code class="widget-url" @click="copyWidgetUrl">{{ widgetUrl }}</code>
                     <v-btn x-small color="primary" @click="copyWidgetUrl" class="copy-btn">
@@ -1919,6 +2036,48 @@
                     </span>
                 </div>
             </div>
+
+            <!-- Interface Tour: dims everything but the step's target, which stays clickable for "Try it" steps -->
+            <div v-if="tour.active" class="tour-layer">
+                <template v-if="tour.rect">
+                    <div class="tour-shade" :style="{ left: 0, top: 0, right: 0, height: tour.rect.top + 'px' }"></div>
+                    <div class="tour-shade" :style="{ left: 0, top: (tour.rect.top + tour.rect.height) + 'px', right: 0, bottom: 0 }"></div>
+                    <div class="tour-shade" :style="{ left: 0, top: tour.rect.top + 'px', width: tour.rect.left + 'px', height: tour.rect.height + 'px' }"></div>
+                    <div class="tour-shade" :style="{ left: (tour.rect.left + tour.rect.width) + 'px', top: tour.rect.top + 'px', right: 0, height: tour.rect.height + 'px' }"></div>
+                    <div class="tour-ring" :style="{ left: tour.rect.left + 'px', top: tour.rect.top + 'px', width: tour.rect.width + 'px', height: tour.rect.height + 'px' }"></div>
+                </template>
+                <div v-else class="tour-shade" style="inset: 0;"></div>
+                <div v-if="tour.busy" class="tour-blocker"></div>
+                <div ref="tourCard" class="tour-card" :style="tour.cardStyle" role="dialog" aria-live="polite">
+                    <div class="tour-card__meta">{{ tourStep.section }} · Step {{ tour.index + 1 }} of {{ tourSteps.length }}</div>
+                    <v-progress-linear :value="100 * (tour.index + 1) / tourSteps.length" color="#4CAF50" height="3" class="mb-2"></v-progress-linear>
+                    <div class="tour-card__title">{{ tourStep.title }}</div>
+                    <div v-if="tour.busy" class="tour-card__busy">
+                        <v-progress-circular indeterminate size="18" width="2" color="#4CAF50"></v-progress-circular>
+                        {{ tour.busyText || 'Getting the next step ready…' }}
+                        <template v-if="pm.processing"> ({{ pm.job.stage }}, {{ Math.round(pm.job.pct) }}%)</template>
+                    </div>
+                    <template v-else>
+                        <div class="tour-card__body" v-html="tourText"></div>
+                        <div v-if="tourStep.tryIt" class="tour-try" :class="{ 'tour-try--done': tour.tryDone }">
+                            <v-icon small :color="tour.tryDone ? '#4CAF50' : '#FFB74D'">{{ tour.tryDone ? 'mdi-check-circle' : 'mdi-hand-pointing-right' }}</v-icon>
+                            <span v-if="tour.tryDone"><b>Nice work!</b> Press Next to carry on.</span>
+                            <span v-else><b>Try it:</b> <span v-html="tourTryText"></span></span>
+                        </div>
+                    </template>
+                    <div v-if="tour.error" class="tour-card__error">{{ tour.error }}</div>
+                    <div v-for="(w, k) in tour.warnings" :key="k" class="tour-card__error">{{ w }}</div>
+                    <div class="tour-card__actions">
+                        <v-btn x-small text @click="tourExit">Exit tour</v-btn>
+                        <v-spacer></v-spacer>
+                        <v-btn small text :disabled="tour.busy || tour.index === 0" @click="tourGo(tour.index - 1)">Back</v-btn>
+                        <v-btn v-if="tourStep.tryIt && !tour.tryDone && !tour.busy" small text @click="tour.tryDone = true">Skip</v-btn>
+                        <v-btn small color="#4CAF50" class="white--text" :disabled="!tourCanNext" @click="tourNext">
+                            {{ tour.index === tourSteps.length - 1 ? 'Finish' : 'Next' }}
+                        </v-btn>
+                    </div>
+                </div>
+            </div>
         </v-app>
         
 
@@ -1928,6 +2087,7 @@
     <script src="static/js/vuetify.js"></script>
     <script src="static/js/axios.min.js"></script>
     <script src="static/js/leaflet.js"></script>
+    <script src="static/js/tour.js"></script>
 
     <script src="static/js/leaflet-heat.js"></script>
     <script>
@@ -2052,6 +2212,7 @@
                 }
             });
             map.addControl(new Control());
+            state.setActive = setActive;
 
             map.on('click', e => {
                 if (!state.active) return;
@@ -2191,6 +2352,22 @@
                     // Tabs
                     activeTab: 0,
                     filesUrl: '',                    // BlueOS file browser, set when the Files tab is first opened
+                    // Interface Tour (steps in static/js/tour.js)
+                    tour: {
+                        active: false,
+                        index: 0,
+                        busy: false,
+                        busyText: '',
+                        tryDone: false,
+                        error: '',
+                        warnings: [],
+                        rect: null,                  // spotlight around the step's target (viewport px)
+                        cardStyle: {},
+                        examples: {
+                            small: { name: 'example_small_survey.csv', rows: 0 },
+                            large: { name: 'example_large_survey.csv', rows: 0 }
+                        }
+                    },
                     // Data Sharing: other vehicles running this extension
                     ds: {
                         opened: false,
@@ -2438,6 +2615,33 @@
                 pmQcAltWarnings() {
                     return this.pm.qc ? this.pm.qc.altitude_warnings.filter(a => !this.pmIsIgnored('alt:' + a.file)) : [];
                 },
+                tourSteps() {
+                    return PING_TOUR_STEPS;
+                },
+                tourStep() {
+                    return PING_TOUR_STEPS[this.tour.index] || PING_TOUR_STEPS[0];
+                },
+                tourText() {
+                    // Text functions read live data (counts, depths), so the card updates as it changes.
+                    const text = this.tourStep.text;
+                    try {
+                        return typeof text === 'function' ? text(this.tourHelpers) : text;
+                    } catch (e) {
+                        return '<p>(This step\'s text needs data that isn\'t loaded yet.)</p>';
+                    }
+                },
+                tourTryText() {
+                    const tryIt = this.tourStep.tryIt;
+                    if (!tryIt) return '';
+                    try {
+                        return typeof tryIt.text === 'function' ? tryIt.text(this.tourHelpers) : tryIt.text;
+                    } catch (e) {
+                        return '';
+                    }
+                },
+                tourCanNext() {
+                    return !this.tour.busy && (!this.tourStep.tryIt || this.tour.tryDone);
+                },
                 dsSelected() {
                     return this.ds.scan.vehicles.find(v => v.id === this.ds.selected) || null;
                 },
@@ -2575,6 +2779,13 @@
             },
             created() {
                 // Leaflet objects for the processing map; kept out of data() so Vue doesn't observe them.
+                // Interface Tour bookkeeping (not observed): helpers the steps use, the user's state to put
+                // back afterwards, and the tour's own timer and simulation.
+                this.tourHelpers = this.tourMakeHelpers();
+                this.tourSaved = null;
+                this.tourTimer = null;
+                this.tourToken = 0;
+                this.tourStartedSim = false;
                 // Data Sharing timers and the synced vehicles' layers on the Live Survey map (not observed).
                 this.dsTimers = { scan: null, copy: null, sync: null };
                 this.dsLayers = {};
@@ -2602,6 +2813,310 @@
                             this.map.invalidateSize();
                         }
                     });
+                },
+
+                // ---------- Interface Tour ----------
+                tourMakeHelpers() {
+                    // What steps in tour.js use to set up the interface (as `t`).
+                    const app = this;
+                    const t = {
+                        app,
+                        mark: {},                    // per-step notes, e.g. the vertex count before a Try it
+                        get examples() { return app.tour.examples; },
+                        wait: ms => new Promise(resolve => setTimeout(resolve, ms)),
+                        async until(test, timeoutMs, what) {
+                            const end = Date.now() + (timeoutMs || 20000);
+                            while (!test()) {
+                                if (Date.now() > end) throw new Error(`Timed out waiting for ${what || 'the interface'}.`);
+                                await t.wait(150);
+                            }
+                        },
+                        async simulate(file) {
+                            // Never interrupt a real recording (starting a simulation stops it).
+                            if (app.run) return false;
+                            if (!app.tourStartedSim) {
+                                await app.startSimulation(file);
+                                app.tourStartedSim = app.simulationActive;
+                            }
+                            return app.tourStartedSim;
+                        },
+                        async stopSimulation() {
+                            if (app.tourStartedSim) {
+                                await app.stopSimulation();
+                                app.tourStartedSim = false;
+                            }
+                        },
+                        async centerLive(zoom) {
+                            if (!app.map) return;
+                            const fix = () => app.tableItems.length && Number(app.tableItems[0].latitude) && Number(app.tableItems[0].longitude);
+                            try {
+                                await t.until(fix, 8000, 'the first position');
+                            } catch (e) {
+                                return;              // no position yet: leave the map where it is
+                            }
+                            app.map.setView([Number(app.tableItems[0].latitude), Number(app.tableItems[0].longitude)], zoom);
+                        },
+                        measureOff() {
+                            [app.measure, app.pmLeaflet.measure].forEach(m => { if (m && m.active && m.setActive) m.setActive(false); });
+                        },
+                        measurePoints: m => (m && m.points ? m.points.length : 0),
+                        showSoundings(on) {
+                            app.pm.showPoints = on;
+                            app.pmRedrawPoints();
+                        },
+                        async select(names) {
+                            app.pm.selectedFiles = names.slice();
+                            app.pm.qc = null;
+                            app.pm.polygon = [];
+                            app.pm.showPoints = true;
+                            app.pmRenderPolygon();
+                            await app.pmLoadPoints(true);
+                        },
+                        async qc() {
+                            // Auto-tune changes the tolerances after the first check, which triggers a second
+                            // one: wait until the result has settled.
+                            const settled = () => app.pm.qc && !app.pm.qcLoading;
+                            await t.wait(600);
+                            await t.until(settled, 90000, 'the data-quality check');
+                            await t.wait(900);
+                            await t.until(settled, 90000, 'the data-quality check');
+                        },
+                        fitArea() {
+                            app.pmUseDataExtent();
+                        },
+                        resultFor(files) {
+                            const r = app.pm.result;
+                            return !!r && r.tour && JSON.stringify(r.source_files.slice().sort()) === JSON.stringify(files.slice().sort());
+                        },
+                        async generate(files) {
+                            if (app.pm.processing) await t.until(() => !app.pm.processing, 300000, 'the contour map');
+                            if (t.resultFor(files) && !app.pmResultOutdated) return;
+                            app.tour.busyText = 'Generating the contour map on the boat. This can take up to a minute…';
+                            await app.pmGenerate();
+                            await t.until(() => !app.pm.processing, 300000, 'the contour map');
+                            if (app.pm.error) throw new Error(app.pm.error);
+                        },
+                        openFlag(item) {
+                            // Open the map popup of a flagged sounding (spike or one end of an overlap pair).
+                            const layer = app.pmLeaflet.flagsLayer;
+                            if (!layer) return;
+                            let found = null;
+                            layer.eachLayer(l => {
+                                if (!found && l.getLatLng && l.getPopup && l.getPopup()) {
+                                    const ll = l.getLatLng();
+                                    if (Math.abs(ll.lat - item.lat) < 1e-7 && Math.abs(ll.lng - item.lon) < 1e-7) found = l;
+                                }
+                            });
+                            if (found) found.openPopup();
+                        },
+                        closePopups() {
+                            if (app.pmLeaflet.map) app.pmLeaflet.map.closePopup();
+                        }
+                    };
+                    return t;
+                },
+                async tourOpen() {
+                    if (this.tour.active) return;
+                    this.tourSnapshot();
+                    Object.assign(this.tour, { active: true, index: 0, error: '', warnings: [], rect: null, busy: true, busyText: 'Preparing the example surveys…' });
+                    try {
+                        const response = await axios.post('tour/setup');
+                        this.tour.examples = response.data.examples;
+                        this.tour.warnings = response.data.warnings || [];
+                    } catch (e) {
+                        this.tour.error = 'Could not prepare the example surveys: ' + ((e.response && e.response.data && e.response.data.error) || e.message);
+                    }
+                    // A clean slate for the tour's post-processing (the user's own state is restored afterwards).
+                    Object.assign(this.pm, {
+                        selectedFiles: [], polygon: [], exclude: [], excludeOverlaps: [], ignored: [], result: null, qc: null,
+                        drawing: false, selectedVertex: null, error: '', showPoints: true, showContours: true
+                    });
+                    this.pm.settings = Object.assign({}, PM_DEFAULT_SETTINGS, { vertical_reference: 'tide', tide_source: 'manual' });
+                    this.pmShowOverlay(null);
+                    this.pmRenderPolygon();
+                    await this.pmLoadLogFiles();
+                    document.addEventListener('keydown', this.tourKey);
+                    window.addEventListener('resize', this.tourMeasure);
+                    document.body.classList.add('tour-on');
+                    this.tourTimer = setInterval(this.tourMeasure, 250);
+                    await this.tourGo(0);
+                },
+                async tourGo(i) {
+                    if (i < 0 || i >= PING_TOUR_STEPS.length) return;
+                    const token = ++this.tourToken;
+                    const step = PING_TOUR_STEPS[i];
+                    Object.assign(this.tour, { index: i, tryDone: false, error: '', busy: true, busyText: '' });
+                    this.tourHelpers.mark = Object.assign({}, this.tourHelpers.mark);
+                    try {
+                        if (step.tab !== undefined && this.activeTab !== step.tab) {
+                            this.activeTab = step.tab;
+                            this.onTabChange(step.tab);
+                            await this.tourHelpers.wait(450);
+                        }
+                        if (step.before) await step.before(this.tourHelpers);
+                    } catch (e) {
+                        if (token === this.tourToken) this.tour.error = `Part of this step didn't work (${e.message}). You can still carry on with Next.`;
+                    }
+                    if (token !== this.tourToken) return;    // the user moved on meanwhile
+                    this.tour.busy = false;
+                    this.tour.busyText = '';
+                    await this.$nextTick();
+                    this.tourScrollToTarget();
+                    this.tourMeasure();
+                },
+                tourNext() {
+                    if (!this.tourCanNext) return;
+                    if (this.tour.index >= PING_TOUR_STEPS.length - 1) {
+                        this.tourExit();
+                    } else {
+                        this.tourGo(this.tour.index + 1);
+                    }
+                },
+                async tourExit() {
+                    if (!this.tour.active) return;
+                    this.tourToken++;                    // abandon any step still setting up
+                    clearInterval(this.tourTimer);
+                    document.removeEventListener('keydown', this.tourKey);
+                    window.removeEventListener('resize', this.tourMeasure);
+                    document.body.classList.remove('tour-on');
+                    this.tour.active = false;
+                    this.tour.busy = false;
+                    await this.tourRestore();
+                },
+                tourKey(ev) {
+                    if (ev.target && /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName)) return;
+                    if (ev.key === 'Escape') {
+                        this.tourExit();
+                    } else if (ev.key === 'ArrowRight' && this.tourCanNext) {
+                        this.tourNext();
+                    } else if (ev.key === 'ArrowLeft' && !this.tour.busy && this.tour.index > 0) {
+                        this.tourGo(this.tour.index - 1);
+                    }
+                },
+                tourTarget() {
+                    const target = this.tourStep.target;
+                    if (!target) return null;
+                    return document.querySelector(/^[#.\[]/.test(target) ? target : `[data-tour="${target}"]`);
+                },
+                tourScrollToTarget() {
+                    const el = this.tourTarget();
+                    if (!el) return;
+                    // scroll: 'start' for targets that grow during the step (e.g. results appearing below).
+                    if (this.tourStep.scroll === 'start') {
+                        el.scrollIntoView({ block: 'start' });
+                        return;
+                    }
+                    const r = el.getBoundingClientRect();
+                    if (r.top < 60 || r.bottom > window.innerHeight - 20) {
+                        el.scrollIntoView({ block: r.height > window.innerHeight * 0.6 ? 'start' : 'center' });
+                    }
+                },
+                tourMeasure() {
+                    if (!this.tour.active) return;
+                    // Spotlight: the target's box, padded a little and kept on screen.
+                    let rect = null;
+                    const el = this.tourTarget();
+                    if (el) {
+                        const r = el.getBoundingClientRect();
+                        const pad = 6, vw = window.innerWidth, vh = window.innerHeight;
+                        const left = Math.max(0, r.left - pad), top = Math.max(0, r.top - pad);
+                        const right = Math.min(vw, r.right + pad), bottom = Math.min(vh, r.bottom + pad);
+                        if (r.width > 0 && r.height > 0 && right > left && bottom > top) {
+                            rect = { left: Math.round(left), top: Math.round(top), width: Math.round(right - left), height: Math.round(bottom - top) };
+                        }
+                    }
+                    if (JSON.stringify(rect) !== JSON.stringify(this.tour.rect)) this.tour.rect = rect;
+                    this.tourPlaceCard();
+                    // Try it: unlock Next once the student has done it.
+                    const tryIt = this.tourStep.tryIt;
+                    if (tryIt && !this.tour.tryDone && !this.tour.busy) {
+                        try {
+                            if (tryIt.done(this.tourHelpers)) this.tour.tryDone = true;
+                        } catch (e) { /* not yet */ }
+                    }
+                },
+                tourPlaceCard() {
+                    const card = this.$refs.tourCard;
+                    if (!card) return;
+                    const vw = window.innerWidth, vh = window.innerHeight, m = 12;
+                    const w = Math.min(420, vw - 2 * m);
+                    const h = Math.min(card.offsetHeight, vh - 2 * m);
+                    const r = this.tour.rect;
+                    const clampX = v => Math.max(m, Math.min(vw - w - m, v));
+                    const clampY = v => Math.max(m, Math.min(vh - h - m, v));
+                    let x, y;
+                    if (!r) {
+                        x = (vw - w) / 2;
+                        y = (vh - h) / 2;
+                    } else {
+                        // Beside the target where there's room, preferring the step's placement.
+                        const fits = {
+                            right: vw - (r.left + r.width) >= w + 2 * m,
+                            left: r.left >= w + 2 * m,
+                            bottom: vh - (r.top + r.height) >= h + 2 * m,
+                            top: r.top >= h + 2 * m
+                        };
+                        const side = [this.tourStep.placement, 'right', 'left', 'bottom', 'top'].find(s => s && fits[s]);
+                        if (side === 'right') { x = r.left + r.width + m; y = clampY(r.top); }
+                        else if (side === 'left') { x = r.left - w - m; y = clampY(r.top); }
+                        else if (side === 'bottom') { x = clampX(r.left); y = r.top + r.height + m; }
+                        else if (side === 'top') { x = clampX(r.left); y = r.top - h - m; }
+                        else {
+                            // A big target (a map): cover its edge on the side with more room.
+                            x = r.left + r.width / 2 > vw / 2 ? m : vw - w - m;
+                            y = clampY(r.top + m);
+                        }
+                    }
+                    const style = { left: Math.round(x) + 'px', top: Math.round(y) + 'px', width: w + 'px', maxHeight: (vh - 2 * m) + 'px' };
+                    if (JSON.stringify(style) !== JSON.stringify(this.tour.cardStyle)) this.tour.cardStyle = style;
+                },
+                tourSnapshot() {
+                    // Everything the tour changes, so it can be put back exactly.
+                    const pm = this.pm;
+                    const view = map => (map ? { center: map.getCenter(), zoom: map.getZoom() } : null);
+                    this.tourSaved = {
+                        tab: this.activeTab,
+                        pm: JSON.parse(JSON.stringify({
+                            selectedFiles: pm.selectedFiles, settings: pm.settings, polygon: pm.polygon, exclude: pm.exclude,
+                            excludeOverlaps: pm.excludeOverlaps, ignored: pm.ignored, tides: pm.tides,
+                            showPoints: pm.showPoints, showContours: pm.showContours
+                        })),
+                        result: pm.result,
+                        pmView: view(this.pmLeaflet.map),
+                        liveView: view(this.map),
+                        liveCircles: this.circleMarkers.length
+                    };
+                },
+                async tourRestore() {
+                    const saved = this.tourSaved;
+                    this.tourSaved = null;
+                    this.tourHelpers.mark = {};
+                    await this.tourHelpers.stopSimulation();
+                    this.tourHelpers.measureOff();
+                    this.tourHelpers.closePopups();
+                    if (!saved) return;
+                    // The replay's circles come off the live map; the user's own stay.
+                    this.circleMarkers.splice(saved.liveCircles).forEach(c => c.remove());
+                    const p = saved.pm;
+                    Object.assign(this.pm, {
+                        selectedFiles: p.selectedFiles, polygon: p.polygon, tides: p.tides, showPoints: p.showPoints,
+                        showContours: p.showContours, drawing: false, selectedVertex: null, error: '', qc: null
+                    });
+                    this.pm.settings = Object.assign({}, PM_DEFAULT_SETTINGS, p.settings);
+                    try {
+                        localStorage.setItem(PM_TIDES_KEY, JSON.stringify(p.tides));
+                    } catch (e) { /* storage unavailable */ }
+                    await this.pmLoadPoints(false);          // (clears dismissals, so set them afterwards)
+                    this.pm.exclude = p.exclude;
+                    this.pm.excludeOverlaps = p.excludeOverlaps;
+                    this.pm.ignored = p.ignored;
+                    this.pm.result = saved.result;
+                    this.pmShowOverlay(saved.result);
+                    this.pmRenderPolygon();
+                    if (saved.pmView && this.pmLeaflet.map) this.pmLeaflet.map.setView(saved.pmView.center, saved.pmView.zoom);
+                    if (saved.liveView && this.map) this.map.setView(saved.liveView.center, saved.liveView.zoom);
+                    this.activeTab = saved.tab;
+                    this.onTabChange(saved.tab);
                 },
 
                 // ---------- Data Sharing ----------
@@ -2836,7 +3351,7 @@
                 async pmLoadLatestOutput() {
                     // Only the most recent output is kept on the vehicle; show it (and what produced it)
                     // when the tab opens so the download always matches the preview.
-                    if (this.pm.result) return;
+                    if (this.pm.result || this.tour.active) return;
                     try {
                         const response = await axios.get('processed_files');
                         const latest = (response.data.files || [])[0];
@@ -3086,7 +3601,8 @@
                             tides: this.pmSelectedTides,
                             exclude: this.pm.exclude,
                             exclude_overlaps: this.pm.excludeOverlaps,
-                            ignored: this.pm.ignored
+                            ignored: this.pm.ignored,
+                            tour: this.tour.active          // kept apart from the user's own output
                         });
                         this.pmPollJob(response.data.id);
                     } catch (e) {
@@ -3145,7 +3661,7 @@
                         L_.overlay = null;
                     }
                     if (!o || !L_.map || !this.pm.showContours) return;
-                    L_.overlay = L.imageOverlay('processed/' + encodeURIComponent(o.preview) + '?t=' + o.created, o.bounds, { interactive: false }).addTo(L_.map);
+                    L_.overlay = L.imageOverlay((o.url_base || 'processed/') + encodeURIComponent(o.preview) + '?t=' + o.created, o.bounds, { interactive: false }).addTo(L_.map);
                 },
                 async pmRestoreFrom(o) {
                     this.pm.result = o;
@@ -4424,15 +4940,18 @@
                         await this.stopSimulation();
                     }
                 },
-                async startSimulation() {
+                async startSimulation(file) {
+                    // file: play that log instead of simulation.csv, without putting it on Cockpit's maps
+                    // (the Interface Tour's example survey).
                     try {
-                        const response = await fetch('start_simulation');
+                        const response = await fetch(file ? 'start_simulation?quiet=1&skip_warmup=1&file=' + encodeURIComponent(file) : 'start_simulation');
                         const result = await response.json();
                         if (result.success) {
                             this.simulationActive = true;
                             this.status = `Simulation started: ${result.message}`;
                             this.receivingData = true;
-                            this.resetMap(9.2, -133, 10);
+                            if (!file) this.resetMap(9.2, -133, 10);
+                            clearInterval(this.intervalId);
                             this.intervalId = setInterval(this.fetchData, 200);
                         } else {
                             this.status = 'Simulation error: ' + result.message;
