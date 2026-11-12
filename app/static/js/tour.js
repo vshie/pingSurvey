@@ -76,7 +76,7 @@ const PING_TOUR_STEPS = [
         title: 'The live map',
         before: async t => {
             await t.simulate(t.examples.small.name);
-            await t.centerLive(18);
+            await t.centerLive(19);   // the live map's closest zoom, so 4-5 m footprints are easy to see
         },
         text: t => `
             ${t.app.run ? `<p><i>Your boat is recording right now, so the tour is showing your live data instead of a replay.</i></p>` : `

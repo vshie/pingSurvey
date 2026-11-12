@@ -4122,17 +4122,18 @@
                             altitude: hasNewFormat ? data[10] : 0
                         }];
 
-                        // Use the correct lat/lon based on format
-                        const lat = hasNewFormat ? data[8] : data[6];
-                        const lon = hasNewFormat ? data[9] : data[7];
-                        
+                        // Use the correct lat/lon based on format. Simulation replays rows read from a CSV,
+                        // so values can arrive as strings; compare them as numbers.
+                        const lat = Number(hasNewFormat ? data[8] : data[6]);
+                        const lon = Number(hasNewFormat ? data[9] : data[7]);
+
                         // A valid GPS lock requires finite coordinates that aren't (0,0)/null island.
                         const validFix = Number.isFinite(lat) && Number.isFinite(lon) &&
                             (Math.abs(lat) > 0.0001 || Math.abs(lon) > 0.0001);
                         this.hasGpsLock = validFix;
 
                         if (validFix) {
-                            this.updateMarker(lat, lon, data[3], data[4], data[5]);
+                            this.updateMarker(lat, lon, Number(data[3]), Number(data[4]), Number(data[5]));
                         }
 
                         // Center on GPS the first time we get a VALID fix.
