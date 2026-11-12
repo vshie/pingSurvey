@@ -20,6 +20,8 @@ except ImportError as e:
     _contour_import_error = str(e)
     print(f"Post-mission processing unavailable: {e}")
 
+VERSION = "1.3.1"
+
 # Logs live on the BlueOS host bind mount; overridable for local development.
 LOGS_DIR = os.environ.get('PING_SURVEY_LOGS_DIR', '/app/logs')
 PROCESSED_DIR = os.path.join(LOGS_DIR, 'processed')
@@ -34,6 +36,7 @@ TILE_CACHE_SIZE_LIMIT = 5 * 1024 * 1024 * 1024  # 5GB cache limit
 # Performance optimization: Global state to avoid redundant operations
 _offline_maps_dir_verified = False
 _system_id_cache = None
+_system_id_detected = False     # False when _system_id_cache is only the default of 1
 _distance_ids_cache = None
 _urls_cache = None
 _cache_size_bytes = 0
@@ -48,6 +51,7 @@ def _forget_distance_sensor():
 
 
 import cockpit_link
+import data_sharing
 import sonar_watchdog
 sonar = sonar_watchdog.SonarWatchdog(on_redetected=_forget_distance_sensor)
 _CACHE_SIZE_CHECK_INTERVAL = 60  # Only recalculate cache size every 60 seconds
@@ -308,7 +312,7 @@ def _distance_payload_valid(payload):
 
 def get_system_id():
     """Detect the correct system ID by checking available vehicles and their autopilot types."""
-    global _system_id_cache
+    global _system_id_cache, _system_id_detected
     
     # Return cached value if available
     if _system_id_cache is not None:
@@ -334,6 +338,7 @@ def get_system_id():
                         if autopilot_type in valid_autopilots:
                             print(f"Found valid autopilot: {autopilot_type} with system ID: {vehicle_id}")
                             _system_id_cache = vehicle_id
+                            _system_id_detected = True
                             return vehicle_id
                 print("Warning: No valid autopilot found; probing GLOBAL_POSITION_INT across vehicle IDs...")
         # Fallback: probe GLOBAL_POSITION_INT across vehicle IDs. Handles setups where
@@ -341,6 +346,7 @@ def get_system_id():
         probed = _probe_system_id_via_gps()
         if probed is not None:
             _system_id_cache = probed
+            _system_id_detected = True
             return probed
         print("Warning: Could not detect system ID, using default value of 1")
         _system_id_cache = 1
@@ -351,6 +357,7 @@ def get_system_id():
             probed = _probe_system_id_via_gps()
             if probed is not None:
                 _system_id_cache = probed
+                _system_id_detected = True
                 return probed
         except Exception:
             pass
@@ -697,7 +704,7 @@ def servicenames():
     "description": "This extension makes it easy to record data from the Ping sonar and gps onboard the vehicle, keeping a poor communications link from interfering with the quality of collected survey data. When connected, the extension displays a data preview that is intended to aide in survey grid spacing determination while logging at 2Hz. Happy motoring!",
     "icon": "mdi-map-plus",
     "company": "Blue Robotics",
-    "version": "1.3.1",
+    "version": "''' + VERSION + '''",
     "webpage": "https://github.com/vshie/pingSurvey",
     "api": "https://github.com/bluerobotics/BlueOS-docker",
     "works_in_relative_paths": true,
@@ -971,6 +978,7 @@ def list_log_files():
                 'filename': f,
                 'path': fpath,
                 'size_mb': round(os.path.getsize(fpath) / (1024 * 1024), 2),
+                'size_bytes': os.path.getsize(fpath),
                 'modified': os.path.getmtime(fpath)
             })
     files.sort(key=lambda f: f['modified'], reverse=True)
@@ -1023,6 +1031,164 @@ def download_log_file(filename):
     if path is None:
         return jsonify({'error': 'File not found'}), 404
     return send_file(path, as_attachment=True, max_age=0)
+
+
+# ---------------------------------------------------------------------------
+# Data sharing between vehicles (see data_sharing.py)
+# ---------------------------------------------------------------------------
+
+_vehicle_name_cache = {'name': None, 'checked': 0}
+_sysid_thread = None
+
+
+def _vehicle_name():
+    """The vehicle's name set in BlueOS, cached (re-checked every minute until it is found)."""
+    if _vehicle_name_cache['name'] is None and time.time() - _vehicle_name_cache['checked'] > 60:
+        _vehicle_name_cache['checked'] = time.time()
+        try:
+            name = requests.get(f'{sonar_watchdog.BLUEOS}/beacon/v1.0/vehicle_name', timeout=2).json()
+            if isinstance(name, str) and name.strip():
+                _vehicle_name_cache['name'] = name.strip()
+        except (requests.RequestException, ValueError):
+            pass
+    return _vehicle_name_cache['name']
+
+
+def _local_peer_info():
+    """What other vehicles see of this one. Never waits for system ID detection."""
+    global _sysid_thread
+    if _system_id_cache is None and not (_sysid_thread and _sysid_thread.is_alive()):
+        _sysid_thread = threading.Thread(target=get_system_id, daemon=True)
+        _sysid_thread.start()
+    with _state_lock:
+        active = logging_active
+        row = list(data)
+    try:
+        log_count = sum(1 for f in os.listdir(LOGS_DIR) if f.endswith('.csv') and f != 'simulation.csv')
+    except OSError:
+        log_count = 0
+    last_fix = None
+    if active and len(row) >= 10:
+        try:
+            last_fix = {'lat': float(row[8]), 'lon': float(row[9]), 'depth_m': round(float(row[3]) / 100, 2)}
+        except (TypeError, ValueError):
+            pass
+    return {
+        'app': 'pingsurvey',
+        'instance_id': INSTANCE_ID,
+        'version': VERSION,
+        'sysid': _system_id_cache,
+        'sysid_detected': _system_id_detected,
+        'vehicle_name': _vehicle_name(),
+        'logging_active': active,
+        'current_log': os.path.basename(current_log_file) if current_log_file else None,
+        'log_count': log_count,
+        'last_fix': last_fix,
+    }
+
+
+@app.route('/peer_info')
+def peer_info():
+    """Identifies this vehicle to other vehicles' Data Sharing scans."""
+    return jsonify(_local_peer_info())
+
+
+@app.route('/log_tail')
+def log_tail():
+    """Complete lines of a log from byte `offset` (default: the log being recorded), for syncing vehicles.
+
+    Returns at most `max` bytes, cut at the last newline. data is the raw bytes decoded as latin-1, so the
+    other vehicle can write back exactly the same bytes.
+    """
+    with _state_lock:
+        active = logging_active
+    current = os.path.basename(current_log_file) if current_log_file else None
+    out = {'logging_active': active, 'current_log': current, 'file': None}
+    name = request.args.get('file') or current
+    if not name:
+        return jsonify(out)
+    path = _safe_path(LOGS_DIR, name, ('.csv',))
+    if path is None:
+        return jsonify(dict(out, error='File not found')), 404
+    try:
+        offset = max(0, int(request.args.get('offset', 0)))
+        limit = min(max(0, int(request.args.get('max', 256 * 1024))), 1024 * 1024)
+    except ValueError:
+        return jsonify(dict(out, error='offset and max must be whole numbers')), 400
+    size = os.path.getsize(path)
+    chunk = b''
+    if limit and offset < size:
+        with open(path, 'rb') as f:
+            f.seek(offset)
+            chunk = f.read(limit)
+        chunk = chunk[:chunk.rfind(b'\n') + 1]     # only complete lines; the rest comes next time
+    return jsonify(dict(out, file=name, size=size, offset=offset, next_offset=offset + len(chunk),
+                        data=chunk.decode('latin-1')))
+
+
+def _sharing_call(fn, *args):
+    try:
+        return jsonify(fn(*args))
+    except KeyError:
+        return jsonify({'error': 'That vehicle is not in the latest scan. Scan the network again.'}), 404
+    except data_sharing.PeerError as e:
+        return jsonify({'error': str(e)}), 502
+
+
+@app.route('/peers/scan', methods=['POST'])
+def peers_scan():
+    started = sharing.start_scan()
+    return jsonify(sharing.scan_status()), (202 if started else 409)
+
+
+@app.route('/peers')
+def peers():
+    return jsonify(sharing.scan_status())
+
+
+@app.route('/peers/<peer_id>/log_files')
+def peer_log_files(peer_id):
+    return _sharing_call(sharing.log_files, peer_id)
+
+
+@app.route('/peers/copy', methods=['POST'])
+def peers_copy():
+    body = request.get_json(silent=True) or {}
+    files = body.get('files') or []
+    if not isinstance(files, list):
+        return jsonify({'error': 'files must be a list of log file names'}), 400
+    return _sharing_call(lambda: {'queued': sharing.copy(str(body.get('peer')), files)})
+
+
+@app.route('/peers/copy_status')
+def peers_copy_status():
+    return jsonify({'jobs': sharing.copy_status()})
+
+
+@app.route('/sync/start', methods=['POST'])
+def sync_start():
+    body = request.get_json(silent=True) or {}
+    return _sharing_call(lambda: {'started': sharing.start_sync(str(body.get('peer')))})
+
+
+@app.route('/sync/stop', methods=['POST'])
+def sync_stop():
+    body = request.get_json(silent=True) or {}
+    return jsonify({'stopped': sharing.stop_sync(str(body.get('peer')))})
+
+
+@app.route('/sync/status')
+def sync_status():
+    return jsonify({'vehicles': sharing.sync_status()})
+
+
+@app.route('/sync/points')
+def sync_points():
+    try:
+        since = int(request.args.get('since', 0))
+    except ValueError:
+        since = 0
+    return jsonify(sharing.sync_points(since))
 
 
 @app.route('/log_points')
@@ -1452,6 +1618,10 @@ def _cockpit_snapshot():
 
 
 cockpit = cockpit_link.CockpitLink(app, '/cockpit_ws', _cockpit_snapshot)
+
+os.makedirs(LOGS_DIR, exist_ok=True)
+INSTANCE_ID = data_sharing.instance_id(LOGS_DIR)
+sharing = data_sharing.DataSharing(LOGS_DIR, _local_peer_info)
 
 
 @app.route('/processed/<path:filename>')

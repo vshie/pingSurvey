@@ -794,6 +794,120 @@
             cursor: move;
             touch-action: none;
         }
+        /* ---------- Data Sharing ---------- */
+        .ds-layout {
+            display: grid;
+            grid-template-columns: 420px 1fr;
+            gap: 16px;
+            height: 100%;
+            min-height: 0;
+        }
+        .ds-vehicle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px;
+            margin: 0 -8px 4px;
+            border-radius: 6px;
+            border-left: 3px solid transparent;
+            cursor: pointer;
+        }
+        .ds-vehicle:hover {
+            background: rgba(255, 255, 255, 0.04);
+        }
+        .ds-vehicle--selected {
+            background: rgba(76, 175, 80, 0.08);
+            border-left-color: #4CAF50;
+        }
+        .ds-vehicle__main {
+            flex: 1;
+            min-width: 0;
+        }
+        .ds-vehicle__name {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.95rem;
+            font-weight: 500;
+            color: white;
+        }
+        .ds-chips {
+            display: flex;
+            gap: 4px;
+            margin-top: 4px;
+        }
+        .ds-swatch {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 4px;
+            flex: 0 0 auto;
+        }
+        .ds-sync {
+            padding: 6px 0 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            margin-bottom: 8px;
+        }
+        .ds-sync__state {
+            font-size: 0.85rem;
+            color: #ddd;
+            margin: 2px 0;
+        }
+        .ds-log-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .ds-log {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .ds-log__main {
+            flex: 1;
+            min-width: 0;
+        }
+        .ds-log__name {
+            font-size: 0.85rem;
+            color: white;
+            word-break: break-all;
+        }
+        .ds-log__status {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 2px;
+        }
+        .ds-error {
+            font-size: 0.78rem;
+            color: #ff8a80;
+        }
+        .ds-legend {
+            margin-top: 6px;
+            font-size: 0.75rem;
+        }
+        .ds-boat-label {
+            white-space: nowrap;
+            padding: 1px 6px;
+            border-radius: 4px;
+            color: white;
+            font-size: 12px;
+            font-weight: 600;
+            transform: translate(10px, -50%);
+            display: inline-block;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+        }
+        @media (max-width: 900px) {
+            .ds-layout {
+                grid-template-columns: 1fr;
+                height: auto;
+            }
+        }
         /* ---------- Measure tool (both maps) ---------- */
         .measure-btn {
             font-size: 18px;
@@ -1019,10 +1133,133 @@
             <v-tabs v-model="activeTab" class="main-tabs" background-color="#1E1E1E" color="#4CAF50" grow @change="onTabChange">
                 <v-tab><v-icon left small>mdi-radar</v-icon>Live Survey</v-tab>
                 <v-tab><v-icon left small>mdi-map-legend</v-icon>Post-Mission Processing</v-tab>
+                <v-tab><v-icon left small>mdi-lan-connect</v-icon>Data Sharing</v-tab>
                 <v-tab><v-icon left small>mdi-folder-open</v-icon>Files</v-tab>
             </v-tabs>
 
             <div class="content content--tabbed" v-show="activeTab === 2">
+                <div class="ds-layout">
+                    <div class="pm-panel">
+                        <!-- Vehicles on the network -->
+                        <v-card class="pm-card" outlined>
+                            <v-card-title>
+                                Vehicles on the network
+                                <v-spacer></v-spacer>
+                                <v-btn small color="primary" :loading="ds.scan.state === 'running'" @click="dsScan"><v-icon left small>mdi-radar</v-icon>Scan</v-btn>
+                            </v-card-title>
+                            <v-card-text>
+                                <div v-if="ds.scan.state === 'running'" class="mb-2">
+                                    <v-progress-linear :value="ds.scan.total ? 100 * ds.scan.done / ds.scan.total : 0" color="primary" height="4" rounded></v-progress-linear>
+                                    <div class="pm-hint mt-1">Looking for vehicles running this extension on {{ dsSubnetText }}… ({{ ds.scan.done }} / {{ ds.scan.total }})</div>
+                                </div>
+                                <div v-else-if="ds.scan.state === 'done' && !ds.scan.vehicles.length" class="pm-hint">
+                                    No other vehicles found{{ ds.scan.finished ? ' (' + pmFormatTime(ds.scan.finished).local + ')' : '' }}. Vehicles must be on the same network and running this extension.
+                                </div>
+                                <div v-else-if="ds.scan.state === 'idle'" class="pm-hint">Scan to find other vehicles running this extension.</div>
+                                <div v-for="v in ds.scan.vehicles" :key="v.id" class="ds-vehicle" :class="{ 'ds-vehicle--selected': ds.selected === v.id }" @click="dsSelect(v)">
+                                    <div class="ds-vehicle__main">
+                                        <div class="ds-vehicle__name">
+                                            <span v-if="dsSync(v.id)" class="ds-swatch" :style="{ background: dsSync(v.id).color }"></span>
+                                            {{ v.name }}
+                                        </div>
+                                        <div class="pm-hint">
+                                            {{ v.host }} · vehicle ID {{ v.sysid === null || v.sysid === undefined ? '?' : v.sysid }} · {{ v.log_count }} log{{ v.log_count === 1 ? '' : 's' }}
+                                        </div>
+                                        <div class="ds-chips">
+                                            <v-chip x-small :color="dsRecording(v) ? 'success' : ''" label>{{ dsRecording(v) ? 'Recording' : 'Idle' }}</v-chip>
+                                            <v-chip v-if="!v.version_matches" x-small color="orange" label :title="'This vehicle runs ' + ds.version">Version {{ v.version }}</v-chip>
+                                        </div>
+                                    </div>
+                                    <div class="ds-vehicle__actions" @click.stop>
+                                        <v-switch :input-value="!!dsSync(v.id)" @change="on => dsSetSync(v, on)" label="Sync" dense hide-details class="mt-0 pt-0"></v-switch>
+                                    </div>
+                                </div>
+                                <div v-if="ds.scan.hidden_same_id" class="pm-hint mt-2">
+                                    <v-icon x-small>mdi-information-outline</v-icon>
+                                    {{ ds.scan.hidden_same_id }} vehicle{{ ds.scan.hidden_same_id > 1 ? 's' : '' }} with this vehicle's ID ({{ ds.scan.sysid }}) not shown. Give each vehicle its own MAVLink system ID.
+                                </div>
+                                <v-alert v-if="ds.error" type="error" dense text class="mt-2 mb-0">{{ ds.error }}</v-alert>
+                            </v-card-text>
+                        </v-card>
+
+                        <!-- Synced vehicles -->
+                        <v-card class="pm-card" outlined v-if="ds.sync.length">
+                            <v-card-title>Sync</v-card-title>
+                            <v-card-text>
+                                <div v-for="s in ds.sync" :key="s.id" class="ds-sync">
+                                    <div class="ds-vehicle__name">
+                                        <span class="ds-swatch" :style="{ background: s.color }"></span>{{ s.name }}
+                                        <v-spacer></v-spacer>
+                                        <v-btn x-small text @click="dsSetSync({ id: s.id }, false)"><v-icon left x-small>mdi-stop</v-icon>Stop</v-btn>
+                                    </div>
+                                    <div class="ds-sync__state" :class="'ds-sync__state--' + s.state">
+                                        <v-icon x-small :color="dsSyncState(s).color">{{ dsSyncState(s).icon }}</v-icon> {{ dsSyncState(s).text }}
+                                    </div>
+                                    <div v-if="s.error" class="pm-hint">{{ s.error }}</div>
+                                    <div v-if="s.local_file" class="pm-stat">
+                                        → <b>{{ s.local_file }}</b><br>
+                                        {{ s.rows }} rows · {{ (s.bytes / 1024).toFixed(0) }} KB<template v-if="s.remote_bytes > s.bytes"> of {{ (s.remote_bytes / 1024).toFixed(0) }} KB</template>
+                                        <template v-if="s.last_row"> · last {{ s.last_row[2] }} m ({{ s.last_row[3] }}%)</template>
+                                        <template v-if="s.last_received_s !== null"> · {{ s.last_received_s < 2 ? 'just now' : s.last_received_s + ' s ago' }}</template>
+                                    </div>
+                                </div>
+                                <div class="pm-hint">Synced soundings are drawn on the Live Survey map in each vehicle's colour, and saved in this vehicle's logs for post-processing. Sync stops if this extension restarts.</div>
+                            </v-card-text>
+                        </v-card>
+                    </div>
+
+                    <!-- Selected vehicle's logs -->
+                    <div class="pm-panel">
+                        <v-card class="pm-card" outlined>
+                            <v-card-title>
+                                {{ dsSelected ? dsSelected.name + "'s logs" : 'Logs' }}
+                                <v-spacer></v-spacer>
+                                <v-btn v-if="dsSelected" icon small title="Refresh" @click="dsLoadLogs"><v-icon small>mdi-refresh</v-icon></v-btn>
+                            </v-card-title>
+                            <v-card-text>
+                                <div v-if="!dsSelected" class="pm-hint">Select a vehicle to see its survey logs and copy them to this vehicle.</div>
+                                <template v-else>
+                                    <v-progress-linear v-if="ds.logsLoading" indeterminate color="primary" height="3"></v-progress-linear>
+                                    <v-alert v-if="ds.logsError" type="error" dense text class="mb-2">{{ ds.logsError }}</v-alert>
+                                    <div v-if="ds.logs.length" class="ds-log-toolbar">
+                                        <v-checkbox :input-value="ds.checked.length === ds.logs.length" :indeterminate="ds.checked.length > 0 && ds.checked.length < ds.logs.length"
+                                                    @change="on => ds.checked = on ? ds.logs.map(f => f.filename) : []" dense hide-details class="mt-0 pt-0" label="All"></v-checkbox>
+                                        <v-btn small color="primary" :disabled="!ds.checked.length" @click="dsCopy(ds.checked)">
+                                            <v-icon left small>mdi-content-copy</v-icon>Copy {{ ds.checked.length || '' }} to this vehicle
+                                        </v-btn>
+                                    </div>
+                                    <div v-else-if="!ds.logsLoading && !ds.logsError" class="pm-hint">No logs on this vehicle.</div>
+                                    <div v-for="f in ds.logs" :key="f.filename" class="ds-log">
+                                        <v-checkbox v-model="ds.checked" :value="f.filename" dense hide-details class="mt-0 pt-0"></v-checkbox>
+                                        <div class="ds-log__main">
+                                            <div class="ds-log__name">{{ f.filename }}</div>
+                                            <div class="pm-hint">
+                                                {{ f.size_mb }} MB · {{ pmFormatTime(f.modified).local }} · saved here as {{ f.local_name }}
+                                            </div>
+                                            <template v-if="dsCopyJob(f)">
+                                                <v-progress-linear v-if="dsCopyJob(f).state === 'copying'" :value="dsCopyJob(f).total ? 100 * dsCopyJob(f).bytes / dsCopyJob(f).total : 0" color="primary" height="4" rounded class="mt-1"></v-progress-linear>
+                                                <div v-if="dsCopyJob(f).state === 'error'" class="ds-error">{{ dsCopyJob(f).error }}</div>
+                                            </template>
+                                        </div>
+                                        <div class="ds-log__status">
+                                            <v-chip v-if="f.recording" x-small color="success" label>Recording now</v-chip>
+                                            <v-chip x-small label :color="dsLogStatus(f).color">{{ dsLogStatus(f).text }}</v-chip>
+                                        </div>
+                                        <v-btn icon small title="Copy to this vehicle" @click="dsCopy([f.filename])" :disabled="dsCopyJob(f) && ['queued', 'copying'].includes(dsCopyJob(f).state)">
+                                            <v-icon small>mdi-content-copy</v-icon>
+                                        </v-btn>
+                                    </div>
+                                    <div v-if="ds.logs.length" class="pm-hint mt-2">
+                                        Copies are saved in this vehicle's logs with the vehicle's name added, so they appear in Post-Mission Processing. Copying a log that is still being recorded saves what has been recorded so far; turn on Sync to keep receiving it.
+                                    </div>
+                                </template>
+                            </v-card-text>
+                        </v-card>
+                    </div>
+                </div>
+            </div>
+
+            <div class="content content--tabbed" v-show="activeTab === 3">
                 <div class="pm-files-bar">
                     <span class="pm-hint">Survey logs and generated contours in BlueOS's <code>extensions/ping-survey</code> folder. Upload, download, rename or delete them here.</span>
                     <v-btn x-small text :href="filesUrl" target="_blank" :disabled="!filesUrl"><v-icon left x-small>mdi-open-in-new</v-icon>Open in new window</v-btn>
@@ -1525,6 +1762,9 @@
                                     <span>80</span>
                                     <span>100</span>
                                 </div>
+                                <div v-if="ds.sync.length" class="ds-legend">
+                                    <div v-for="s in ds.sync" :key="s.id"><span class="ds-swatch" :style="{ background: s.color }"></span>{{ s.name }} (synced)</div>
+                                </div>
                             </div>
                             <div v-show="!showLegend" class="legend-minimized-content">
                                 <v-icon>mdi-chevron-right</v-icon>
@@ -1951,6 +2191,20 @@
                     // Tabs
                     activeTab: 0,
                     filesUrl: '',                    // BlueOS file browser, set when the Files tab is first opened
+                    // Data Sharing: other vehicles running this extension
+                    ds: {
+                        opened: false,
+                        version: '',
+                        scan:{ state: 'idle', done: 0, total: 0, vehicles: [], hidden_same_id: 0, finished: null },
+                        error: '',
+                        selected: null,              // instance id of the vehicle whose logs are shown
+                        logs: [],
+                        logsLoading: false,
+                        logsError: '',
+                        checked: [],                 // log names ticked for copying
+                        copies: [],                  // copy jobs from /peers/copy_status
+                        sync: []                     // synced vehicles from /sync/status
+                    },
                     sonarStatus: null,               // /status sonar block while recording
                     sonarCheck: null,                // /sonar_check while idle
                     sonarTimer: null,
@@ -2184,6 +2438,12 @@
                 pmQcAltWarnings() {
                     return this.pm.qc ? this.pm.qc.altitude_warnings.filter(a => !this.pmIsIgnored('alt:' + a.file)) : [];
                 },
+                dsSelected() {
+                    return this.ds.scan.vehicles.find(v => v.id === this.ds.selected) || null;
+                },
+                dsSubnetText() {
+                    return this.ds.scan.subnet || 'the vehicle network';
+                },
                 pmExcludedIds() {
                     return new Set(this.pm.exclude.map(e => e.key.join('|')));
                 },
@@ -2315,6 +2575,10 @@
             },
             created() {
                 // Leaflet objects for the processing map; kept out of data() so Vue doesn't observe them.
+                // Data Sharing timers and the synced vehicles' layers on the Live Survey map (not observed).
+                this.dsTimers = { scan: null, copy: null, sync: null };
+                this.dsLayers = {};
+                this.dsSeq = 0;
                 this.pmLeaflet = { map: null, pointsLayer: null, flagsLayer: null, polygonLayer: null, overlay: null, renderer: null, suppressClickUntil: 0, qcTimer: null, tideTimer: null, jobTimer: null, measure: { active: false } };
             },
             methods: {
@@ -2331,11 +2595,210 @@
                             this.pmLoadLogFiles().then(() => this.pmLoadLatestOutput());
                             this.pmLoadTideConfig();
                         } else if (tab === 2) {
+                            this.dsOpen();
+                        } else if (tab === 3) {
                             if (!this.filesUrl) this.filesUrl = window.location.origin + '/file-browser/files/extensions/ping-survey/';
                         } else if (this.map) {
                             this.map.invalidateSize();
                         }
                     });
+                },
+
+                // ---------- Data Sharing ----------
+                // Everything goes through this vehicle's backend, which talks to the other vehicles.
+                async dsOpen() {
+                    if (this.ds.opened) return;
+                    this.ds.opened = true;
+                    try {
+                        const me = (await axios.get('peer_info')).data;
+                        this.ds.version = me.version;
+                    } catch (e) { /* version warnings just won't show */ }
+                    const scan = (await axios.get('peers').catch(() => ({ data: null }))).data;
+                    if (scan) this.ds.scan = scan;
+                    // Vehicles come and go and start/stop recording: scan again unless the last scan is fresh.
+                    const fresh = scan && scan.state === 'done' && scan.finished && Date.now() / 1000 - scan.finished < 60;
+                    if (scan && scan.state === 'running') this.dsPollScan();
+                    else if (!fresh) this.dsScan();
+                },
+                async dsScan() {
+                    this.ds.error = '';
+                    try {
+                        const response = await axios.post('peers/scan');
+                        this.ds.scan = response.data;
+                    } catch (e) {
+                        // 409: a scan is already running; follow it.
+                        if (!(e.response && e.response.status === 409)) {
+                            this.ds.error = 'Could not start a scan: ' + e.message;
+                            return;
+                        }
+                    }
+                    this.dsPollScan();
+                },
+                async dsPollScan() {
+                    clearTimeout(this.dsTimers.scan);
+                    try {
+                        this.ds.scan = (await axios.get('peers')).data;
+                    } catch (e) { /* try again */ }
+                    if (this.ds.scan.state === 'running') {
+                        this.dsTimers.scan = setTimeout(this.dsPollScan, 700);
+                    } else if (this.ds.selected && !this.dsSelected) {
+                        this.ds.selected = null;          // no longer found
+                        this.ds.logs = [];
+                    }
+                },
+                dsSelect(v) {
+                    if (this.ds.selected === v.id) return;
+                    this.ds.selected = v.id;
+                    this.ds.logs = [];
+                    this.ds.checked = [];
+                    this.dsLoadLogs();
+                },
+                async dsLoadLogs() {
+                    const id = this.ds.selected;
+                    if (!id) return;
+                    this.ds.logsLoading = true;
+                    this.ds.logsError = '';
+                    try {
+                        const response = await axios.get('peers/' + encodeURIComponent(id) + '/log_files');
+                        if (this.ds.selected !== id) return;
+                        this.ds.logs = response.data.files;
+                        // The listing also brings the vehicle's current state (recording, log count).
+                        const v = this.ds.scan.vehicles.find(x => x.id === id);
+                        if (v) ['logging_active', 'current_log', 'log_count'].forEach(k => { v[k] = response.data.vehicle[k]; });
+                        const names = new Set(this.ds.logs.map(f => f.filename));
+                        this.ds.checked = this.ds.checked.filter(n => names.has(n));
+                    } catch (e) {
+                        if (this.ds.selected !== id) return;
+                        this.ds.logsError = (e.response && e.response.data && e.response.data.error) || ('Could not list logs: ' + e.message);
+                    } finally {
+                        this.ds.logsLoading = false;
+                    }
+                },
+                async dsCopy(names) {
+                    if (!names.length) return;
+                    this.ds.logsError = '';
+                    try {
+                        await axios.post('peers/copy', { peer: this.ds.selected, files: names });
+                        this.ds.checked = [];
+                    } catch (e) {
+                        this.ds.logsError = (e.response && e.response.data && e.response.data.error) || ('Could not copy: ' + e.message);
+                    }
+                    this.dsPollCopies();
+                },
+                async dsPollCopies() {
+                    clearTimeout(this.dsTimers.copy);
+                    try {
+                        this.ds.copies = (await axios.get('peers/copy_status')).data.jobs;
+                    } catch (e) { /* try again */ }
+                    if (this.ds.copies.some(j => j.state === 'queued' || j.state === 'copying')) {
+                        this.dsTimers.copy = setTimeout(this.dsPollCopies, 1000);
+                    } else {
+                        // Copies finished: show them as copied here and in Post-Mission Processing.
+                        this.dsLoadLogs();
+                        this.pmLoadLogFiles();
+                    }
+                },
+                dsCopyJob(f) {
+                    const jobs = this.ds.copies.filter(j => j.peer === this.ds.selected && j.filename === f.filename);
+                    return jobs.length ? jobs[jobs.length - 1] : null;
+                },
+                dsLogStatus(f) {
+                    const job = this.dsCopyJob(f);
+                    if (job && job.state === 'queued') return { text: 'Queued', color: '' };
+                    if (job && job.state === 'copying') return { text: 'Copying ' + (job.total ? Math.round(100 * job.bytes / job.total) + '%' : '…'), color: 'primary' };
+                    if (job && job.state === 'syncing') return { text: 'Being synced', color: 'primary' };
+                    if (f.local_bytes === null || f.local_bytes === undefined) return { text: 'Not copied', color: '' };
+                    if (f.recording) return { text: 'Copied so far', color: 'orange' };   // it keeps growing
+                    if (f.remote_bytes && f.local_bytes === f.remote_bytes) return { text: 'Copied', color: 'success' };
+                    if (f.remote_bytes && f.local_bytes < f.remote_bytes) return { text: 'Partly copied', color: 'orange' };
+                    return { text: 'Different copy here', color: 'orange' };
+                },
+                dsSync(id) {
+                    return this.ds.sync.find(s => s.id === id) || null;
+                },
+                dsRecording(v) {
+                    // A synced vehicle's state is live; otherwise it's as of the last scan or log listing.
+                    const s = this.dsSync(v.id);
+                    return s && s.state !== 'reconnecting' && s.state !== 'starting' ? s.logging_active : v.logging_active;
+                },
+                dsSyncState(s) {
+                    const states = {
+                        starting: { text: 'Starting…', icon: 'mdi-sync', color: '#90CAF9' },
+                        waiting: { text: "Waiting for it to record (nothing recorded since its extension started)", icon: 'mdi-timer-sand', color: '#bbb' },
+                        catching_up: { text: 'Catching up on its log…', icon: 'mdi-download', color: '#90CAF9' },
+                        syncing: { text: 'Syncing: receiving soundings as they are recorded', icon: 'mdi-sync', color: '#4CAF50' },
+                        idle: { text: 'Up to date; it is not recording', icon: 'mdi-check-circle', color: '#bbb' },
+                        reconnecting: { text: 'Reconnecting…', icon: 'mdi-wifi-off', color: '#FF9800' }
+                    };
+                    return states[s.state] || { text: s.state, icon: 'mdi-sync', color: '#bbb' };
+                },
+                async dsSetSync(v, on) {
+                    this.ds.error = '';
+                    try {
+                        await axios.post(on ? 'sync/start' : 'sync/stop', { peer: v.id });
+                    } catch (e) {
+                        this.ds.error = (e.response && e.response.data && e.response.data.error) || ('Could not change sync: ' + e.message);
+                    }
+                    if (!on) this.dsClearPeer(v.id);
+                    this.dsSyncTick();
+                },
+                async dsSyncTick() {
+                    // While any vehicle is synced: its status for the Data Sharing tab, and new
+                    // soundings for the Live Survey map (whichever tab is open).
+                    clearTimeout(this.dsTimers.sync);
+                    try {
+                        const [status, points] = await Promise.all([
+                            axios.get('sync/status'),
+                            this.map ? axios.get('sync/points', { params: { since: this.dsSeq } }) : Promise.resolve(null)
+                        ]);
+                        this.ds.sync = status.data.vehicles;
+                        if (points) this.dsDrawPeers(points.data);
+                    } catch (e) { /* keep the last state; try again */ }
+                    const synced = new Set(this.ds.sync.map(s => s.id));
+                    Object.keys(this.dsLayers).filter(id => !synced.has(id)).forEach(this.dsClearPeer);
+                    if (this.ds.sync.length) this.dsTimers.sync = setTimeout(this.dsSyncTick, 1000);
+                },
+                dsDrawPeers(data) {
+                    const halfBeam = Math.tan(12.5 * Math.PI / 180);
+                    data.vehicles.forEach(v => {
+                        let layer = this.dsLayers[v.id];
+                        if (!layer) {
+                            layer = this.dsLayers[v.id] = { group: L.layerGroup().addTo(this.map), boat: null };
+                        }
+                        // Same rule as this vehicle's soundings: only confident ones, as sonar footprints,
+                        // outlined in the vehicle's colour.
+                        v.points.forEach(([lat, lon, depthM, conf]) => {
+                            if (conf < 90) return;
+                            L.circle([lat, lon], {
+                                color: v.color, weight: 2, fillColor: this.getColor(depthM * 100), fillOpacity: 0.6,
+                                radius: depthM * halfBeam, interactive: false
+                            }).addTo(layer.group);
+                        });
+                        if (v.last_row) {
+                            const ll = [v.last_row[0], v.last_row[1]];
+                            if (!layer.boat) {
+                                const name = document.createElement('span');
+                                name.textContent = v.name;          // another vehicle's name: text, not HTML
+                                const label = `<span class="ds-boat-label" style="background:${v.color}">${name.innerHTML}</span>`;
+                                layer.boat = L.layerGroup([
+                                    L.circleMarker(ll, { radius: 7, color: 'white', weight: 2, fillColor: v.color, fillOpacity: 1, interactive: false }),
+                                    L.marker(ll, { interactive: false, keyboard: false, icon: L.divIcon({ className: '', html: label, iconSize: [0, 0] }) })
+                                ]).addTo(this.map);
+                            } else {
+                                layer.boat.eachLayer(l => l.setLatLng(ll));
+                            }
+                        }
+                    });
+                    this.dsSeq = data.seq;
+                },
+                dsClearPeer(id) {
+                    const layer = this.dsLayers[id];
+                    if (!layer) return;
+                    if (this.map) {
+                        this.map.removeLayer(layer.group);
+                        if (layer.boat) this.map.removeLayer(layer.boat);
+                    }
+                    delete this.dsLayers[id];
                 },
 
                 // ---------- Post-mission processing ----------
@@ -4102,6 +4565,8 @@
                         this.scaleAdded = true;
                         // Not reactive data: the control keeps its own state.
                         this.measure = addMeasureControl(this.map);
+                        // Vehicles synced before this page was (re)loaded: draw what they have sent so far.
+                        this.dsSyncTick();
 
                         // Add zoom change listener to update zoom display
                         this.map.on('zoomend', () => {
