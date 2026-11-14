@@ -1082,6 +1082,43 @@ def _vehicle_name():
     return _vehicle_name_cache['name']
 
 
+_position_cache = {'at': 0, 'value': None}
+
+
+def _current_position():
+    """This vehicle's GPS position and heading for other vehicles' maps, or None without a fix.
+
+    Taken from the latest logged row while recording; otherwise asked from the autopilot (at most once a
+    second), so other vehicles can show where this one is even when it isn't recording.
+    """
+    with _state_lock:
+        active = logging_active
+        row = list(data)
+    if active and len(row) >= 10:
+        try:
+            lat, lon, heading = float(row[8]), float(row[9]), float(row[5])
+            return None if lat == 0 and lon == 0 else {'lat': lat, 'lon': lon, 'heading': round(heading, 1)}
+        except (TypeError, ValueError):
+            return None
+    if not _system_id_detected:
+        return None
+    if time.time() - _position_cache['at'] < 1:
+        return _position_cache['value']
+    _position_cache['at'] = time.time()
+    value = None
+    try:
+        m = requests.get(f"{base_url}/vehicles/{_system_id_cache}/components/1/messages/GLOBAL_POSITION_INT",
+                         timeout=1).json()['message']
+        lat, lon = m['lat'] / 1e7, m['lon'] / 1e7
+        if lat or lon:
+            hdg = m.get('hdg', 65535)
+            value = {'lat': lat, 'lon': lon, 'heading': None if hdg == 65535 else round(hdg / 100, 1)}
+    except (requests.RequestException, ValueError, KeyError, TypeError):
+        pass
+    _position_cache['value'] = value
+    return value
+
+
 def _local_peer_info():
     """What other vehicles see of this one. Never waits for system ID detection."""
     global _sysid_thread
@@ -1112,6 +1149,7 @@ def _local_peer_info():
         'current_log': os.path.basename(current_log_file) if current_log_file else None,
         'log_count': log_count,
         'last_fix': last_fix,
+        'position': _current_position(),
     }
 
 
@@ -1172,6 +1210,14 @@ def peers_scan():
 @app.route('/peers')
 def peers():
     return jsonify(sharing.scan_status())
+
+
+@app.route('/peers/tracking', methods=['GET', 'POST'])
+def peers_tracking():
+    """Show the other vehicles' positions on Cockpit's maps (on by default)."""
+    if request.method == 'POST':
+        sharing.set_tracking((request.get_json(silent=True) or {}).get('on', True))
+    return jsonify({'tracking': sharing.tracking, 'tracks': sharing.tracks()})
 
 
 @app.route('/peers/<peer_id>/log_files')
@@ -1638,9 +1684,42 @@ def _live_sounding(row):
     cockpit.send(message)
 
 
+BOAT_OVERLAY_PREFIX = 'pingsurvey-boat-'
+LOST_BOAT_COLOR = '#9e9e9e'
+
+
+def _boat_overlay_message(track):
+    """The Cockpit command that shows another vehicle's position and recent track.
+
+    Cockpit's overlays have no text labels, so each vehicle is its own overlay named after it (listed in the
+    map's layer control) and drawn in the same colour as in the Data Sharing tab: a trail of its last couple
+    of minutes and a large dot where it is now. A vehicle that stopped answering turns grey.
+    """
+    color = LOST_BOAT_COLOR if track['lost'] else track['color']
+    features = []
+    if len(track['trail']) >= 2:
+        features.append({'type': 'Feature', 'geometry': {'type': 'LineString', 'coordinates': track['trail']},
+                         'properties': {'stroke': color, 'stroke-width': 3, 'stroke-opacity': 0.7}})
+    pos = track['position']
+    features.append({'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [round(pos['lon'], 7), round(pos['lat'], 7)]},
+                     'properties': {'marker-color': color, 'marker-size': 'large'}})
+    name = track['name'] + (' (lost contact)' if track['lost'] else ' (other boat)')
+    return {'type': 'cockpit:setMapOverlay',
+            'overlay': {'id': BOAT_OVERLAY_PREFIX + track['id'][:12], 'name': name, 'live': True,
+                        'geojson': {'type': 'FeatureCollection', 'features': features}}}
+
+
+def _send_boat_overlays(tracks, removed_ids):
+    """Called by the Data Sharing tracker after each round of position updates."""
+    for track in tracks:
+        cockpit.send(_boat_overlay_message(track))
+    for pid in removed_ids:
+        cockpit.send({'type': 'cockpit:removeMapOverlay', 'id': BOAT_OVERLAY_PREFIX + pid[:12]})
+
+
 def _cockpit_snapshot():
     """Messages that bring a newly connected Cockpit up to date."""
-    messages = []
+    messages = [_boat_overlay_message(t) for t in sharing.tracks()]
     contours = _contours_message(_latest_output())
     if contours:
         messages.append(contours)
@@ -1654,7 +1733,7 @@ cockpit = cockpit_link.CockpitLink(app, '/cockpit_ws', _cockpit_snapshot)
 
 os.makedirs(LOGS_DIR, exist_ok=True)
 INSTANCE_ID = data_sharing.instance_id(LOGS_DIR)
-sharing = data_sharing.DataSharing(LOGS_DIR, _local_peer_info)
+sharing = data_sharing.DataSharing(LOGS_DIR, _local_peer_info, on_tracks=_send_boat_overlays)
 
 
 @app.route('/processed/<path:filename>')

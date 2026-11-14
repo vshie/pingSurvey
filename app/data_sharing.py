@@ -39,8 +39,15 @@ SCAN_TIMEOUT = (0.8, 2.0)       # (connect, read): most addresses have nothing l
 PEER_TIMEOUT = (3.0, 10.0)
 TAIL_CHUNK = 256 * 1024         # bytes per /log_tail call, so catching up over a slow link goes in steps
 SYNC_POINTS = 5000              # recent soundings kept per synced vehicle for the live map
-# Distinct from the depth colours on the live map.
+# Each vehicle's colour on the maps, distinct from the depth colours on the live map.
 SYNC_COLORS = ('#E91E63', '#00BCD4', '#FF9800', '#8BC34A', '#9C27B0', '#FFEB3B')
+# Tracking other vehicles' positions (for Cockpit's maps)
+POSITION_EVERY_S = 2
+TRAIL_POINTS = 60               # about two minutes of positions
+LOST_AFTER_S = 20               # no answer for this long: shown as lost contact
+FORGET_AFTER_S = 600            # and removed after this long
+FIRST_SCAN_AFTER_S = 20
+RESCAN_EVERY_S = 120            # so vehicles switched on later appear too
 
 
 class PeerError(Exception):
@@ -281,11 +288,20 @@ class _Sync:
 
 
 class DataSharing:
-    def __init__(self, logs_dir, local_info):
-        """local_info() returns this vehicle's /peer_info."""
+    def __init__(self, logs_dir, local_info, on_tracks=None):
+        """local_info() returns this vehicle's /peer_info.
+
+        on_tracks(tracks, removed_ids) is called after each round of position updates (see tracks()), with the
+        ids of vehicles no longer tracked.
+        """
         self.logs_dir = logs_dir
         self._local_info = local_info
+        self._on_tracks = on_tracks
         self._lock = threading.Lock()
+        self._colors = {}               # instance id -> colour, kept for the session
+        self._tracks = {}               # instance id -> {name, color, host, position, trail, seen, ...}
+        self.tracking = True
+        threading.Thread(target=self._run_tracking, daemon=True).start()
         self._scan = {'state': 'idle', 'done': 0, 'total': 0, 'started': None, 'finished': None,
                       'hidden_same_id': 0, 'vehicles': []}
         self._peers = {}                # instance id -> peer, from the latest scan
@@ -331,15 +347,24 @@ class DataSharing:
                                  suffix=vehicle_suffix(info), version_matches=info.get('version') == me.get('version')))
         vehicles.sort(key=lambda v: (v['name'].lower(), v['host']))
         with self._lock:
+            for v in vehicles:
+                v['color'] = self._color_for(v['id'])
             self._peers = {v['id']: v for v in vehicles}
             self._scan.update(state='done', finished=time.time(), hidden_same_id=hidden, sysid=me.get('sysid'),
                               vehicles=[{k: v for k, v in p.items() if k != 'base'} for p in vehicles])
 
     def scan_status(self):
         with self._lock:
-            out = dict(self._scan, subnet=str(PEER_SUBNET),
+            out = dict(self._scan, subnet=str(PEER_SUBNET), tracking=self.tracking,
                        vehicles=[dict(v, syncing=v['id'] in self._syncs) for v in self._scan['vehicles']])
         return out
+
+    def _color_for(self, peer_id):
+        """Call with the lock held."""
+        if peer_id not in self._colors:
+            used = set(self._colors.values())
+            self._colors[peer_id] = next((c for c in SYNC_COLORS if c not in used), SYNC_COLORS[len(self._colors) % len(SYNC_COLORS)])
+        return self._colors[peer_id]
 
     def _peer(self, peer_id):
         with self._lock:
@@ -469,9 +494,7 @@ class DataSharing:
         with self._lock:
             if peer_id in self._syncs:
                 return False
-            used = {s.color for s in self._syncs.values()}
-            color = next((c for c in SYNC_COLORS if c not in used), SYNC_COLORS[len(self._syncs) % len(SYNC_COLORS)])
-            sync = self._syncs[peer_id] = _Sync(self, peer, color)
+            sync = self._syncs[peer_id] = _Sync(self, peer, self._color_for(peer_id))
         sync.thread.start()
         return True
 
@@ -492,6 +515,65 @@ class DataSharing:
             for p in points:
                 self._seq += 1
                 sync.points.append((self._seq,) + p)
+
+    # --- positions -----------------------------------------------------------------------
+    def set_tracking(self, on):
+        with self._lock:
+            self.tracking = bool(on)
+            removed = [] if on else list(self._tracks)
+            if not on:
+                self._tracks.clear()
+        if removed and self._on_tracks:
+            self._on_tracks([], removed)
+
+    def tracks(self):
+        """Vehicles being tracked: [{id, name, color, host, position, trail, seen_s, lost, logging_active}]."""
+        now = time.time()
+        with self._lock:
+            return [{
+                'id': pid, 'name': t['name'], 'color': t['color'], 'host': t['host'], 'position': t['position'],
+                'trail': list(t['trail']), 'logging_active': t['logging_active'],
+                'seen_s': round(now - t['seen'], 1), 'lost': now - t['seen'] > LOST_AFTER_S,
+            } for pid, t in self._tracks.items()]
+
+    def _run_tracking(self):
+        started = time.time()
+        next_scan = started + FIRST_SCAN_AFTER_S
+        while True:
+            time.sleep(POSITION_EVERY_S)
+            if not self.tracking:
+                continue
+            if time.time() >= next_scan:
+                next_scan = time.time() + RESCAN_EVERY_S
+                self.start_scan()           # returns at once; does nothing if a scan is running
+            with self._lock:
+                peers = list(self._peers.values())
+            if peers or self._tracks:
+                self._update_tracks(peers)
+
+    def _update_tracks(self, peers):
+        with ThreadPoolExecutor(min(8, max(1, len(peers)))) as pool:
+            answers = list(pool.map(lambda p: (p, _peer_info(p['base'])), peers))
+        now = time.time()
+        removed = []
+        with self._lock:
+            if not self.tracking:
+                return
+            for peer, info in answers:
+                if not info or not info.get('position'):
+                    continue
+                pos = info['position']
+                t = self._tracks.setdefault(peer['id'], {'trail': collections.deque(maxlen=TRAIL_POINTS)})
+                t.update(name=peer['name'], color=self._color_for(peer['id']), host=peer['host'], position=pos,
+                         seen=now, logging_active=bool(info.get('logging_active')))
+                point = [round(pos['lon'], 7), round(pos['lat'], 7)]
+                if not t['trail'] or t['trail'][-1] != point:
+                    t['trail'].append(point)
+            for pid in [pid for pid, t in self._tracks.items() if now - t['seen'] > FORGET_AFTER_S]:
+                del self._tracks[pid]
+                removed.append(pid)
+        if self._on_tracks:
+            self._on_tracks(self.tracks(), removed)
 
     def sync_points(self, since):
         """Soundings received since seq `since`, per synced vehicle, for the live map."""

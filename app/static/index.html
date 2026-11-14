@@ -99,13 +99,10 @@
             height: 150px;
             width: 30px;
             margin: 5px auto;
-            background: linear-gradient(to bottom, 
-                rgb(255, 255, 255) 0%,
-                rgb(180, 210, 255) 20%,
-                rgb(100, 150, 240) 40%,
-                rgb(40, 90, 200) 60%,
-                rgb(10, 30, 160) 80%,
-                rgb(0, 0, 120) 100%);
+            background: linear-gradient(to bottom,   /* LIVE_DEPTH_STOPS, spread over the legend's range */
+                rgb(255, 255, 255) 0%, rgb(220, 230, 255) 10%, rgb(180, 210, 255) 20%, rgb(140, 180, 250) 30%,
+                rgb(100, 150, 240) 40%, rgb(70, 120, 220) 50%, rgb(40, 90, 200) 60%, rgb(20, 60, 180) 70%,
+                rgb(10, 30, 160) 80%, rgb(5, 15, 140) 90%, rgb(0, 0, 120) 100%);
             border: 1px solid #444;
         }
         
@@ -121,7 +118,15 @@
         
         .legend-labels span {
             font-size: 10px;
+            color: #eee;
+            text-shadow: 0 0 2px #000, 0 0 2px #000;   /* readable over the dark end of the bar */
+        }
+        .legend-empty {
+            font-size: 10px;
             color: #888;
+            text-align: center;
+            line-height: 1.4;
+            padding: 4px 0;
         }
         
         .zoom-level-display {
@@ -956,6 +961,11 @@
             margin-right: 4px;
             flex: 0 0 auto;
         }
+        .ds-tracking {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+        }
         .ds-sync {
             padding: 6px 0 10px;
             border-bottom: 1px solid rgba(255, 255, 255, 0.08);
@@ -1288,6 +1298,10 @@
                                     <div class="ds-vehicle__actions" @click.stop>
                                         <v-switch :input-value="!!dsSync(v.id)" @change="on => dsSetSync(v, on)" label="Sync" dense hide-details class="mt-0 pt-0"></v-switch>
                                     </div>
+                                </div>
+                                <div class="ds-tracking">
+                                    <v-switch :input-value="ds.scan.tracking !== false" @change="dsSetTracking" label="Show these boats on Cockpit's maps" dense hide-details class="mt-0 pt-0"></v-switch>
+                                    <div class="pm-hint">Each boat appears on Cockpit's maps as a dot in its colour with a trail of its last two minutes, listed by name in the map's layers. Cockpit needs the Survey maps connection (version 1.20 or later). The network is scanned again every two minutes.</div>
                                 </div>
                                 <div v-if="ds.scan.hidden_same_id" class="pm-hint mt-2">
                                     <v-icon x-small>mdi-information-outline</v-icon>
@@ -1870,15 +1884,13 @@
                             </div>
                             <div v-show="showLegend" class="legend-content">
                                 <h4>Depth (m)</h4>
-                                <div class="legend-gradient"></div>
-                                <div class="legend-labels">
-                                    <span>0</span>
-                                    <span>20</span>
-                                    <span>40</span>
-                                    <span>60</span>
-                                    <span>80</span>
-                                    <span>100</span>
-                                </div>
+                                <template v-if="liveDepthRange">
+                                    <div class="legend-gradient"></div>
+                                    <div class="legend-labels">
+                                        <span v-for="(d, k) in liveLegendTicks" :key="k">{{ d }}</span>
+                                    </div>
+                                </template>
+                                <div v-else class="legend-empty">Colours fit the depths<br>measured, once soundings<br>arrive.</div>
                                 <div v-if="ds.sync.length" class="ds-legend">
                                     <div v-for="s in ds.sync" :key="s.id"><span class="ds-swatch" :style="{ background: s.color }"></span>{{ s.name }} (synced)</div>
                                 </div>
@@ -2161,6 +2173,10 @@
             }
         }
 
+        // Live map depth colours, shallowest -> deepest of the session's range (white -> dark blue)
+        const LIVE_DEPTH_STOPS = [[255, 255, 255], [220, 230, 255], [180, 210, 255], [140, 180, 250], [100, 150, 240],
+            [70, 120, 220], [40, 90, 200], [20, 60, 180], [10, 30, 160], [5, 15, 140], [0, 0, 120]];
+
         // Shallow (yellow) -> deep (purple), viridis-like
         const PM_DEPTH_STOPS = [[253, 231, 37], [94, 201, 98], [33, 145, 140], [59, 82, 139], [68, 1, 84]];
 
@@ -2271,6 +2287,7 @@
                     run: false,
                     map: null,
                     circleMarkers: [],
+                    liveDepthRange: null,            // [shallowest, deepest] m the live map's colours span; null = no soundings yet
                     isLoading: false,
                     receivingData: false,
                     scaleAdded: false,
@@ -2615,6 +2632,16 @@
                 pmQcAltWarnings() {
                     return this.pm.qc ? this.pm.qc.altitude_warnings.filter(a => !this.pmIsIgnored('alt:' + a.file)) : [];
                 },
+                liveLegendTicks() {
+                    // Six evenly spaced labels from the shallowest to the deepest end of the colour range.
+                    const r = this.liveDepthRange;
+                    if (!r) return [];
+                    const span = r[1] - r[0];
+                    return [0, 1, 2, 3, 4, 5].map(k => {
+                        const d = r[0] + span * k / 5;
+                        return span < 10 ? d.toFixed(1) : Math.round(d).toString();
+                    });
+                },
                 tourSteps() {
                     return PING_TOUR_STEPS;
                 },
@@ -2790,6 +2817,8 @@
                 this.dsTimers = { scan: null, copy: null, sync: null };
                 this.dsLayers = {};
                 this.dsSeq = 0;
+                // Shallowest and deepest sounding drawn on the live map this session (liveDepthRange is rounded from it).
+                this.liveExtremes = null;
                 this.pmLeaflet = { map: null, pointsLayer: null, flagsLayer: null, polygonLayer: null, overlay: null, renderer: null, suppressClickUntil: 0, qcTimer: null, tideTimer: null, jobTimer: null, measure: { active: false } };
             },
             methods: {
@@ -3097,6 +3126,7 @@
                     if (!saved) return;
                     // The replay's circles come off the live map; the user's own stay.
                     this.circleMarkers.splice(saved.liveCircles).forEach(c => c.remove());
+                    this.liveResetRange();
                     const p = saved.pm;
                     Object.assign(this.pm, {
                         selectedFiles: p.selectedFiles, polygon: p.polygon, tides: p.tides, showPoints: p.showPoints,
@@ -3159,6 +3189,14 @@
                     } else if (this.ds.selected && !this.dsSelected) {
                         this.ds.selected = null;          // no longer found
                         this.ds.logs = [];
+                    }
+                },
+                async dsSetTracking(on) {
+                    try {
+                        await axios.post('peers/tracking', { on });
+                        this.ds.scan = Object.assign({}, this.ds.scan, { tracking: on });
+                    } catch (e) {
+                        this.ds.error = 'Could not change Cockpit tracking: ' + e.message;
                     }
                 },
                 dsSelect(v) {
@@ -3284,9 +3322,10 @@
                         // outlined in the vehicle's colour.
                         v.points.forEach(([lat, lon, depthM, conf]) => {
                             if (conf < 90) return;
+                            this.liveNoteDepth(depthM);
                             L.circle([lat, lon], {
                                 color: v.color, weight: 2, fillColor: this.getColor(depthM * 100), fillOpacity: 0.6,
-                                radius: depthM * halfBeam, interactive: false
+                                radius: depthM * halfBeam, interactive: false, depthM
                             }).addTo(layer.group);
                         });
                         if (v.last_row) {
@@ -3314,6 +3353,7 @@
                         if (layer.boat) this.map.removeLayer(layer.boat);
                     }
                     delete this.dsLayers[id];
+                    this.liveResetRange();
                 },
 
                 // ---------- Post-mission processing ----------
@@ -4166,18 +4206,20 @@
                     this.marker.addTo(this.map);
                     
                     // Only show depth circles if we have high confidence ping data (confidence >= 90)
-                    if (confidence >= 90) {   
+                    if (confidence >= 90) {
                         const radiusInMeters = (depth/100) * Math.tan(12.5 * Math.PI / 180);
                         const radius = radiusInMeters * this.map.getZoomScale(this.map.getZoom());
+                        this.liveNoteDepth(depth / 100);
                         const fillColor = this.getColor(depth);
-                        
+
                         // Create a more visible circle with stronger border
                         const circleMarker = L.circle([lat, lon], {
                             color: 'black',       // Black outline for contrast against all colors
                             fillColor: fillColor,
                             fillOpacity: 0.7,     // Higher opacity for better visibility
                             weight: 1,           // Thin but visible border
-                            radius: radius
+                            radius: radius,
+                            depthM: depth / 100  // kept for recolouring when the depth range widens
                         });
                         circleMarker.addTo(this.map);
                         this.circleMarkers.push(circleMarker);
@@ -4188,6 +4230,7 @@
                         circleMarker.remove();
                     });
                     this.circleMarkers = [];
+                    this.liveResetRange();
                 },
                 onCenterMapButtonClick() {
                     // Do nothing unless the system has a valid GPS lock.
@@ -4200,43 +4243,48 @@
                     this.resetMap(item.latitude, item.longitude, 18);
                 },
                 getColor(depth) {
-                    const colorStops = [
-                        {depth: 0, color: [255, 255, 255]},    // Pure white for shallow
-                        {depth: 1000, color: [220, 230, 255]}, 
-                        {depth: 2000, color: [180, 210, 255]},
-                        {depth: 3000, color: [140, 180, 250]},
-                        {depth: 4000, color: [100, 150, 240]},
-                        {depth: 5000, color: [70, 120, 220]},
-                        {depth: 6000, color: [40, 90, 200]},
-                        {depth: 7000, color: [20, 60, 180]},
-                        {depth: 8000, color: [10, 30, 160]},
-                        {depth: 9000, color: [5, 15, 140]},
-                        {depth: 10000, color: [0, 0, 120]}      // Dark blue for deep
-                    ];
-                    
-                    // Add higher contrast to circles
-                    const opacity = 0.7; // Higher opacity for better visibility
-                    const strokeWeight = 1; // Add stroke to improve contrast
-                    
-                    let color1, color2;
-                    for (let i = 0; i < colorStops.length - 1; i++) {
-                        if (depth >= colorStops[i].depth && depth <= colorStops[i + 1].depth) {
-                            color1 = colorStops[i];
-                            color2 = colorStops[i + 1];
-                            break;
-                        }
-                    }
-                    
-                    if (!color1) {
-                        return depth <= 0 ? `rgb(${colorStops[0].color})` : `rgb(${colorStops[colorStops.length - 1].color})`;
-                    }
-                    
-                    const t = (depth - color1.depth) / (color2.depth - color1.depth);
-                    const color = color1.color.map((start, i) => {
-                        return Math.round(start + (color2.color[i] - start) * t);
-                    });
-                    
+                    // depth in cm. Coloured over this session's depth range (see liveNoteDepth), shallowest
+                    // white to deepest dark blue, so shallow surveys get the whole palette too.
+                    const range = this.liveDepthRange;
+                    const t = range ? Math.min(1, Math.max(0, (depth / 100 - range[0]) / (range[1] - range[0]))) : 0;
+                    const x = t * (LIVE_DEPTH_STOPS.length - 1);
+                    const i = Math.min(LIVE_DEPTH_STOPS.length - 2, Math.floor(x));
+                    const f = x - i;
+                    const color = LIVE_DEPTH_STOPS[i].map((v, k) => Math.round(v + (LIVE_DEPTH_STOPS[i + 1][k] - v) * f));
                     return `rgb(${color})`;
+                },
+                liveNoteDepth(depthM) {
+                    // Widen this session's colour range to include a sounding about to be drawn. Rounded out to
+                    // whole metres with some margin, so it changes now and then rather than on every new extreme;
+                    // every circle already drawn is recoloured when it does.
+                    const ext = this.liveExtremes;
+                    if (ext && depthM >= ext[0] && depthM <= ext[1]) return;
+                    this.liveExtremes = ext ? [Math.min(ext[0], depthM), Math.max(ext[1], depthM)] : [depthM, depthM];
+                    const lo = Math.max(0, Math.floor(this.liveExtremes[0] - 0.5));
+                    const hi = Math.max(lo + 2, Math.ceil(this.liveExtremes[1] + 0.5));
+                    const range = this.liveDepthRange;
+                    if (range && range[0] === lo && range[1] === hi) return;
+                    this.liveDepthRange = [lo, hi];
+                    this.liveRecolor();
+                },
+                liveCircles() {
+                    // Every sounding circle on the live map: this vehicle's and synced vehicles'.
+                    const circles = this.circleMarkers.slice();
+                    Object.values(this.dsLayers).forEach(l => l.group.eachLayer(c => circles.push(c)));
+                    return circles;
+                },
+                liveRecolor() {
+                    this.liveCircles().forEach(c => c.setStyle({ fillColor: this.getColor(c.options.depthM * 100) }));
+                },
+                liveResetRange() {
+                    // After circles are removed: the range covers the soundings still on the map.
+                    this.liveExtremes = null;
+                    this.liveDepthRange = null;
+                    const depths = this.liveCircles().map(c => c.options.depthM).filter(d => Number.isFinite(d));
+                    if (depths.length) {
+                        this.liveNoteDepth(Math.min(...depths));
+                        this.liveNoteDepth(Math.max(...depths));
+                    }
                 },
                 getConfidenceClass(confidence) {
                     if (confidence > 95) return 'confidence-high';

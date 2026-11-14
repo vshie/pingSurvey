@@ -96,7 +96,9 @@ const PING_TOUR_STEPS = [
         title: 'Reading the colours',
         text: `
             <p>The circles are coloured by depth: <b>pale for shallow water, dark blue for deep water</b>, just
-            like real nautical charts. Click the legend to fold it away.</p>
+            like real nautical charts. The scale stretches to fit the depths measured so far, so even a survey
+            where the depth only changes by a metre or two shows a range of colours. The legend's numbers
+            always show the shallowest and deepest ends. Click the legend to fold it away.</p>
             <p>Watch the colours as the replay runs: if the circles slowly darken, the boat is heading into
             deeper water. If colours change suddenly from one circle to the next, the bottom may be steep, or
             one of the readings may be wrong (more on that later).</p>
@@ -752,7 +754,9 @@ const PING_TOUR_STEPS = [
             <p>Each boat needs its own <b>vehicle ID</b> (its MAVLink system ID). Boats sharing this boat's ID
             are hidden, because their data couldn't be told apart.</p>
             <p>The <b>Sync</b> switch receives a boat's survey as it's recorded. Its soundings appear on your
-            Live Survey map in that boat's colour, so crews can see who has covered what.</p>`
+            Live Survey map in that boat's colour, so crews can see who has covered what.</p>
+            <p>Every boat found also appears on <b>Cockpit's</b> maps as a coloured dot with a short trail, so
+            the driver always knows where the rest of the fleet is.</p>`
     },
     {
         section: 'Data Sharing',

@@ -85,10 +85,9 @@ The widget provides:
 
 #### Getting live data in Cockpit
 
-> **Not in a Cockpit release yet.** The survey map overlays and the Connections tab come from
-> [bluerobotics/cockpit#3271](https://github.com/bluerobotics/cockpit/pull/3271), which is
-> still open. Until it is merged and released, use a test build of Cockpit from that pull
-> request. Released versions of Cockpit show the widget but not the survey maps.
+> **Needs Cockpit 1.20 or later** (first in 1.20.0-beta.1). The survey map overlays and the
+> Connections tab come from [bluerobotics/cockpit#3271](https://github.com/bluerobotics/cockpit/pull/3271).
+> Cockpit 1.19 and earlier show the widget but not the survey maps.
 
 1. Connect Cockpit to the vehicle.
 2. Open the **Extension features** dialog, go to the **Connections** tab and press
@@ -99,10 +98,15 @@ The widget provides:
    and enough confidence is drawn on the Map widget and in Mission Planning as the sonar's
    footprint on the seabed, to scale and coloured by depth. This overlay is live only, so it
    is not kept when Cockpit reloads.
-4. **Contours:** run **Generate** in Post-Mission Processing. A "Survey contours" overlay
+4. **Other boats:** every vehicle running this extension that the Data Sharing tab finds on the
+   network appears as its own overlay, named after the boat: a dot in its colour where it is now,
+   with a trail of its last two minutes (grey and marked "lost contact" if it stops answering). They are
+   listed in the map's layer control, so each can be hidden. Switch this off with **Show these boats
+   on Cockpit's maps** in the Data Sharing tab.
+5. **Contours:** run **Generate** in Post-Mission Processing. A "Survey contours" overlay
    appears. It is saved on that computer, so it comes back after a reload even with the
    extension stopped.
-5. Toggle the overlays from the map's layer control, or remove one with right-click on the
+6. Toggle the overlays from the map's layer control, or remove one with right-click on the
    map → **Manage overlays**. On the MiniMap, turn on **Show map overlays** to see them.
 
 If "Survey maps" is not offered, open
